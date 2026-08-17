@@ -1004,58 +1004,168 @@
     // Draws the entire HUD onto the 2D canvas
     function drawHUDCanvas(dt) {
         const ui = currentUI();
-        timer=(self._tm=(+self._tm||0)+dt/60).toFixed(3);
+        timer = (self._tm = (+self._tm || 0) + dt / 60).toFixed(3);
         hudCtx.clearRect(0, 0, hudCan.width, hudCan.height);
 
+        // Draw the compact menu tab while the main HUD is closed.
         if (!hudVisible) {
             const b = ui[0];
-            const x=b[0]*640,y=b[1]*320,w=(b[2]-b[0])*640,h=(b[3]-b[1])*320;
-            hudCtx.fillStyle=hoverBtn===b?'#586b58':'#202923';hudCtx.fillRect(x,y,w,h);
-            hudCtx.fillStyle='#fff';hudCtx.font='16px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';
-            hudCtx.fillText('MENU',x+w/2,y+h/2);
+            const x = b[0] * 640;
+            const y = b[1] * 320;
+            const w = (b[2] - b[0]) * 640;
+            const h = (b[3] - b[1]) * 320;
+
+            hudCtx.fillStyle = hoverBtn === b ? '#586b58' : '#27332b';
+            hudCtx.fillRect(x, y, w, h);
+            hudCtx.fillStyle = '#eef';
+            hudCtx.font = '16px system-ui';
+            hudCtx.textAlign = 'center';
+            hudCtx.textBaseline = 'middle';
+            hudCtx.fillText('MENU', x + w / 2, y + h / 2);
+
+            // Keep the latest chat messages visible over the closed HUD.
             if (closedChat && CHAT.length) {
-                const lines=CHAT.slice(-3);hudCtx.fillStyle='#111914dd';hudCtx.fillRect(20,48,600,22+lines.length*18);
-                hudCtx.fillStyle='#eef';hudCtx.font='14px monospace';hudCtx.textAlign='left';hudCtx.textBaseline='alphabetic';
-                lines.forEach((s,i)=>hudCtx.fillText(s.slice(0,68),28,68+i*18));
+                const lines = CHAT.slice(-3);
+                hudCtx.fillStyle = '#111914dd';
+                hudCtx.fillRect(20, 48, 600, 22 + lines.length * 18);
+                hudCtx.fillStyle = '#eef';
+                hudCtx.font = '14px monospace';
+                hudCtx.textAlign = 'left';
+                hudCtx.textBaseline = 'alphabetic';
+                lines.forEach((s, i) =>
+                    hudCtx.fillText(s.slice(0, 68), 28, 68 + i * 18)
+                );
             }
         } else {
-            hudCtx.fillStyle='#111914e8';hudCtx.fillRect(6,6,628,308);
-            hudCtx.fillStyle='#9f9';hudCtx.fillRect(6,6,5,308);
-            hudCtx.textAlign='left';hudCtx.textBaseline='alphabetic';hudCtx.font='20px system-ui';
-            hudCtx.fillText(hudPage===1?'CHAT':hudPage===2?'INVENTORY':hudPage===3?'SETTINGS':'WILD CATCH',20,34);
-            hudCtx.font='15px system-ui';hudCtx.fillStyle='#ccd8cc';
-            if (hudPage===1) {
-                const n=xr?4:11,iy=xr?120:270,lines=LOG.slice(MAX(0,LOG.length-n-logScroll),LOG.length-logScroll);
-                lines.forEach((s,i)=>hudCtx.fillText(s.slice(0,xr?62:48),20,48+i*(xr?18:19)));
-                hudCtx.fillStyle='#27332b';hudCtx.fillRect(20,iy,390,28);
-                hudCtx.fillStyle='#fff';hudCtx.fillText('> '+chatText.slice(-58)+(performance.now()%1e3<500?'_':''),28,iy+20);
-            } else if (hudPage===2) {
-                hudCtx.fillStyle='#899';hudCtx.font='16px system-ui';hudCtx.fillText('INVENTORY PLACEHOLDER',20,82);
-                hudCtx.font='14px monospace';hudCtx.fillText('Items and equipment will appear here.',20,112);
+            // Main panel and accent bar.
+            hudCtx.fillStyle = '#111914dd';
+            hudCtx.fillRect(6, 6, 628, 308);
+            hudCtx.fillStyle = '#9f9';
+            hudCtx.fillRect(6, 6, 5, 308);
+
+            // Page title.
+            hudCtx.textAlign = 'left';
+            hudCtx.textBaseline = 'alphabetic';
+            hudCtx.font = '20px system-ui';
+            hudCtx.fillText(
+                hudPage === 1 ? 'CHAT' :
+                hudPage === 2 ? 'INVENTORY' :
+                hudPage === 3 ? 'SETTINGS' :
+                'WILD CATCH',
+                20,
+                34
+            );
+
+            hudCtx.font = '16px system-ui';
+            hudCtx.fillStyle = '#eef';
+
+            if (hudPage === 1) {
+                // Chat history and text entry field.
+                const n = xr ? 4 : 11;
+                const iy = xr ? 120 : 270;
+                const lines = LOG.slice(
+                    MAX(0, LOG.length - n - logScroll),
+                    LOG.length - logScroll
+                );
+
+                lines.forEach((s, i) =>
+                    hudCtx.fillText(
+                        s.slice(0, xr ? 62 : 48),
+                        20,
+                        48 + i * (xr ? 18 : 19)
+                    )
+                );
+
+                hudCtx.fillStyle = '#27332b';
+                hudCtx.fillRect(20, iy, 390, 28);
+                hudCtx.fillStyle = '#eef';
+                hudCtx.fillText(
+                    '> ' + chatText.slice(-58) +
+                        (performance.now() % 1e3 < 500 ? '_' : ''),
+                    28,
+                    iy + 20
+                );
+            } else if (hudPage === 2) {
+                // Inventory placeholder.
+                hudCtx.fillStyle = '#899';
+                hudCtx.font = '16px system-ui';
+                hudCtx.fillText('INVENTORY', 20, 82);
+                hudCtx.font = '14px monospace';
+                hudCtx.fillText('Items and equipment', 20, 112);
             } else if (!hudPage) {
-                let peerCount=0,now=performance.now();peers.forEach(p=>now-(p.last||0)<15000&&peerCount++);
-                hudCtx.fillText(`CATS ${cat.caught}/13   BOOSTS ${speedBoosts.length}   ${timer}m`,20,64);
-                hudCtx.fillStyle=mmoEnabled?'#9f9':'#899';hudCtx.fillText(`MMO ${mmoEnabled?'ON':'OFF'}   PLAYERS ${peerCount}`,20,88);
-                hudCtx.fillStyle='#aeb8ae';hudCtx.font='14px monospace';
-                const lines=LOG.slice(MAX(0,LOG.length-9-logScroll),LOG.length-logScroll);
-                lines.forEach((s,i)=>hudCtx.fillText(s.slice(0,48),20,126+i*19));
+                // Main status page.
+                let peerCount = 0,
+                    now = performance.now();
+                peers.forEach(p =>
+                    now - (p.last || 0) < 15000 && peerCount++
+                );
+
+                hudCtx.fillText(
+                    `CATS ${cat.caught}/13   BOOSTS ${speedBoosts.length}   ${timer}m`,20,64
+                );
+                hudCtx.fillStyle = mmoEnabled ? '#9f9' : '#899';
+                hudCtx.fillText(
+                    `MMO ${mmoEnabled ? 'ON' : 'OFF'}   PLAYERS ${peerCount}`,20,88
+                );
+                hudCtx.fillStyle = '#899';
+                hudCtx.font = '14px monospace';
+
+                const lines = LOG.slice(
+                    MAX(0, LOG.length - 9 - logScroll),
+                    LOG.length - logScroll
+                );
+                lines.forEach((s, i) =>
+                    hudCtx.fillText(s.slice(0, 48), 20, 126 + i * 19)
+                );
             }
+
+            // Draw every button belonging to the active page.
             for (const b of ui) {
-                const x=b[0]*640,y=b[1]*320,w=(b[2]-b[0])*640,h=(b[3]-b[1])*320,a=b[5];
-                hudCtx.fillStyle=hoverBtn===b?'#586b58':'#27332b';hudCtx.fillRect(x,y,w,h);
-                hudCtx.fillStyle='#eef';hudCtx.font=((hudPage===1&&xr)||(b[2]-b[0]<.2)?'13':'16')+'px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';
-                hudCtx.fillText(a===1?uiEnterLabel:a===2?'MMO '+(mmoEnabled?'ON':'OFF'):a===14?'INVERT X '+(invertX?'ON':'OFF'):a===15?'INVERT Y '+(invertY?'ON':'OFF'):a===16?'CLOSED CHAT '+(closedChat?'ON':'OFF'):b[4],x+w/2,y+h/2);
+                const x = b[0] * 640;
+                const y = b[1] * 320;
+                const w = (b[2] - b[0]) * 640;
+                const h = (b[3] - b[1]) * 320;
+                const a = b[5];
+
+                hudCtx.fillStyle = hoverBtn === b ? '#586b58' : '#27332b';
+                hudCtx.fillRect(x, y, w, h);
+                hudCtx.fillStyle = '#eef';
+                hudCtx.font = (
+                    (hudPage === 1 && xr) || b[2] - b[0] < .2 ? '13' : '16'
+                ) + 'px system-ui';
+                hudCtx.textAlign = 'center';
+                hudCtx.textBaseline = 'middle';
+                hudCtx.fillText(
+                    a === 1 ? uiEnterLabel :
+                    a === 2 ? 'MMO ' + (mmoEnabled ? 'ON' : 'OFF') :
+                    a === 14 ? 'INVERT X ' + (invertX ? 'ON' : 'OFF') :
+                    a === 15 ? 'INVERT Y ' + (invertY ? 'ON' : 'OFF') :
+                    a === 16 ? 'CLOSED CHAT ' + (closedChat ? 'ON' : 'OFF') :
+                    b[4],
+                    x + w / 2,
+                    y + h / 2
+                );
             }
         }
+
+        // Temporary overlay shown after catching a cat.
         if (congratsTimer > 0) {
-            const x=330,y=128;
-            hudCtx.globalAlpha=congratsTimer>.5?1:congratsTimer/.5;
-            hudCtx.fillStyle='#101814dd';hudCtx.fillRect(110,82,440,132);
-            hudCtx.fillStyle='#dfe8b0';hudCtx.textAlign='center';hudCtx.textBaseline='middle';hudCtx.font='bold 36px system-ui';
-            hudCtx.fillText(`CAT #${cat.caught} CAUGHT`,x,y);
-            hudCtx.font='20px system-ui';
-            hudCtx.fillText(cat.caught<13?`${13-cat.caught} CATS TO CATCH`:'VICTORY! THE END?',x,y+52);
-            hudCtx.globalAlpha=1;
+            const x = 330;
+            const y = 128;
+            hudCtx.globalAlpha = congratsTimer > .5 ? 1 : congratsTimer / .5;
+            hudCtx.fillStyle = '#111914dd';
+            hudCtx.fillRect(110, 82, 440, 132);
+            hudCtx.fillStyle = '#eef';
+            hudCtx.textAlign = 'center';
+            hudCtx.textBaseline = 'middle';
+            hudCtx.font = 'bold 36px system-ui';
+            hudCtx.fillText(`CAT #${cat.caught} CAUGHT`, x, y);
+            hudCtx.font = '20px system-ui';
+            hudCtx.fillText(
+                cat.caught < 13 ?
+                    `${13 - cat.caught} CATS TO CATCH` :
+                    'VICTORY! THE END?',x,y + 52);
+            hudCtx.globalAlpha = 1;
         }
         
         // Upload the canvas content to the WebGL texture
@@ -1082,7 +1192,7 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
     // Simple textured quad shader for the HUD (unified MVP)
-    const vsMVP = `layout(location=0)in vec3 p;layout(location=1)in vec2 uv;uniform mat4 M,V,P;out vec2 f;out vec3 W;void main(){vec4 wpos=M*vec4(p,1.);W=wpos.xyz;f=uv;gl_Position=P*V*wpos;}`;
+    const vsMVP = `layout(location=0)in vec3 p;layout(location=1)in vec2 uv;uniform mat4 M,V,P;out vec2 f;void main(){f=uv;gl_Position=P*V*M*vec4(p,1.);}`;
     const fsH = `in vec2 f;uniform sampler2D T;out vec4 o;void main(){o=texture(T,f);}`;
     const PH = prog(vsMVP, fsH);
     // Shared solid-color fragment program (reused by spheres and beam)
@@ -1090,8 +1200,7 @@
     const PC = prog(vsMVP, fsColor);
     const uMH = gl.getUniformLocation(PH, 'M'),
           uVH = gl.getUniformLocation(PH, 'V'),
-          uPH = gl.getUniformLocation(PH, 'P'),
-          uT = gl.getUniformLocation(PH, 'T');
+          uPH = gl.getUniformLocation(PH, 'P');
 
     const vboH = gl.createBuffer(), vaoH = gl.createVertexArray();
     gl.bindVertexArray(vaoH);
@@ -1671,7 +1780,7 @@
         drawHUDCanvas(dt);
     }
     function drawHud(M,V,P) {
-        gl.useProgram(PH);gl.bindVertexArray(vaoH);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,hudTex);gl.uniform1i(uT,0);
+        gl.useProgram(PH);gl.bindVertexArray(vaoH);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,hudTex);
         gl.uniformMatrix4fv(uMH,false,M);gl.uniformMatrix4fv(uVH,false,V);gl.uniformMatrix4fv(uPH,false,P);
         gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.drawArrays(gl.TRIANGLES,0,6);gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
     }

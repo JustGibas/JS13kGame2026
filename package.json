@@ -1,0 +1,19 @@
+{
+  "name": "13kgame",
+  "version": "1.0.0",
+  "main": "minify.cjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "node minify.cjs",
+    "compress": "node minify.cjs --no-report && node compress.cjs",
+    "compress:compare": "node minify.cjs --no-report && node compress.cjs --benchmark"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "html-minifier-terser": "^7.2.0",
+    "terser": "^5.50.0"
+  }
+}

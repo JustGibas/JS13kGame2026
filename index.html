@@ -578,12 +578,10 @@
     const traps = [];                  // spheres spawnned by cat {x,y,z,r}
     // Player capsule constants (smaller than an object w/ props)
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
-    let playerMoveMag = 0;             // cached player movement magnitude (for chase detection)
 
     // -- MODULE: Gameplay-Cat --
     // Stylized Black Cat the player must catch. Roams near center, avoids player, drops boosts & obstacles.
     const cat = { x:0, y:.6, z:0, vx:0, vz:0, caught:0, drop:1.2, baseS:2, anim:0, evade:0, yaw:0 };
-    let chaseActive = false; // true when player is close and moving
 
     function resetCatPosition(){
         const a = RANDOM()*PI*2, r = RANDOM()*40; // within preferred radius
@@ -595,7 +593,6 @@
     function spawnDrop(x,z){
         const boost = RANDOM()<.4;
         (boost?items:traps).push(boost?{x,y:.5,z,r:.4}:{x,y:.6,z,r:.6});
-        if(audioCtx){ bell(audioCtx.currentTime, boost?870:660, window.chipMusic, boost?.1:.2); }
         if(items.length>100) items.splice(0, items.length-100);
         if(traps.length>3) traps.splice(0, traps.length-3);
     }
@@ -707,7 +704,7 @@
         cat.vx *= (1 - 1.1*dt); cat.vz *= (1 - 1.1*dt);
 
         // Chase / drops
-        const chased = dP2 < 120 ;/*&& playerMoveMag>.15;*/ chaseActive = chased;
+        const chased = dP2 < 120;
         if(chased){ cat.drop -= dt; if(cat.drop<=0){ spawnDrop(cat.x, cat.z); cat.drop = 1.9 + RANDOM()*.8; } }
 
         // Anim & catch
@@ -716,7 +713,6 @@
             //cat.caught++; log('Cat caught #'+cat.caught +' at '+Date.now() );
             //log(`Cat caught #${++cat.caught} @ ${new Date().toISOString().slice(11,23)}`);
             log(`Cat caught #${++cat.caught} @ ${new Date().toISOString().replace('T',' ').slice(0,23)}`);
-            if(audioCtx){ bell(audioCtx.currentTime,800,window.chipMusic,.5); bell(audioCtx.currentTime+.1,1000,window.chipMusic,.3); bell(audioCtx.currentTime+.2,1200,window.chipMusic,.4); }
             if(speedBoosts.length<10) speedBoosts.push({timeLeft:15, amount:.3});
             resetCatPosition();
         }
@@ -748,7 +744,6 @@
             if (HYPOT(dx,dy,dz) < itm.r + .5){
                 itm.r = 0; // mark consumed
                 if (speedBoosts.length < 10) speedBoosts.push({ timeLeft: 15, amount: .3 });
-                if(audioCtx) bell(audioCtx.currentTime, 880 * POW(2, ((RANDOM()*6)|0)/6), window.chipMusic, .2);
             }
         }
     }
@@ -824,10 +819,9 @@
         const speed = 3/*MOVES*/ * (currentSpeedMult());
         // Apply movement
         const now = performance.now();
-        const moveMagnitude = HYPOT(mv.x, mv.y); playerMoveMag = moveMagnitude;
-        // Trigger movement music activation (only sets flag / lazy init)
+        const moveMagnitude = HYPOT(mv.x, mv.y);
         if(moveMagnitude > .1 && now - lastStepTime > 500/*stepInterval*/){
-            playStepSound(); // now activates loop system
+            playStepSound();
             lastStepTime = now;
         }
     u.yaw += mv.t * 2/*TURNS*/ * dt; // Apply turning
@@ -860,139 +854,23 @@
     
     // -- FEATURE: Scene --
     // -- MODULE: Scene-Audio --
-    // todo: implement stereo sources to get spatial audio (directional wind sound)
     let audioCtx = null;
     let lastStepTime = 0;
-    //const stepInterval = 500; // ms between walking sounds
-    // Global toggle for step/adaptive music sounds
-    let music = true;
-    
-    function initAudio(){
-      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (!window.windPlaying) { window.windPlaying = true; playWindSound(); }
+    let stepFoot = 0;
 
+    function initAudio(){
+        if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
-    // -- SOLUTION: Scene-Audio-Wind --
-    // Spatial wind (stereo ILD/ITD) with brown noise source
-    function playWindSound(){
+    function playSound(f, d, volume){
         if(!audioCtx) return;
-        const N=audioCtx.sampleRate*3,b=audioCtx.createBuffer(1,N,audioCtx.sampleRate),d=b.getChannelData(0);
-        let l=0;for(let i=0;i<N;i++){const w=RANDOM()*2-1;d[i]=l=(l+.01*w)/1.03;}
-        const s=audioCtx.createBufferSource();s.buffer=b;s.loop=true;
-        const f=audioCtx.createBiquadFilter();f.type='lowpass';f.frequency.value=200;f.Q.value=1.1;
-        const lD=audioCtx.createDelay(.01), rD=audioCtx.createDelay(.01);
-        const lG=audioCtx.createGain(), rG=audioCtx.createGain();
-        const mix=audioCtx.createChannelMerger(2), m=audioCtx.createGain();
-        s.connect(f);f.connect(lD);f.connect(rD);lD.connect(lG);rD.connect(rG);lG.connect(mix,0,0);rG.connect(mix,0,1);mix.connect(m);m.connect(audioCtx.destination);
-        const t=audioCtx.currentTime;m.gain.setValueAtTime(0,t);m.gain.linearRampToValueAtTime(.2,t+4);s.start();
-        audioCtx.windSource=s;audioCtx.windFilter=f;audioCtx.windMaster=m;audioCtx.windLeftGain=lG;audioCtx.windRightGain=rG;audioCtx.windLeftDelay=lD;audioCtx.windRightDelay=rD;
+        const t=audioCtx.currentTime,o=audioCtx.createOscillator(),g=audioCtx.createGain();
+        o.frequency.value=f;
+        g.gain.setValueAtTime(volume,t);
+        g.gain.exponentialRampToValueAtTime(.001,t+d);
+        o.connect(g);g.connect(audioCtx.destination);o.start(t);o.stop(t+d);
     }
-    // gust & sway like grass shader
-    function computeGustAt(x,z,t){const g=.6*SIN(x*.07+z*.05+t*.7)+.4*SIN(x*-.03+z*.04-t*1.2);return{gust:g,sway:.25*g+.07*SIN(t*1.7)};}
-    // derive local flow dir from gradient
-    function computeWindVector(x,z,t){const e=.5;const gX1=computeGustAt(x+e,z,t).gust,gX0=computeGustAt(x-e,z,t).gust,gZ1=computeGustAt(x,z+e,t).gust,gZ0=computeGustAt(x,z-e,t).gust;let gx=(gX1-gX0)/(2*e),gz=(gZ1-gZ0)/(2*e);let vx=-gz,vz=gx;const L=HYPOT(vx,vz)||1;vx/=L;vz/=L;const rot=.2*SIN(t*.05),cr=COS(rot),sr=SIN(rot);return{x:vx*cr-vz*sr,z:vx*sr+vz*cr,speed:L};}
-    function updateWind(timeSec,camX,camZ,yaw){
-        const ac=audioCtx;if(!ac||!ac.windMaster)return;const now=ac.currentTime;const s=computeGustAt(camX,camZ,timeSec);const w=computeWindVector(camX,camZ,timeSec);
-        // loudness/brightness
-        let g=.04+.3*s.sway;g=MAX(.01,MIN(1,g));ac.windMaster.gain.setTargetAtTime(g,now,.2);
-        const freq=200+((s.sway+.32)/.64)*1200;ac.windFilter.frequency.setTargetAtTime(freq,now,.2);
-        // stereo cues from relative angle
-        const a=ATAN2(SIN(ATAN2(w.x,w.z)-yaw),COS(ATAN2(w.x,w.z)-yaw));const pan=SIN(a);
-        const ild=.2;ac.windLeftGain.gain.setTargetAtTime(1-ild*pan,now,.15);ac.windRightGain.gain.setTargetAtTime(1+ild*pan,now,.1);
-        const itd=.0007*pan;ac.windLeftDelay.delayTime.setTargetAtTime(itd>0?itd:0,now,.05);ac.windRightDelay.delayTime.setTargetAtTime(itd<0?-itd:0,now,.05);
-    }
-    // -- /SOLUTION: Scene-Audio-Wind --
-    // -- SOLUTION: Scene-Audio-Click --
-    function playClickSound(){
-        if(!audioCtx) return;
-        const t = audioCtx.currentTime;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(300, t);
-        gain.gain.setValueAtTime(.3, t);
-        gain.gain.exponentialRampToValueAtTime(.0001, t + .1);
-        osc.start(t);
-        osc.stop(t + .1);    
-    }
-    // -- /SOLUTION: Scene-Audio-Click --
-    // -- SOLUTION: Scene-Audio-Step --
-    function playStepSound(){
-        if(!audioCtx) return; if(!window.chipMusic){
-            const g=audioCtx.createGain();g.gain.value=0;g.connect(audioCtx.destination);
-            // Patterns compressed as strings (k=kick,s=snare). Bells sequence digits / letters -> index, '_' = rest
-            window.chipMusic={g,eng:0,last:audioCtx.currentTime,b0:90,b1:190,bd:60/140,next:audioCtx.currentTime+.05,st:0,
-                k:"1.....1.1.1...1.",s:"....1.......1...", // spaces ignored
-                //bl:"0_23_45_6_765_43210_35_642_10_7_".replace(/\s/g,''),
-                //sc:[0,2,3,5,7,8,11,12]};
-                //bl:"0_1_2_3_2_1_0_1_3_2_1_0_2_3_4_3_2_1_0_1_2_3_2_1_0_3_2_1_0_2_3_4_".replace(/\s/g,''),
-                //sc:[0,2,4,5,7,9,11,12]};
-                //bl:"0_23_45_6_765_43210_35_642_10_7_".replace(/\s/g,''),
-                //sc:[0,2,3,5,7,8,11,12]};
-                //bl:"0_1_2_1_0_3_2_1_0_4_2_1_0_5_2_1_".replace(/\s/g,''),
-                //sc:[0,-1,2,3,5,7]};
-                bl:"0_1_2_1_0___3_2_1_0___2_3_4_3_2_1_0___1_2_3_2_1_0___4_3_2___3_4_5_4_3___2_1_0___".replace(/\s/g,''),
-                sc:[0,2,4,5,7,9]};
-        }
-    }
-    function updateAdaptiveMusic(mv,dt){
-        if(!audioCtx||!window.chipMusic)return;const m=window.chipMusic,now=audioCtx.currentTime;
-        // base engagement rise only if moving AND either chasing or has boosts
-        const boostLevel = speedBoosts.length; // 0..10 typical
-        const boostFactor = MIN(1, boostLevel*.08); // up to +0.8 contribution
-        const active = mv>.1 && (chaseActive || boostLevel>0);
-        if(active){
-            // faster build if actually chasing; slower if only boosts
-            const build = (chaseActive?.08:.04) + .03*boostFactor;
-            m.eng=MIN(1,m.eng+build*dt);m.last=now;
-        } else if(now-m.last> (chaseActive?.6:.9)) {
-            // decay slower when recently chasing
-            const decay = chaseActive?.15:.10;
-            m.eng=MAX(0,m.eng-decay*dt);
-        }
-        // tempo scaled also by boosts (slight) but clamp if not chasing (cap energy effect)
-        const effEng = chaseActive?m.eng: m.eng*.6; // limit build when passive
-        const tempoBoost = 1 + boostFactor*.25; // up to +25% at max boosts
-        const tempo = (m.b0+(m.b1-m.b0)*POW(effEng,.7))*tempoBoost;
-        m.bd=60/tempo;
-        const baseGain = effEng?.05+.18*effEng:0;
-        // small additive layer from boosts while chasing
-        const tg = baseGain + (chaseActive?boostFactor*.05:0);
-        m.g.gain.setTargetAtTime(tg,now,.25);
-        while(music && now>=m.next){emitBeat(m);m.next+=m.bd/2;}
-        if(m.eng===0&&now-m.last>5)m.g.gain.setTargetAtTime(.0001,now,1);
-    }
-    function emitBeat(m){const t=audioCtx.currentTime; m.st++;const i=m.st%16; // drums
-        if(m.eng>.2 && m.k[i]==='1') kick(t,m);
-        if(m.eng>.35&& m.s[i]==='1') snare(t,m);
-        const b=m.bl[m.st % m.bl.length]; if(b!=='_'&&m.eng>.3){ const sem=m.sc[+b]||0; bell(t,980*POW(2,sem/12),m); }
-    }
-    function kick(t,m){if(!window.chipMusic)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sine';o.frequency.setValueAtTime(120,t);o.frequency.exponentialRampToValueAtTime(50,t+.18);g.gain.setValueAtTime(.001,t);g.gain.exponentialRampToValueAtTime(.2*(.4+.4*m.eng),t+.01);g.gain.exponentialRampToValueAtTime(.0001,t+.22);o.connect(g);g.connect(m.g);o.start(t);o.stop(t+.24);}    
-    function snare(t,m){if(!window.chipMusic)return;const n=audioCtx.createBufferSource(),B=audioCtx.createBuffer(1,audioCtx.sampleRate*.18,audioCtx.sampleRate),d=B.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(RANDOM()*2-1)*POW(1-i/d.length,1.8);n.buffer=B;const bp=audioCtx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=1800;const g=audioCtx.createGain();g.gain.setValueAtTime(.001,t);g.gain.exponentialRampToValueAtTime(.35*(.4+.6*m.eng),t+.008);g.gain.exponentialRampToValueAtTime(.0001,t+.18);n.connect(bp);bp.connect(g);g.connect(m.g);n.start(t);n.stop(t+.18);}    
-    function bell(t,f,m,vol){if(!window.chipMusic)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='triangle';o.frequency.value=f;g.gain.setValueAtTime(.001,t);const pk=(vol||.18)*(.5+.2*m.eng);g.gain.exponentialRampToValueAtTime(pk,t+.02);g.gain.exponentialRampToValueAtTime(.0002,t+.55);o.connect(g);g.connect(m.g);o.start(t);o.stop(t+.6);}
-    //function spawnCatVoice(t, f, m){
-    //    // Simple formant-ish meow made from two detuned oscillators fading quickly
-    //    const carrier = audioCtx.createOscillator();
-    //    const formant = audioCtx.createOscillator();
-    //    const g = audioCtx.createGain();
-    //    carrier.type='square'; formant.type='sine';
-    //    carrier.frequency.setValueAtTime(f, t);
-    //    formant.frequency.setValueAtTime(f*2.01, t);
-    //    // mild vibrato
-    //    const lfo = audioCtx.createOscillator();
-    //    const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 6; // semitone-ish wobble
-    //    lfo.frequency.value = 5;
-    //    lfo.connect(lfoGain); lfoGain.connect(carrier.frequency);
-    //    g.gain.setValueAtTime(0.001,t);
-    //    g.gain.exponentialRampToValueAtTime(0.1*(0.2+0.4*m.energy), t+0.05);
-    //    g.gain.exponentialRampToValueAtTime(0.0003, t+0.55);
-    //    carrier.connect(g); formant.connect(g); g.connect(m.g);
-    //    carrier.start(t); formant.start(t); lfo.start(t);
-    //    carrier.stop(t+0.6); formant.stop(t+0.6); lfo.stop(t+0.6);
-    //}
-    // -- /SOLUTION: Scene-Audio-Step --
+    function playClickSound(){playSound(300,.06,.2);}
+    function playStepSound(){playSound((stepFoot^=1)?80:65,.1,.12);}
     // -- /MODULE: Scene-Audio --
 
     // -- MODULE: Scene-HUD --
@@ -1018,7 +896,6 @@
     { id: 'reset', u0: .4, v0: .05, u1: .7, v1: .15, label: 'Reset', onClick: () => { playClickSound(); u.x = 0; u.z = 2; u.yaw = 0; u.pitch = .2; resetCatPosition(); /*log('reset position');*/ } },
         { id: 'vr', u0: .4, v0: .2, u1: .7, v1: .3, label: () => uiEnterLabel, onClick: () => { playClickSound(); toggleXRFromUI(); } },
         { id: 'mmo', u0: .4, v0: .35, u1: .7, v1: .45, label: () => 'MMO: ' + (mmoEnabled ? 'ON' : 'OFF'), onClick: () => { playClickSound(); toggleMMO(); } },
-        { id: 'music', u0: .8, v0: .35, u1: .98, v1: .45, label: () => 'Music: ' + (music ? 'ON' : 'OFF'), onClick: () => { playClickSound(); music = !music; log('music ' + (music ? 'on' : 'off')); } },
         //{ id: 'logtog', u0: 0.85, v0: 0.5, u1: 0.98, v1: 0.6 , label: 'LOG', onClick: () => { playClickSound(); logVisible = !logVisible; } },
         { id: 'logdn', u0: .85, v0: .8, u1: .98, v1: .9, label: 'Down', onClick: () => { playClickSound(); logScroll = MAX(0, logScroll - 1); } },
         { id: 'logup', u0: .85, v0: .7, u1: .98, v1: .8, label: 'Up', onClick: () => { playClickSound(); logScroll = MIN(MAX(0, LOG.length - 1), logScroll + 1); } },
@@ -1299,15 +1176,9 @@
     gl.FLOAT, false, 20, 12);
 
     // -- /MODULE: Scene-HUD --
-    // -- MODULE: Scene-Sky --
-    // --- Sky Shader ---
+    // -- MODULE: Scene-Noise --
+    // Shared procedural noise texture used by the grass shader.
     let noiseTex = gl.createTexture();
-    //let cloudCoverage = 0.25;      // threshold knob -> more/less cloud
-    //let cloudSharpness = 0.52;     // edge softness knob
-    //let shadowSamples = 3;        // cheap self-shadow sampling count
-    //let cloudHeight = 100.0;      // height (world units) of the cloud layer (controls horizon)
-    //let cloudScale = 0.0001;      // global mapping scale from world XZ -> cloud texture space (MAIN SIZE LEVER)
-    //let cloudMotionSpeed = 0.02;   // global motion speed scalar
 
     function makeTileableNoise(size) {
 
@@ -1363,7 +1234,10 @@
     }
     // Try: makeTileableNoise(256) or (512) for crisper small-scale details (optional)
     makeTileableNoise(128);
+    // -- /MODULE: Scene-Noise --
 
+    // -- MODULE: Scene-Sky --
+    /* Disabled: the framebuffer clear supplies the solid black background.
     // A procedural skybox rendered using a single full-screen triangle
     const vsSky=`const vec2 v[3]=vec2[3](vec2(-1,-1),vec2(3,-1),vec2(-1,3));out vec2 a;void main(){a=v[gl_VertexID]*.5+.5;gl_Position=vec4(v[gl_VertexID],0,1);}`;
 
@@ -1385,8 +1259,7 @@
     //const uCloudHeightLoc = gl.getUniformLocation(PSKY, 'uCloudHeight');
     //const uCloudScaleLoc = gl.getUniformLocation(PSKY, 'uCloudScale');
     //const uCloudMotionSpeedLoc = gl.getUniformLocation(PSKY, 'uCloudMotionSpeed');
-
-    
+    */
     // -- /MODULE: Scene-Sky --
     // -- MODULE: Scene-Ground --
     // --- Grid Shader ---
@@ -1663,21 +1536,15 @@
             lastCaughtShown = cat.caught;
             congratsTimer = 5.5;
         }
-        //const moveMag = HYPOT(mv.x, mv.y);
-        //updateAdaptiveMusic(moveMag, dt);
-        updateAdaptiveMusic(HYPOT(mv.x, mv.y), dt);
-        
         // Update camera matrices
         buildViewProj();
-        // Update wind stereo each frame (after camera matrix updated)
-        if(audioCtx) updateWind(t/1000, u.x, u.z, u.yaw);
         // --- Rendering ---
         gl.viewport(0, 0, C.width, C.height);
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
         // Render Sky
-        /*
+        /* Disabled: keep the cleared framebuffer black.
         gl.useProgram(PSKY);
         gl.bindVertexArray(vaoSky);
         gl.disable(gl.DEPTH_TEST);
@@ -1965,10 +1832,6 @@
             
 
             xr.addEventListener('end', () => {
-                // Cleanup audio when the session ends
-                audioCtx.close();
-                //audioCtx = null;
-                initAudio(); // Recreate audio context for desktop
                 // If the canvas holds pointer lock, release it when exiting VR
                 document.exitPointerLock();
                 //cancelAnimationFrame(onXR); // Stop XR loop
@@ -2002,9 +1865,6 @@
         
         const pose = frame.getViewerPose(ref);
         if (!pose) return;
-        
-        // NEW: update wind stereo each frame (after camera matrix updated)
-        if(audioCtx) updateWind(t/1000, u.x, u.z, u.yaw);
         
         // Ensure rocks near the player are generated and present in obstacles for collision resolution
         // render only ever tenth frame to save CPU
@@ -2055,10 +1915,6 @@
             lastCaughtShown = cat.caught;
             congratsTimer = 5.5;
         }
-        //const moveMag = HYPOT(mv.x, mv.y);
-        //updateAdaptiveMusic(moveMag, dt);
-        updateAdaptiveMusic(HYPOT(mv.x, mv.y), dt);
-        
         // Create an offset reference space to account for user-controlled movement
         const half = -u.yaw * .5;
         const rot = new XRRigidTransform({x:0,y:0,z:0}, { x:0,y:SIN(half), z:0, w:COS(half) });
@@ -2113,12 +1969,12 @@
 
             // Per-eye matrices
             const Veye = v.transform.inverse.matrix;
+            /* Sky-only inverse matrices and render pass disabled.
             const VinvEye = INV(Veye);
             const PVeye = MULTMAT4(M4(), v.projectionMatrix, Veye);
             const invPVEye = INV(PVeye);
 
             // Render Sky
-            /*
             gl.useProgram(PSKY);
             gl.bindVertexArray(vaoSky);
             gl.disable(gl.DEPTH_TEST);

@@ -45,6 +45,8 @@
     #L { bottom: 36px; left: 36px; }
     #R { bottom: 36px; right: 36px; }
 
+    #chatInput { position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0 }
+
         /* Media query to show joysticks only on touch-capable (coarse pointer) devices */
         @media (pointer:coarse) {
             .j { display: block; }
@@ -59,6 +61,8 @@
     <!-- HTML elements for the virtual joysticks -->
     <div id="L" class="j"><div class="jh"></div></div>
     <div id="R" class="j"><div class="jh"></div></div>
+    <!-- <input id="chatInput" maxlength="64" /> -->
+    <input id="chatInput" maxlength="64" autocomplete="off" />
 
     <script>
     // -- FEATURE: Core --
@@ -110,6 +114,7 @@
     // const D = document
     // const C = D.getElementById('canvas');
     const C = document.getElementById('C');
+    const chatInput = document.getElementById('chatInput');
     
     // State variables for the user/camera, rendering loop, and WebGL/WebXR contexts
      let u = { x: 0, y: 1.6, z: 2, yaw: 0, pitch: .2 }; // User position and orientation
@@ -235,6 +240,10 @@
                 }
             }
         }
+        if (payload[0] === 'c' && payload[1] === '|'){
+            const p = payload.split('|'), id = p[1];
+            if (id !== myId) say((id || '?').slice(-4) + ': ' + p.slice(2).join('|').slice(0,64));
+        }
     }
 
     function mmoTick(dt){
@@ -327,8 +336,13 @@
     // -- MODULE: Input-KeyPoint --
     // Keyboard event listeners for movement and HUD toggle
     document.addEventListener('keydown', e => {
+        if (e.target === chatInput) return;
         const k = e.code;
         I.keys[k] = true;
+        if (!e.repeat && k === 'Enter') { e.preventDefault(); setChat(true); return; }
+        if (!e.repeat && k === 'KeyF') { hudVisible=true;hudPage=2;return; }
+        if (!e.repeat && k === 'KeyC') { setChat(true);return; }
+        if (!e.repeat && k === 'KeyZ') { hudVisible=true;hudPage=3;return; }
         if (!e.repeat && (k === 'KeyH'||k === 'Escape'||k === 'KeyX')) {playClickSound(); hudVisible = !hudVisible;} // 'H' and escape key toggles HUD visibility
         //if (k === 'KeyF') {playClickSound(); beastMode = !beastMode;} // 'F' key toggles beastMode
     });
@@ -361,8 +375,8 @@
             const dy = e.clientY - I.look.y;
             I.look.x = e.clientX;
             I.look.y = e.clientY;
-            u.yaw += dx * .002;
-            u.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,u.pitch-dy *.002));
+            u.yaw += dx * .002 * (invertX ? -1 : 1);
+            u.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,u.pitch+dy*.002*(invertY ? 1 : -1)));
         }
     });
     
@@ -476,14 +490,13 @@
     }
     // Handles a click/tap interaction in desktop mode
     function interactDesktopAt(px, py) {
-        const ui = currentUI();
         const r = rayFromScreen(px, py);
         if (!r) return;
         const WH = HUD_WH_world;
-        const h = HUD_pick(WH, r, ui);
+        const h = HUD_pick(WH, r);
 
         if (h && h.button) {
-            h.button.onClick(); // A button was clicked
+            activate(h.button[5]); // A button was clicked
             return;
         }
 
@@ -713,7 +726,7 @@
         if(dP2 < 1/*(.5+CR)*(.5+CR)*/){
             //cat.caught++; log('Cat caught #'+cat.caught +' at '+Date.now() );
             //log(`Cat caught #${++cat.caught} @ ${new Date().toISOString().slice(11,23)}`);
-            log(`Cat caught #${++cat.caught} @ ${new Date().toISOString().replace('T',' ').slice(0,23)}`);
+            log(`Cat caught #${++cat.caught}`);
             if(speedBoosts.length<10) speedBoosts.push({timeLeft:15, amount:.3});
             resetCatPosition();
         }
@@ -875,52 +888,95 @@
     // -- /MODULE: Scene-Audio --
 
     // -- MODULE: Scene-HUD --
-    // --- Log and HUD UI State ---
-    const LOG = [];
-    //const LOG_MAX = 200;
-    let logScroll = 0;
-    //let logVisible = true;
-    let hudVisible = true;
-    let congratsTimer = 0;
-    let lastCaughtShown = 0;
+    // -- PART: State-Layout --
+    const LOG = [], CHAT = [];
+    let logScroll = 0, hudVisible = true, congratsTimer = 0, lastCaughtShown = 0, hudPage = 0, chatText = '', invertX = false, invertY = false, closedChat = true;
+    let HUD_WH_world = M4(), hoverBtn = null;
 
-    // State for HUD interaction.
-    let HUD_WH_world = M4(); // World matrix of the HUD quad
-    let hoverBtn = null; // The button currently being hovered over
+    function log(s) { LOG.push(s); LOG.length > 200 && LOG.shift(); logScroll = 0; }
+    function say(s) { log(s); CHAT.push(s); CHAT.length > 4 && CHAT.shift(); }
 
-    function log(s) { LOG.push(s); if (LOG.length > 200) LOG.shift(); }
-    //function logClear() { LOG.length = 0; log('log cleared'); }
-
-    // UI button definitions. Each object defines a button's ID, position (in UV space), label, and click handler
-    let uiEnterLabel = 'Enter VR';
+    let uiEnterLabel = 'ENTER VR';
+    // u0,v0,u1,v1,label,action
     const UI_MAIN = [
-    { id: 'reset', u0: .4, v0: .05, u1: .7, v1: .15, label: 'Reset', onClick: () => { playClickSound(); u.x = 0; u.z = 2; u.yaw = 0; u.pitch = .2; resetCatPosition(); /*log('reset position');*/ } },
-        { id: 'vr', u0: .4, v0: .2, u1: .7, v1: .3, label: () => uiEnterLabel, onClick: () => { playClickSound(); toggleXRFromUI(); } },
-        { id: 'mmo', u0: .4, v0: .35, u1: .7, v1: .45, label: () => 'MMO: ' + (mmoEnabled ? 'ON' : 'OFF'), onClick: () => { playClickSound(); toggleMMO(); } },
-        //{ id: 'logtog', u0: 0.85, v0: 0.5, u1: 0.98, v1: 0.6 , label: 'LOG', onClick: () => { playClickSound(); logVisible = !logVisible; } },
-        { id: 'logdn', u0: .85, v0: .8, u1: .98, v1: .9, label: 'Down', onClick: () => { playClickSound(); logScroll = MAX(0, logScroll - 1); } },
-        { id: 'logup', u0: .85, v0: .7, u1: .98, v1: .8, label: 'Up', onClick: () => { playClickSound(); logScroll = MIN(MAX(0, LOG.length - 1), logScroll + 1); } },
-        { id: 'hudx', u0: .8, v0: .04, u1: .98, v1: .2, label: 'Close       X', onClick: () => { playClickSound(); hudVisible = false; } }
-    ];
-    const UI_TAB = [
-        { id: 'hudopen', u0: .4, v0: 0, u1: .6, v1: .12, label: 'HUD', onClick: () => { playClickSound(); hudVisible = true; } }
+        [.66,.16,.96,.28,'SETTINGS',13],
+        [.66,.34,.96,.46,'INVENTORY',12],
+        [.66,.52,.96,.64,'CHAT',3],
+        [.66,.82,.96,.94,'CLOSE',6]
+    ], UI_TAB = [[.4,0,.6,.12,'MENU',7]], CHAT_NAV=[
+        [.66,.62,.80,.72,'UP',4],[.82,.62,.96,.72,'DOWN',5]
+    ], KEY_NAV=[
+        [.66,.375,.80,.46,'UP',4],[.82,.375,.96,.46,'DOWN',5]
+    ], UI_KEYS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((c,i)=>{
+        const x=.03+i%9*.07,y=.48+(i/9|0)*.14;
+        return [x,y,x+.06,y+.11,c,c];
+    }).concat([
+        [.68,.48,.96,.59,'SPACE',' '],
+        [.68,.62,.96,.73,'BACK',8],
+        [.65,.85,.81,.93,'SEND',10],
+        [.82,.85,.96,.93,'CANCEL',11]
+    ]).concat(KEY_NAV), UI_CHAT=CHAT_NAV.concat(UI_KEYS.slice(28,30)), UI_BACK=[
+        [.66,.85,.96,.95,'BACK',17]
+    ], UI_SETTINGS=[
+        [.06,.17,.48,.29,'RESET',0],[.52,.17,.94,.29,'',1],
+        [.06,.35,.48,.47,'',2],[.52,.35,.94,.47,'',14],
+        [.06,.53,.48,.65,'',16],[.52,.53,.94,.65,'',15],
+        [.06,.82,.94,.94,'BACK',17]
     ];
 
-    // Returns the currently active set of UI buttons
-    function currentUI() { return hudVisible ? UI_MAIN : UI_TAB; }
+    function currentUI() { return !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
+    // -- /PART: State-Layout --
 
+    // -- PART: Chat-Actions --
+    function setChat(v) {
+        hudPage = v ? 1 : 0; chatText = ''; chatInput.value = ''; logScroll=0;
+        if (v && !xr) { hudVisible = true; document.exitPointerLock?.(); chatInput.focus(); }
+        else chatInput.blur();
+    }
+    function sendChat() {
+        const s = chatText.trim().replace(/\|/g,'').slice(0,64);
+        if (!s) return setChat(false);
+        if (!ws || ws.readyState !== 1 || !myId) return log('CHAT: MMO OFFLINE');
+        ws.send('c|' + myId + '|' + s); say('YOU: ' + s); setChat(false);
+    }
+    function activate(a) {
+        playClickSound();
+        if (typeof a === 'string') chatText = (chatText + a).slice(0,64);
+        else if (a === 0) { u.x=0;u.z=2;u.yaw=0;u.pitch=.2;resetCatPosition(); }
+        else if (a === 1) toggleXRFromUI();
+        else if (a === 2) toggleMMO();
+        else if (a === 3) setChat(true);
+        else if (a === 4) logScroll=MIN(MAX(0,LOG.length-1),logScroll+1);
+        else if (a === 5) logScroll=MAX(0,logScroll-1);
+        else if (a === 6) { setChat(false);hudVisible=false; }
+        else if (a === 7) hudVisible=true;
+        else if (a === 8) chatText=chatText.slice(0,-1);
+        else if (a === 10) sendChat();
+        else if (a === 11) setChat(false);
+        else if (a === 12) hudPage=2;
+        else if (a === 13) hudPage=3;
+        else if (a === 14) invertX=!invertX;
+        else if (a === 15) invertY=!invertY;
+        else if (a === 16) closedChat=!closedChat;
+        else if (a === 17) hudPage=0;
+    }
+    chatInput.oninput = _ => chatText = chatInput.value.slice(0,64);
+    chatInput.onkeydown = e => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); sendChat(); }
+        else if (e.key === 'Escape') setChat(false);
+    };
+    // -- /PART: Chat-Actions --
+
+    // -- PART: Transform-Picking --
     // Returns the correct local transform for the HUD based on its visibility state
     function getHudTransform() {
-        if (hudVisible) { // Centered panel
-            return new DOMMatrix([1,0,0,0, 0,1,0,0, 0,0,1,0, 0, -.05, -1.15, 1]).toFloat32Array();
-        }
-        // Top tab.
-        return new DOMMatrix([1,0,0,0, 0,1,0,0, 0,0,1,0, 0, .5, -1.15, 1]).toFloat32Array();
+        return new DOMMatrix().translate(0,hudVisible?-.05:.5,-1.15).toFloat32Array();
     }
 
     // --- HUD Interaction Needs Input-ray ---
-    function HUD_pick(WH, ray, uiSet) {
-        const ui = uiSet || currentUI();
+    function HUD_pick(WH, ray) {
+        const ui=currentUI();
         const inv = INV(WH);
         const o = mulPoint(inv, ray.o); // Transform ray to HUD's local space
         const d = mulDir(inv, ray.d);
@@ -938,196 +994,68 @@
         const v = (.15 - y) / (.15 * 2);
 
         // Check against each button's UV bounds
-        for (const b of ui) {
-            if (u >= b.u0 && u <= b.u1 && v >= b.v0 && v <= b.v1) {
-                return { id: b.id, u, v, button: b, t };
-            }
-        }
-        return { id: null, u, v, button: null, t }; // Hit the panel but not a button
+        for (const b of ui) if (u >= b[0] && u <= b[2] && v >= b[1] && v <= b[3]) return { button:b,t };
+        return { t }; // Hit the panel but not a button
     }
+    // -- /PART: Transform-Picking --
 
+    // -- PART: Canvas-Drawing --
     // --- HUD Drawing ---
     // Draws the entire HUD onto the 2D canvas
-    function drawHUDCanvas(mode, hit, uiSet, dt) {
-        const ui = uiSet || currentUI();
-        //timer = ((window.t=(window.t||0)+dt)/100).toFixed(3);
-        //timer=((globalThis._gt=(globalThis._gt??0)+dt),globalThis._gt.toFixed(3));
-        //timer=(globalThis.t=(globalThis.t??0)+dt/1e3).toFixed(3);
-        //timer=(self.t=(self.t||0)+dt).toFixed(3);
-        //timer=((self.t=(self.t||0)+dt/1000)*60).toFixed(3);
-        //timer=(self.m=(self.m||0)+dt/60).toFixed(3);
-        //timer=(self.m=(self.m||0)+dt/60).toFixed(3);
+    function drawHUDCanvas(dt) {
+        const ui = currentUI();
         timer=(self._tm=(+self._tm||0)+dt/60).toFixed(3);
         hudCtx.clearRect(0, 0, hudCan.width, hudCan.height);
 
         if (!hudVisible) {
-            // Draw the small "HUD" tab at the top of the screen
             const b = ui[0];
-            const x = b.u0 * hudCan.width,
-                  y = b.v0 * hudCan.height,
-                  w = (b.u1 - b.u0) * hudCan.width,
-                  h = (b.v1 - b.v0) * hudCan.height;
-            const hov = hoverBtn && hoverBtn.id === 'hudopen';
-            hudCtx.fillStyle = hov ? 'rgba(160,200,160,.3)' : 'rgba(120,160,120,.2)';
-            hudCtx.strokeStyle = hov ? 'rgba(190,220,190,.9)' : 'rgba(160,200,160,.3)';
-            hudCtx.lineWidth = 2;
-            hudCtx.beginPath();
-            hudCtx.roundRect(x, y, w, h, 10);
-            hudCtx.fill();
-            hudCtx.stroke();
-            hudCtx.fillStyle = hov ? '#fff' : '#eef';
-            hudCtx.font = '16px system-ui';
-            hudCtx.textAlign = 'center';
-            hudCtx.textBaseline = 'middle';
-            hudCtx.fillText('HUD', x + w / 2, y + h / 2);
-            //hudCtx.textAlign = 'left';
-            //hudCtx.textBaseline = 'alphabetic';
-            hudCtx.font = '20px system-ui';
-            //hudCtx.fillText('Timer: ' + ((window.t=(window.t||0)+dt).toFixed(1)), 320, 60);
-            //hudCtx.fillText('Timer: '+(window.t0=window.t0||performance.now(),((performance.now()-window.t0)/1000).toFixed(1)), 320, 60);
-            //hudCtx.fillText('Timer: '+ timer, 320, 60);
-            hudCtx.fillText("Min's: "+ timer, 320, 60);
-
-            hudCtx.textAlign = 'left';
-            hudCtx.textBaseline = 'alphabetic';
+            const x=b[0]*640,y=b[1]*320,w=(b[2]-b[0])*640,h=(b[3]-b[1])*320;
+            hudCtx.fillStyle=hoverBtn===b?'#586b58':'#202923';hudCtx.fillRect(x,y,w,h);
+            hudCtx.fillStyle='#fff';hudCtx.font='16px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';
+            hudCtx.fillText('MENU',x+w/2,y+h/2);
+            if (closedChat && CHAT.length) {
+                const lines=CHAT.slice(-3);hudCtx.fillStyle='#111914dd';hudCtx.fillRect(20,48,600,22+lines.length*18);
+                hudCtx.fillStyle='#eef';hudCtx.font='14px monospace';hudCtx.textAlign='left';hudCtx.textBaseline='alphabetic';
+                lines.forEach((s,i)=>hudCtx.fillText(s.slice(0,68),28,68+i*18));
+            }
         } else {
-            // Draw the full HUD panel
-            hudCtx.fillStyle = 'rgba(40,30,20,.8)';
-            hudCtx.strokeStyle = 'rgba(160,200,160,.3)';
-            hudCtx.lineWidth = 2;
-            hudCtx.beginPath();
-            hudCtx.roundRect(6, 6, hudCan.width - 12, hudCan.height - 12, 16);
-            hudCtx.fill();
-            hudCtx.stroke();
-
-            // Header text
-            hudCtx.fillStyle = '#9f9';
-            hudCtx.font = '24px system-ui';
-            hudCtx.fillText('HUD', 20, 34);
-            hudCtx.fillStyle = '#fff';
-            hudCtx.font = '16px system-ui';
-            //hudCtx.fillText(`Mode: ${mode}${isMobile ? ' Touch' : ''}`, 20, 60);
-            //hudCtx.fillText(`FPS: ${ROUND(1/dt)}`, 20, 80);// if xr active show multiple
-            //hudCtx.fillText(`FPS: ${ROUND(1/dt)}`, 120, 40);// if xr active show multiple
-            //hudCtx.fillText(`MS: ${dt.toFixed(3)}`, 100, 80);// if xr active, show
-            //hudCtx.fillText(`Pos: (${u.x.toFixed(1)}, ${u.z.toFixed(1)})`, 100, 100);
-            //hudCtx.fillText(`Yaw: ${(u.yaw * 180 / PI | 0)}°`, 20, 100);
-            //hudCtx.fillText(`Cat Caught: ${cat.caught}`, 20, 120);
-            //hudCtx.fillText(`Boosts: ${speedBoosts.length}`, 150, 120);
-            hudCtx.fillText(`Boosts: ${speedBoosts.length}`, 20, 70);
-            hudCtx.fillText(`Cat Caught: ${cat.caught}`, 20, 100);
-            //hudCtx.fillText('Timer: ' + ((window.t=(window.t||0)+dt).toFixed(1)), 130, 100);
-            //timer = ((window.t=(window.t||0)+dt).toFixed(1));
-            hudCtx.fillText("Min's: " + timer, 130, 100);
-            //hudCtx.fillText('Timer: '+(window.t0=window.t0||performance.now(),((performance.now()-window.t0)/1000).toFixed(1)), 320, 100);
-
-            // MMO status line
-            const peerCount = (function(){ let n=0; try{ peers.forEach((p,id)=>{ if(id!==myId && performance.now() - (p.last||0) < 15000) n++; }); }catch(_){} return n; })();
-            //hudCtx.fillText(`MMO: ${mmoEnabled ? (myId? 'ON':'CONNECTING') : 'OFF'}  Peers: ${peerCount}`, 20, 140);
-            hudCtx.fillText(`MMO: ${mmoEnabled ? 'ON' : 'OFF'}  Peers: ${peerCount}`, 20, 130);
-            //if (hit) { hudCtx.fillStyle = '#afa';
-            //hudCtx.fillText(`Hit @ ground: (${hit[0].toFixed(2)}, ${hit[2].toFixed(2)})`, 20, 140); }
-
-            // Log box
-            //if (logVisible) {
-                const x = 20,
-                      y = 160,
-                      w = hudCan.width - 130,
-                      h = hudCan.height - 180;
-                hudCtx.fillStyle = 'rgba(0,0,0,.4)';
-                hudCtx.strokeStyle = 'rgba(160,200,160,.3)';
-                hudCtx.beginPath();
-                hudCtx.roundRect(x, y, w, h, 10);
-                hudCtx.fill();
-                hudCtx.stroke();
-                hudCtx.save();
-                hudCtx.beginPath();
-                hudCtx.rect(x + 8, y + 8, w - 16, h - 16);
-                hudCtx.clip();
-                hudCtx.fillStyle = '#eee';
-                hudCtx.font = '14px ui-monospace, system-ui';
-                const lines = LOG.slice(MAX(0, LOG.length - 8 - logScroll), LOG.length - logScroll);
-                //const lines = LOG.slice(MAX(0, LOG.length - 8), LOG.length);
-                for (let i = 0; i < lines.length; i++)
-                    hudCtx.fillText(lines[i], x + 12, y + 14 + i * 16);
-                hudCtx.restore();
-            //}
-
-            // Buttons
-            for (const b of UI_MAIN) {
-                const lab = (typeof b.label === 'function') ? b.label() : b.label;
-                const x = b.u0 * hudCan.width,
-                      y = b.v0 * hudCan.height,
-                      w = (b.u1 - b.u0) * hudCan.width,
-                      h = (b.v1 - b.v0) * hudCan.height;
-                const hov = hoverBtn && hoverBtn.id === b.id;
-                hudCtx.fillStyle = hov ? 'rgba(150,190,150,.2)' : 'rgba(120,160,120,.1)';
-                hudCtx.strokeStyle = hov ? 'rgba(190,220,190,.9)' : 'rgba(160,200,160,.3)';
-                hudCtx.lineWidth = 1;
-                hudCtx.beginPath();
-                hudCtx.roundRect(x, y, w, h, 8);
-                hudCtx.fill(); hudCtx.stroke();
-                hudCtx.fillStyle = hov ? '#fff' : '#eef';
-                hudCtx.font = '18px system-ui';
-                //hudCtx.textAlign = 'center';
-                hudCtx.textBaseline = 'middle';
-                //hudCtx.fillText(lab, x + w / 2, y + h / 2);
-                //hudCtx.textAlign = 'left';
-                // Center text vertically and with a slight left padding
-                hudCtx.fillText(lab, x + 10, y + h * .5);
+            hudCtx.fillStyle='#111914e8';hudCtx.fillRect(6,6,628,308);
+            hudCtx.fillStyle='#9f9';hudCtx.fillRect(6,6,5,308);
+            hudCtx.textAlign='left';hudCtx.textBaseline='alphabetic';hudCtx.font='20px system-ui';
+            hudCtx.fillText(hudPage===1?'CHAT':hudPage===2?'INVENTORY':hudPage===3?'SETTINGS':'WILD CATCH',20,34);
+            hudCtx.font='15px system-ui';hudCtx.fillStyle='#ccd8cc';
+            if (hudPage===1) {
+                const n=xr?4:11,iy=xr?120:270,lines=LOG.slice(MAX(0,LOG.length-n-logScroll),LOG.length-logScroll);
+                lines.forEach((s,i)=>hudCtx.fillText(s.slice(0,xr?62:48),20,48+i*(xr?18:19)));
+                hudCtx.fillStyle='#27332b';hudCtx.fillRect(20,iy,390,28);
+                hudCtx.fillStyle='#fff';hudCtx.fillText('> '+chatText.slice(-58)+(performance.now()%1e3<500?'_':''),28,iy+20);
+            } else if (hudPage===2) {
+                hudCtx.fillStyle='#899';hudCtx.font='16px system-ui';hudCtx.fillText('INVENTORY PLACEHOLDER',20,82);
+                hudCtx.font='14px monospace';hudCtx.fillText('Items and equipment will appear here.',20,112);
+            } else if (!hudPage) {
+                let peerCount=0,now=performance.now();peers.forEach(p=>now-(p.last||0)<15000&&peerCount++);
+                hudCtx.fillText(`CATS ${cat.caught}/13   BOOSTS ${speedBoosts.length}   ${timer}m`,20,64);
+                hudCtx.fillStyle=mmoEnabled?'#9f9':'#899';hudCtx.fillText(`MMO ${mmoEnabled?'ON':'OFF'}   PLAYERS ${peerCount}`,20,88);
+                hudCtx.fillStyle='#aeb8ae';hudCtx.font='14px monospace';
+                const lines=LOG.slice(MAX(0,LOG.length-9-logScroll),LOG.length-logScroll);
+                lines.forEach((s,i)=>hudCtx.fillText(s.slice(0,48),20,126+i*19));
+            }
+            for (const b of ui) {
+                const x=b[0]*640,y=b[1]*320,w=(b[2]-b[0])*640,h=(b[3]-b[1])*320,a=b[5];
+                hudCtx.fillStyle=hoverBtn===b?'#586b58':'#27332b';hudCtx.fillRect(x,y,w,h);
+                hudCtx.fillStyle='#eef';hudCtx.font=((hudPage===1&&xr)||(b[2]-b[0]<.2)?'13':'16')+'px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';
+                hudCtx.fillText(a===1?uiEnterLabel:a===2?'MMO '+(mmoEnabled?'ON':'OFF'):a===14?'INVERT X '+(invertX?'ON':'OFF'):a===15?'INVERT Y '+(invertY?'ON':'OFF'):a===16?'CLOSED CHAT '+(closedChat?'ON':'OFF'):b[4],x+w/2,y+h/2);
             }
         }
-        // --- Third HUD variant: temporary overlay on top (minimal) ---
         if (congratsTimer > 0) {
-            hudCtx.save();
-            // Smooth fade near the end
-            const alpha = (congratsTimer > .5) ? 1 : MAX(0, congratsTimer / .5);
-            hudCtx.globalAlpha = alpha;
-            // Position (clean, unobtrusive near upper center)
-            const x = hudCan.width * .5 + 10;
-            const y = hudCan.height * .4;
-            const text = `CAT #${cat.caught} CAUGHT`;
-            // Typography
-            hudCtx.textAlign = 'center';
-            hudCtx.textBaseline = 'middle';
-            hudCtx.font = 'bold 44px system-ui';
-            // Gentle vertical gradient fill
-            const g = hudCtx.createLinearGradient(0, y - 10, 0, y + 10);
-            g.addColorStop(0, '#c0e0f0'); // bluish top
-            g.addColorStop(1, '#e0d0a0'); // yellowish bottom
-            // Thin soft stroke for readability
-            hudCtx.lineWidth = 7;
-            hudCtx.strokeStyle = 'rgba(0,0,0,.5)';
-            hudCtx.strokeText(text, x, y);
-            hudCtx.fillStyle = g;
-            hudCtx.fillText(text, x, y);
-            // Text below
-            //hudCtx.strokeText('Can you catch again?', x, y + 60);
-            //hudCtx.fillText('Can you catch again?', x, y + 60);
-            if(cat.caught < 13) {
-                hudCtx.strokeText(`${13-cat.caught} Cats to catch`, x, y + 60);
-                hudCtx.fillText(`${13-cat.caught} Cats to catch`, x, y + 60);
-            }//else{
-            //    hudCtx.globalAlpha = 1
-            //    hudCtx.strokeText(timer, x, y + 60);
-            //    hudCtx.fillText(timer, x, y + 60);
-            //}
-            // if cat.caught = 4 write additional text
-            //if (cat.caught === 4 || cat.caught === 6) {
-            //    hudCtx.strokeText('Cat is getting faster!', x, y + 120);
-            //    hudCtx.fillText('Cat is getting faster!', x, y + 120);
-            //};
-            //if (cat.caught === 9) {
-            //    hudCtx.strokeText('Nine lives fading!', x, y + 120);
-            //    hudCtx.fillText('Nine lives fading!', x, y + 120);
-            //};
-            if (cat.caught === 13) {
-                lastCaughtShown = cat.caught;
-                hudCtx.strokeText('Victory! The End?', x, y + 120);
-                hudCtx.fillText('Victory! The End?', x, y + 120);
-            };
-
-            hudCtx.restore();
+            const x=330,y=128;
+            hudCtx.globalAlpha=congratsTimer>.5?1:congratsTimer/.5;
+            hudCtx.fillStyle='#101814dd';hudCtx.fillRect(110,82,440,132);
+            hudCtx.fillStyle='#dfe8b0';hudCtx.textAlign='center';hudCtx.textBaseline='middle';hudCtx.font='bold 36px system-ui';
+            hudCtx.fillText(`CAT #${cat.caught} CAUGHT`,x,y);
+            hudCtx.font='20px system-ui';
+            hudCtx.fillText(cat.caught<13?`${13-cat.caught} CATS TO CATCH`:'VICTORY! THE END?',x,y+52);
+            hudCtx.globalAlpha=1;
         }
         
         // Upload the canvas content to the WebGL texture
@@ -1135,8 +1063,9 @@
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hudCan);
     }
+    // -- /PART: Canvas-Drawing --
 
-    
+    // -- PART: WebGL-Setup --
     // --- HUD Shader ---
     // The HUD is a 2D canvas drawn in the DOM, then uploaded to a WebGL texture to be displayed on a 3D quad
 
@@ -1154,7 +1083,7 @@
 
     // Simple textured quad shader for the HUD (unified MVP)
     const vsMVP = `layout(location=0)in vec3 p;layout(location=1)in vec2 uv;uniform mat4 M,V,P;out vec2 f;out vec3 W;void main(){vec4 wpos=M*vec4(p,1.);W=wpos.xyz;f=uv;gl_Position=P*V*wpos;}`;
-    const fsH = `in vec2 f;uniform sampler2D T;out vec4 o;void main(){vec4 c=texture(T,f);if(c.a<.01)discard;o=c;}`;
+    const fsH = `in vec2 f;uniform sampler2D T;out vec4 o;void main(){o=texture(T,f);}`;
     const PH = prog(vsMVP, fsH);
     // Shared solid-color fragment program (reused by spheres and beam)
     const fsColor = `uniform vec4 col;out vec4 o;void main(){o=col;}`;
@@ -1175,6 +1104,7 @@
     gl.enableVertexAttribArray(1); 
     gl.vertexAttribPointer(1, 2, 
     gl.FLOAT, false, 20, 12);
+    // -- /PART: WebGL-Setup --
 
     // -- /MODULE: Scene-HUD --
     // -- MODULE: Scene-Noise --
@@ -1724,34 +1654,26 @@
         // Check for hover state if not in mouse-look mode
         if (I.look.id === null) {
             const r = rayFromScreen(I.pointer.x, I.pointer.y);
-            const h = HUD_pick(WH, r, currentUI());
+            const h = HUD_pick(WH, r);
             if (h && h.button) hoverBtn = h.button;
         }
 
-        updHUD('Desktop', lastHit, currentUI(), dt); // Redraw and upload HUD texture
+        updHUD(dt); // Redraw and upload HUD texture
 
-        gl.useProgram(PH);
-        gl.bindVertexArray(vaoH);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, hudTex);
-        gl.uniform1i(uT, 0);
-        gl.uniformMatrix4fv(uMH, false, WH);
-        gl.uniformMatrix4fv(uVH, false, V);
-        gl.uniformMatrix4fv(uPH, false, P);
-        gl.disable(gl.DEPTH_TEST);
-        gl.enable(gl.BLEND);
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        gl.disable(gl.BLEND);
-        gl.enable(gl.DEPTH_TEST);
+        drawHud(WH,V,P);
 
         requestAnimationFrame(loop);
     }
 
     // Helper to update the HUD canvas content
-    function updHUD(mode, hit, uiSet, dt) {
+    function updHUD(dt) {
     if (congratsTimer > 0) congratsTimer = MAX(0, congratsTimer - dt);
-        drawHUDCanvas(mode, hit, uiSet, dt);
+        drawHUDCanvas(dt);
+    }
+    function drawHud(M,V,P) {
+        gl.useProgram(PH);gl.bindVertexArray(vaoH);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,hudTex);gl.uniform1i(uT,0);
+        gl.uniformMatrix4fv(uMH,false,M);gl.uniformMatrix4fv(uVH,false,V);gl.uniformMatrix4fv(uPH,false,P);
+        gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.drawArrays(gl.TRIANGLES,0,6);gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
     }
 
     // Helper to submit a sphere draw call
@@ -1941,10 +1863,10 @@
             if (now && !prev) {
                 //playClickSound();
                 const r = rayFrom('VR', frame, src);
-                const h = HUD_pick(hudWH, r, currentUI());
+                const h = HUD_pick(hudWH, r);
 
                 if (h && h.button) {
-                    h.button.onClick();
+                    activate(h.button[5]);
                 } //else {
                     //    const g = rayHitGround(r);
                     //    if (g) { lastHit = g; log('ground ' + g.map(v => v.toFixed(2)).join(',')); }
@@ -1957,10 +1879,10 @@
         hoverBtn = null;
         for (const src of s.inputSources || []) {
             const r = controllerRay(frame, src);
-            const h = HUD_pick(hudWH, r, currentUI());
+            const h = HUD_pick(hudWH, r);
             if (h && h.button) { hoverBtn = h.button; break; }
         }
-        updHUD('VR', lastHit, currentUI(), dt);
+        updHUD(dt);
 
         // -- VR Rendering --
 
@@ -2150,20 +2072,7 @@
             //}
             
             // Render the shared HUD texture for this eye.
-            gl.useProgram(PH);
-            gl.bindVertexArray(vaoH);
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, hudTex);
-            gl.uniform1i(uT, 0);
-            gl.uniformMatrix4fv(uMH, false, hudWH);
-            gl.uniformMatrix4fv(uVH, false, v.transform.inverse.matrix);
-            gl.uniformMatrix4fv(uPH, false, v.projectionMatrix);
-            gl.disable(gl.DEPTH_TEST);
-            gl.enable(gl.BLEND);
-            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-            gl.disable(gl.BLEND);
-            gl.enable(gl.DEPTH_TEST);
+            drawHud(hudWH,v.transform.inverse.matrix,v.projectionMatrix);
 
             // Render Controller Indicators and Rays
             for (const src of s.inputSources || []) {
@@ -2201,7 +2110,7 @@
                     let len = 3.;
                     //const tGround = (0 - r.o[1]) / r.d[1];
                     //if (tGround > 0) len = MIN(len, MIN(5.0, tGround));
-                    const h = HUD_pick(hudWH, r, currentUI());
+                    const h = HUD_pick(hudWH, r);
                     if (h) len = MIN(len, h.t); // Shorten beam if it hits the HUD
                     
                     const S = new DOMMatrix([w,0,0,0, 0,w,0,0, 0,0,-len,0, 0,0,0,1]);
@@ -2248,15 +2157,9 @@
     (function main() {
         initXR();
         requestAnimationFrame(loop);
-        log(`Catch the Black Cat 13 times`);
-        //log(`Catch the black cat!`);
-        log('Close HUD: X/H/Esc');
-        //log('Touch-drag to Look around');
-        //if (!isMobile) log('Move: WASD, Rotate: Q & E');
-        log('Move: WASD, Rotate: Q & E');
-        //if (isMobile) log('Move: left joy, Rotate: right joy');
-        log('Move: left, Rotate: right');
-        //log('Move: '+(isMobile ? 'left joy' : 'WASD')+', Rotate: '+(isMobile ? 'right joy' : 'Q & E'));
+        log('Catch the Black Cat 13 times');
+        log('MENU H/X   F INV   C CHAT   Z SETTINGS');
+        log('MOVE: WASD/QE or touch sticks');
     })();
     
     // -- /FEATURE: CORE --

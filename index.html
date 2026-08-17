@@ -1459,7 +1459,7 @@
           uPDisc = gl.getUniformLocation(PDisc, 'P'),
           uColDisc = gl.getUniformLocation(PDisc, 'col');
 
-    // No custom VAO: we reuse the existing quad with UVs (vaoPlants)
+    // No custom VAO: reuse the HUD quad, which already has positions and UVs.
 
     // -- /MODULE: Scene-VR-Disc --
 
@@ -1502,7 +1502,7 @@
         const maxZ = FLOOR((u.z + 300.)/5);
         for(let gz=minZ; gz<=maxZ; gz++){
             for(let gx=minX; gx<=maxX; gx++){
-                const h = rockHash(gx, gz, .0);
+                const h = rockHash(gx, gz, .1);
                 if (h < .01){
                     const jx = rockHash(gx, gz, 1.) - .5;
                     const jz = rockHash(gx, gz, 2.) - .5;
@@ -1881,7 +1881,7 @@
             const maxZ = FLOOR((u.z + 500.)/5);
             for(let gz=minZ; gz<=maxZ; gz++){
                 for(let gx=minX; gx<=maxX; gx++){
-                    const h = rockHash(gx, gz, .0);
+                    const h = rockHash(gx, gz, .1);
                     if (h < .01){
                         const jx = rockHash(gx, gz, 1.) - .5;
                         const jz = rockHash(gx, gz, 2.) - .5;
@@ -1923,6 +1923,10 @@
         const rel = frame.getViewerPose(off);
         if (!rel) return;// no viewer pose, skip frame
 
+        // One viewer-relative HUD transform is shared by both eyes.
+        const hudWH = new DOMMatrix(rel.transform.matrix).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
+        HUD_WH_world = hudWH;
+
         // -- VR Input and Interaction --
         //for (const src of (s.inputSources && Symbol.iterator in Object(s.inputSources) ? s.inputSources : [])) {
         for (const src of s.inputSources || []) {
@@ -1936,24 +1940,26 @@
             if (now && !prev) {
                 //playClickSound();
                 const r = rayFrom('VR', frame, src);
-                const viewer = frame.getViewerPose(off);
-                if (viewer) {
-                    const T = getHudTransform();
-                    // World-from-viewer in offset space (consistent for both eyes)
-                    const WH = new DOMMatrix(rel.transform.matrix).multiply(new DOMMatrix(T)).toFloat32Array();
-                    //HUD_WH_world = WH;
-                    const h = HUD_pick(WH, r, currentUI());
+                const h = HUD_pick(hudWH, r, currentUI());
 
-                    if (h && h.button) {
-                        h.button.onClick();
-                    } //else {
+                if (h && h.button) {
+                    h.button.onClick();
+                } //else {
                     //    const g = rayHitGround(r);
                     //    if (g) { lastHit = g; log('ground ' + g.map(v => v.toFixed(2)).join(',')); }
                     //}
-                }
             }
             pressedMap.set(src, now);
         }
+
+        // Redraw/upload once per XR frame; each eye reuses this texture.
+        hoverBtn = null;
+        for (const src of s.inputSources || []) {
+            const r = controllerRay(frame, src);
+            const h = HUD_pick(hudWH, r, currentUI());
+            if (h && h.button) { hoverBtn = h.button; break; }
+        }
+        updHUD('VR', lastHit, currentUI(), dt);
 
         // -- VR Rendering --
 
@@ -2142,24 +2148,13 @@
             //    gl.disable(gl.BLEND);
             //}
             
-            // Render HUD
-            const T = getHudTransform();
-            // World-from-viewer in offset space (consistent for both eyes)
-            const WH = new DOMMatrix(rel.transform.matrix).multiply(new DOMMatrix(T)).toFloat32Array(); // Hud snaped to eyes, bad
-            HUD_WH_world = WH;
-            hoverBtn = null;
-            for (const src of s.inputSources || []) {
-                const r = controllerRay(frame, src);
-                const h = HUD_pick(WH, r, currentUI());
-                if (h && h.button) { hoverBtn = h.button; break; }
-            }
-            updHUD('VR', lastHit, currentUI(), dt);
+            // Render the shared HUD texture for this eye.
             gl.useProgram(PH);
             gl.bindVertexArray(vaoH);
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, hudTex);
             gl.uniform1i(uT, 0);
-            gl.uniformMatrix4fv(uMH, false, WH);
+            gl.uniformMatrix4fv(uMH, false, hudWH);
             gl.uniformMatrix4fv(uVH, false, v.transform.inverse.matrix);
             gl.uniformMatrix4fv(uPH, false, v.projectionMatrix);
             gl.disable(gl.DEPTH_TEST);
@@ -2182,7 +2177,7 @@
                     //    .multiply(new DOMMatrix().translate(0,-1,0).rotate(90,0,0).scale(.1,1,.1))
                     //    .toFloat32Array();
                     gl.useProgram(PDisc);
-                    gl.bindVertexArray(vaoPlants);
+                    gl.bindVertexArray(vaoH);
 
                     gl.uniformMatrix4fv(uMDisc, false, Mhand);
                     gl.uniformMatrix4fv(uVDisc, false, v.transform.inverse.matrix); 
@@ -2205,7 +2200,7 @@
                     let len = 3.;
                     //const tGround = (0 - r.o[1]) / r.d[1];
                     //if (tGround > 0) len = MIN(len, MIN(5.0, tGround));
-                    const h = HUD_pick(WH, r, currentUI());
+                    const h = HUD_pick(hudWH, r, currentUI());
                     if (h) len = MIN(len, h.t); // Shorten beam if it hits the HUD
                     
                     const S = new DOMMatrix([w,0,0,0, 0,w,0,0, 0,0,-len,0, 0,0,0,1]);

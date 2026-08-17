@@ -327,12 +327,13 @@
     // -- MODULE: Input-KeyPoint --
     // Keyboard event listeners for movement and HUD toggle
     document.addEventListener('keydown', e => {
-        const k = e.key.toLowerCase();
+        const k = e.code;
         I.keys[k] = true;
-        if (k === 'h'||k === 'escape'||k === 'x') {playClickSound(); hudVisible = !hudVisible;} // 'H' and escape key toggles HUD visibility
-        //if (k === 'f') {playClickSound(); beastMode = !beastMode;} // 'F' key toggles beastMode
+        if (!e.repeat && (k === 'KeyH'||k === 'Escape'||k === 'KeyX')) {playClickSound(); hudVisible = !hudVisible;} // 'H' and escape key toggles HUD visibility
+        //if (k === 'KeyF') {playClickSound(); beastMode = !beastMode;} // 'F' key toggles beastMode
     });
-    document.addEventListener('keyup', e => I.keys[e.key.toLowerCase()] = false);
+    document.addEventListener('keyup', e => I.keys[e.code] = false);
+    window.addEventListener('blur', () => I.keys = {});
     
     // Pointer event listeners on the canvas for mouse-look and interaction
     C.addEventListener('pointerdown', e => {
@@ -778,9 +779,9 @@
         let vx = 0, vy = 0, vt = 0;
         // -- SOLUTION: Gameplay-Movement-Keyboard --
         // Keyboard input (WASD for move, QE for turn)
-    const kx = (+!!I.keys.d) - (+!!I.keys.a);
-    const ky = (+!!I.keys.w) - (+!!I.keys.s);
-    const kt = (+!!I.keys.q) - (+!!I.keys.e);
+    const kx = (+!!I.keys.KeyD) - (+!!I.keys.KeyA);
+    const ky = (+!!I.keys.KeyW) - (+!!I.keys.KeyS);
+    const kt = (+!!I.keys.KeyQ) - (+!!I.keys.KeyE);
         // -- /SOLUTION: Gameplay-Movement-Keyboard --
     
         // -- SOLUTION: Gameplay-Movement-Joystick --

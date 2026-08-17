@@ -1275,53 +1275,6 @@
     // Try: makeTileableNoise(256) or (512) for crisper small-scale details (optional)
     makeTileableNoise(128);
     // -- /MODULE: Scene-Noise --
-
-    // -- MODULE: Scene-Sky --
-    /* Disabled: the framebuffer clear supplies the solid black background.
-    // A procedural skybox rendered using a single full-screen triangle
-    const vsSky=`const vec2 v[3]=vec2[3](vec2(-1,-1),vec2(3,-1),vec2(-1,3));out vec2 a;void main(){a=v[gl_VertexID]*.5+.5;gl_Position=vec4(v[gl_VertexID],0,1);}`;
-
-    // Replaced fragment shader: perspective-correct cloud mapping, reduced velocities, minified identifiers
-    const fsSky=`in vec2 a;out vec4 b;uniform mat4 c,d;uniform sampler2D e;uniform float f;float g(vec2 p){return texture(e,p).r;}float h(vec2 p){float s=0.,A=.5;s+=A*g(p+f*vec2(.012,.007)*.02);p*=2.;A*=.5;s+=A*g(p+f*vec2(-.008,.015)*.02);p*=2.;A*=.5;s+=A*g(p+f*vec2(.017,-.011)*.02);p*=2.;A*=.5;s+=A*g(p+f*vec2(-.011,-.018)*.02);return s;}void main(){vec3 i=(c*vec4(0,0,0,1)).xyz;vec4 j=d*vec4(a*2.-1.,1,1);vec3 k=normalize(j.xyz/j.w-i);float l=pow(max(k.y*.5+.5,0.),1.2);vec3 m=mix(vec3(.2,.28,.36),vec3(.2,.2,.4),l);vec3 n=normalize(vec3(.1,.1,-.9));float o=max(dot(k,n),0.);float p=smoothstep(.995,1.,o);m+=vec3(.8,.6,.1)*(pow(o,60.)+.4*pow(o,12.))+vec3(1)*p*.15;vec2 q;float r=(100.-i.y)/k.y;if(r>0.){vec3 C=i+k*r;q=C.xz;}else{vec3 C=i+k*1000.;q=C.xz;}vec2 s=q*.0001;float t=h(s);float u=smoothstep(.25,.25+.52,t);vec2 v=normalize(n.xz+.0001);float w=0.;for(int B=1;B<=3;++B){vec2 C=s+v*float(B)*8e-4;w+=h(C);}w/=3.;float x=1.-clamp(w*1.6,0.,1.);vec3 y=vec3(.95,.98,1.)*(.45+.55*x);y+=.25*p*clamp(dot(n,k),0.,1.);m=mix(m,y,u*.95);b=vec4(m,1.);}`;
-
-    const PSKY = prog(vsSky, fsSky);
-    const vaoSky = gl.createVertexArray();
-    const uVinv = gl.getUniformLocation(PSKY, 'c');
-    const uInvPV = gl.getUniformLocation(PSKY, 'd');
-    //const uSun = gl.getUniformLocation(PSKY, 'sunDir');
-
-    // --- new: sky shader uniform locations for noise & cloud params ---
-    const uNoiseSky = gl.getUniformLocation(PSKY, 'e');
-    const uTimeSky = gl.getUniformLocation(PSKY, 'f');
-    //const uCoverage = gl.getUniformLocation(PSKY, 'uCloudCoverage');
-    //const uSharpness = gl.getUniformLocation(PSKY, 'uCloudSharpness');
-    //const uShadowSamples = gl.getUniformLocation(PSKY, 'uCloudShadowSamples');
-    //const uCloudHeightLoc = gl.getUniformLocation(PSKY, 'uCloudHeight');
-    //const uCloudScaleLoc = gl.getUniformLocation(PSKY, 'uCloudScale');
-    //const uCloudMotionSpeedLoc = gl.getUniformLocation(PSKY, 'uCloudMotionSpeed');
-    */
-    // -- /MODULE: Scene-Sky --
-    // -- MODULE: Scene-Ground --
-    // --- Grid Shader ---
-    /*
-    // A simple shader to draw a grid on the ground plane
-    const fsG=`in vec3 W;out vec4 o;float h(vec2 v){return fract(sin(dot(v,vec2(41,289)))*9e3);}void main(){vec2 q=floor(W.xz/.6);float r=h(q),r2=h(q+13.);o=vec4(mix(vec3(.08,.05,.02),vec3(.3,.2,.1),r)+step(.97,r2)*vec3(.1,.08,.04),1);}`;
-
-    const PG = prog(vsMVP, fsG);
-    const uM = gl.getUniformLocation(PG, 'M');
-    const uV = gl.getUniformLocation(PG, 'V');
-    const uP = gl.getUniformLocation(PG, 'P');
-    const vbo = gl.createBuffer();
-    const vao = gl.createVertexArray();
-    gl.bindVertexArray(vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-    // A large quad to serve as the ground plane.
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1000,0,-1000, 1000,0,-1000, 1000,0,1000, -1000,0,-1000, 1000,0,1000, -1000,0,1000]), gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-    
-    */
-    // -- /MODULE: Scene-Ground --
     
     // -- MODULE: Scene-Items --
     // NEW: Sphere (items/obstacles) minimal shader + geometry (uses shared PC)
@@ -1414,79 +1367,6 @@
     gl.vertexAttribPointer(0, 1, gl.FLOAT, false, 0, 0);
 
     // -- /MODULE: Scene-Grass --
-    // -- MODULE: Scene-Plant --
-    // --- L-System Plant Shader ---
-    /*
-    // -- SOLUTION: Scene-Plant--
-    // Positions and scales for the scattered L-system plants.
-    // --- Procedural plant field (infinite-style) ---
-    //const PLANT_CELL = 6.0;          // World size of one plant decision cell
-    //const PLANT_PROB = 0.3;         // Spawn probability per cell
-    //const PLANT_RADIUS = 55.0;       // Active radius around camera (render window)
-    //const PLANT_SCALE_MIN = 1.8;
-    //const PLANT_SCALE_MAX = 3.0;
-    
-    // Fast small hash (deterministic)
-    function plantHash(ix, iz, salt){
-        const s = SIN(ix*127.1 + iz*311.7 + salt*17.17)*43758.5453;
-        return s - FLOOR(s);
-    }
-    
-    // Generate plants near (cx,cz); returns array of objects
-    function genPlants(cx, cz, fr){
-        //const r = PLANT_RADIUS;
-        //const c = 6.0;
-        const minX = FLOOR((cx - fr)/6.);
-        const maxX = FLOOR((cx + fr)/6.);
-        const minZ = FLOOR((cz - fr)/6.);
-        const maxZ = FLOOR((cz + fr)/6.);
-        const out = [];
-        for(let gz=minZ; gz<=maxZ; gz++){
-            for(let gx=minX; gx<=maxX; gx++){
-                const h = plantHash(gx, gz, .0);
-                if(h < .3){
-                    // Stable jitter inside cell
-                    const jx = plantHash(gx, gz, 1.) - .5;
-                    const jz = plantHash(gx, gz, 2.) - .5;
-                    const px = gx*6. + (jx * 6. * .85) + 6.*.5;
-                    const pz = gz*6. + (jz * 6. * .85) + 6.*.5;
-                    const dx = px - cx, dz = pz - cz;
-                    if(dx*dx + dz*dz <= fr*fr){
-                        const sc = 1.8 + (plantHash(gx, gz, 3.) * (3 - 1.8));
-                        out.push({px, pz, scale: sc, gx, gz});
-                    }
-                }
-            }
-        }
-        return out;
-    }
-
-    //let cachedPlants = [];
-    //let lastPlantCamX = 0, lastPlantCamZ = 0;
-    
-    const fsPlants=`in vec2 f;out vec4 o;uniform float g;uniform int h;uniform vec3 i;uniform float j;mat3 R(float a){float c=cos(a),s=sin(a);return mat3(vec3(c,s,0),vec3(-s,c,0),vec3(0,0,1));}mat3 D(vec2 d){return mat3(vec3(1,0,0),vec3(0,1,0),vec3(d,1));}float C(vec2 p,vec2 h){p-=vec2(0.,h.y);vec2 d=abs(p)-h;return min(max(d.x,d.y),0.)+length(max(d,0.));}float k(float x){return fract(sin(x)*43758.5453);}float l(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}float E(vec2 p){float m=25.7+j*10.;mat3 n=R(-m*.01745),q=R(m*.01745);int r=3+int(j*4.),s=1;for(int a=0;a<r;a++)s*=3;float t=1.5,u=.002;p+=vec2(0,2);float v=C(p,vec2(u,t)),w=1e9;int x=0;vec2 y=vec2(.07,.05),z=vec2(-.03,.04);float A=.6*sin(dot(i.xz,y)+g*.7)+.4*sin(dot(i.xz,z)-g*1.2);float F=fract(sin(dot(i.xz,vec2(12.9898,78.233)))*43758.5453)*6.283;float G=.25*A+.07*sin(g*1.7+F);mat3 H=R(G*.5);for(int a=0;a<h;++a){int I=s;vec2 J=p;for(int j=1;j<=r;++j){float K=t/exp2(float(j));I/=3;int L=x/I;int M=L-3*(L/3);mat3 N;if(M==0)N=n*D(vec2(0,-2.*K));else if(M==1)N=H*q*D(vec2(0,-2.*K));else N=H*D(vec2(0,-4.*K));J=(N*vec3(J,1)).xy;float O=C(J,vec2(u,K));if(O>2.*K){x+=I-1;break;}w=min(w,O);if(w<.01)break;}if(w<.01||++x>s)break;}return min(w,v);}void main(){vec2 p=(f*2.-1.)*5.;p.y+=3.;if(E(p)>.038)discard;float P=clamp(f.y,0.,1.),T=k(j*37.17),U=.85+.3*l(i.xz+vec2(j));vec3 Q=vec3(.3,.4,.1),S=vec3(.5,.4,.2),b=mix(Q,S,smoothstep(0.,1.,T));vec3 c=mix(b*.4,b,smoothstep(0.,1.,P))*U;c*=.97+.06*l(i.xz+f*12.34);o=vec4(c,1);}`; 
-
-    const PPLANTS = prog(vsMVP, fsPlants); // Use unified vertex shader
-    const uMPla = gl.getUniformLocation(PPLANTS, 'M');
-    const uVPla = gl.getUniformLocation(PPLANTS, 'V');
-    const uPPla = gl.getUniformLocation(PPLANTS, 'P');
-    const uTimePla = gl.getUniformLocation(PPLANTS, 'g'); // Get location of time uniform for animation
-    const IPla = gl.getUniformLocation(PPLANTS, 'h'); // Get location of max iterations uniform
-    const uPlantPosPla = gl.getUniformLocation(PPLANTS, 'i');
-    const uPlantSeedPla = gl.getUniformLocation(PPLANTS, 'j');
-
-    const vboPlants = gl.createBuffer(), vaoPlants = gl.createVertexArray(); // Create vertex buffer and vertex array objects
-    gl.bindVertexArray(vaoPlants); // Bind the vertex array object
-    gl.bindBuffer(gl.ARRAY_BUFFER, vboPlants); // Bind the vertex buffer object
-    // Vertex data for a quad (position and UV coordinates).
-    gl.bufferData(gl.ARRAY_BUFFER, new F32([-1,2,0, 0,1,  1,2,0, 1,1,  1,0,0, 1,0,  -1,2,0, 0,1,  1,0,0, 1,0,  -1,0,0, 0,0]), gl.STATIC_DRAW); // Upload vertex data: 6 vertices forming 2 triangles for a quad, each with position (x,y,z) and UV (u,v)
-    gl.enableVertexAttribArray(0); // Enable vertex attribute array at location 0 (position)
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0); // Set vertex attribute pointer for position: 3 floats, stride 20 bytes, offset 0
-    gl.enableVertexAttribArray(1); // Enable vertex attribute array at location 1 (UV)
-    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 20, 12); // Set vertex attribute pointer for UV: 2 floats, stride 20 bytes, offset 12 bytes
-    */
-    // -- /SOLUTION: Scene-Plant--
-    // -- /MODULE: Scene-Plant --
     
     // -- MODULE: Scene-VR-Disc --
     // Reticle removed; single disc shader used for VR hand/grip indicator
@@ -1517,261 +1397,157 @@
     // -- /FEATURE: Scene --
     
     // -- CORE: render --
-    // --- Main Render Loop (Desktop) ---
-    //let frameCount = 0;
-    function loop(t) {
-        // If an immersive XR session is active, stop the desktop loop chain.
-        if (xr) return;  // prevents scheduling the next frame; XR loop takes over
-        //frameCount++;
-        
-        // Calculate delta time
-        const dt = ((t - last) / 1000) || 0;
-        last = t;
-        // Ensure rocks near the player are generated and present in obstacles for collision resolution
-        // render only ever tenth frame to save CPU
-        //if (frameCount % 10 === 0) {
-            //updateRocks(u.x, u.z);
-            for (let i = obstacles.length - 1; i >= 0; i--) {
+    // Shared simulation and scene renderer. Desktop supplies one synthetic head
+    // view; WebXR supplies the headset's real eye views.
+    function updateWorld(dt, session) {
+        const range = session ? 500 : 300;
+        for (let i = obstacles.length - 1; i >= 0; i--)
             if (obstacles[i]._isRock) obstacles.splice(i, 1);
-        }
         rocks.length = 0;
-        //const c = 5; const r = 200.0;
-        const minX = FLOOR((u.x - 300.)/5);
-        const maxX = FLOOR((u.x + 300.)/5);
-        const minZ = FLOOR((u.z - 300.)/5);
-        const maxZ = FLOOR((u.z + 300.)/5);
-        for(let gz=minZ; gz<=maxZ; gz++){
-            for(let gx=minX; gx<=maxX; gx++){
-                const h = rockHash(gx, gz, .1);
-                if (h < .01){
-                    const jx = rockHash(gx, gz, 1.) - .5;
-                    const jz = rockHash(gx, gz, 2.) - .5;
-                    const px = gx*5 + (jx * 5 * .6) + 5*.5;
-                    const pz = gz*5 + (jz * 5 * .6) + 5*.5;
-                    const dx = px - u.x, dz = pz - u.z;
-                    if (dx*dx + dz*dz <= 300.*300.){
-                        const seed = rockHash(gx, gz, -7.) * 1000.;
-                        const scale = 4. + rockHash(gx, gz, 5.) * 2.; // 1.0 .. 6.0 meters
-                        const rx = px, rz = pz, ry = scale * .45; // small y offset
-                        const radius = scale * 1.2; // collision radius
-                        const rock = { x: rx, y: ry, z: rz, r: radius, seed, scale };
-                        rocks.push(rock);
-                        // also add to obstacles so collision code picks it up
-                        obstacles.push({ x: rx, y: ry, z: rz, r: radius, _isRock: true });
-                    }
+        const minX = FLOOR((u.x - range) / 5), maxX = FLOOR((u.x + range) / 5);
+        const minZ = FLOOR((u.z - range) / 5), maxZ = FLOOR((u.z + range) / 5);
+        for (let gz = minZ; gz <= maxZ; gz++) for (let gx = minX; gx <= maxX; gx++) {
+            const h = rockHash(gx, gz, .1);
+            if (h < .01) {
+                const px = gx * 5 + (rockHash(gx, gz, 1) - .5) * 3 + 2.5;
+                const pz = gz * 5 + (rockHash(gx, gz, 2) - .5) * 3 + 2.5;
+                const dx = px - u.x, dz = pz - u.z;
+                if (dx * dx + dz * dz <= range * range) {
+                    const seed = rockHash(gx, gz, -7) * 1000;
+                    const scale = 4 + rockHash(gx, gz, 5) * 2;
+                    const rock = { x: px, y: scale * .45, z: pz, r: scale * 1.2, seed, scale };
+                    rocks.push(rock);
+                    obstacles.push({ x: rock.x, y: rock.y, z: rock.z, r: rock.r, _isRock: true });
                 }
             }
         }
-        //}
-
-        // Update user position
-        const mv = getMove();
-        step(dt, mv);
-        // Update black cat AI & drops
+        step(dt, getMove(session));
         updateCat(dt);
-        // MMO tick (send position)
         mmoTick(dt);
-        // Trigger congrats overlay on catch
         if (cat.caught > lastCaughtShown) {
             lastCaughtShown = cat.caught;
             congratsTimer = 5.5;
         }
-        // Update camera matrices
-        buildViewProj();
-        // --- Rendering ---
-        gl.viewport(0, 0, C.width, C.height);
-        gl.clearColor(0, 0, 0, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    }
 
-        // Render Sky
-        /* Disabled: keep the cleared framebuffer black.
-        gl.useProgram(PSKY);
-        gl.bindVertexArray(vaoSky);
-        gl.disable(gl.DEPTH_TEST);
-        const Vinv = INV(V);
-        gl.uniformMatrix4fv(uVinv, false, Vinv);
-        gl.uniformMatrix4fv(uInvPV, false, invPV);
-        //gl.uniform3fv(uSun, [0.1, 0.1, -0.9]);
-
-        // Noise texture for clouds
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, noiseTex);
-        gl.uniform1i(uNoiseSky, 1);
-        gl.uniform1f(uTimeSky, t * .001);
-        //gl.uniform1f(uCoverage, cloudCoverage);
-        //gl.uniform1f(uSharpness, cloudSharpness);
-        //gl.uniform1i(uShadowSamples, shadowSamples);
-        //gl.uniform1f(uCloudHeightLoc, cloudHeight);
-        //gl.uniform1f(uCloudScaleLoc, cloudScale);
-        //gl.uniform1f(uCloudMotionSpeedLoc, cloudMotionSpeed);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
-        gl.enable(gl.DEPTH_TEST);
-        */
-
-        // Render Grid
-        /*
-        gl.useProgram(PG);
-        gl.bindVertexArray(vao);
-        gl.uniformMatrix4fv(uM, false, M);
-        gl.uniformMatrix4fv(uV, false, V);
-        gl.uniformMatrix4fv(uP, false, P);
-        //if (beastMode===true){
-        //gl.enable(gl.CULL_FACE);
-        //gl.cullFace(gl.FRONT)}
-        //else {gl.disable(gl.CULL_FACE);};
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        */
-
-        // --- Render Items & Obstacles (now works because drawSphere exists) ---
-    for(const itm of items) if (itm.r>0) drawSphere(V,P,itm.x,itm.y,itm.z,itm.r,[.2,1.,.3]);
-        //for(const o of obstacles) if(!o._isRock) drawSphere(V,P,o.x,o.y,o.z,o.r,[0.9,0.2,0.2]);
-        for(const t of traps) drawSphere(V,P,t.x,t.y,t.z,t.r,[.8,.5,.1]);
-        // Render Black Cat
-        drawCat(V,P,cat.x,cat.y,cat.z,cat.yaw,cat.anim,.08,[.02,.02,.02]);
-
-        // Render MMO peers as whitish cats (smoothed)
-        if (peers && peers.size){
-            const nowMs = performance.now();
-            const targetT = nowMs - 120;
-            peers.forEach((p,id)=>{
-                if (id===myId) return;
-                if ((nowMs - (p.last||0)) >= 15000) return; // stale peer
-                const s = samplePeer(p, targetT) || p;
-                drawCat(V,P,s.x,.6,s.z,(s.yaw||0)+PI,HYPOT(s.x, s.z)||1*dt*3.5,.1,PEER_COL);
+    function drawWorld(V, P, W, t, dt, vr) {
+        for (const itm of items) if (itm.r > 0) drawSphere(V, P, itm.x, itm.y, itm.z, itm.r, [.2, 1, .3]);
+        for (const trap of traps) drawSphere(V, P, trap.x, trap.y, trap.z, trap.r, [.8, .5, .1]);
+        drawCat(V, P, cat.x, cat.y, cat.z, cat.yaw, cat.anim, .08, [.02, .02, .02]);
+        if (peers && peers.size) {
+            const now = performance.now(), target = now - 120;
+            peers.forEach((p, id) => {
+                if (id === myId || now - (p.last || 0) >= 15000) return;
+                const q = samplePeer(p, target) || p;
+                drawCat(V, P, q.x, .6, q.z, (q.yaw || 0) + PI, HYPOT(q.x, q.z) || dt * 3.5, .1, PEER_COL);
             });
         }
-
-        // Draw procedural rocks (flat-shaded, stylized)
         if (rocks.length) {
             gl.useProgram(PROCK);
             gl.bindVertexArray(rockVao);
             gl.uniformMatrix4fv(uR_V, false, V);
             gl.uniformMatrix4fv(uR_P, false, P);
-            for (const rk of rocks) {
-                gl.uniform3f(uR_Pos, rk.x, rk.y, rk.z);
-                gl.uniform1f(uR_S, rk.scale);
-                gl.uniform1f(uR_Seed, rk.seed);
+            for (const rock of rocks) {
+                gl.uniform3f(uR_Pos, rock.x, rock.y, rock.z);
+                gl.uniform1f(uR_S, rock.scale);
+                gl.uniform1f(uR_Seed, rock.seed);
                 gl.drawArrays(gl.TRIANGLES, 0, rockVerts.length / 3);
             }
-            //gl.enable(gl.DEPTH_TEST);
         }
+        const cam = [W[12], W[14]], right = [W[0], W[1], W[2]], time = t * .001;
+        drawGrassPass(V, P, cam, right, time, 1.1, vr ? 2000 : 500, 1);
+        drawGrassPass(V, P, cam, right, time, vr ? .3 : .4, vr ? 1000 : 300, 2);
+        drawGrassPass(V, P, cam, right, time, .15, vr ? 500 : 200, 3);
+    }
 
-        // Render Grass in multiple passes for density and LOD
-        {
-            const cy = COS(u.yaw), sy = SIN(u.yaw);
-            const camRight = [cy, 0, -sy];
-            const timeSec = t * .001;
-            drawGrassPass(V, P, [u.x, u.z], camRight, timeSec, 1.1, 500, /*30.0,*/ 1.); // Cell size, Strands number, Radius(bad), Seed
-            drawGrassPass(V, P, [u.x, u.z], camRight, timeSec, .4, 300, /*20.0,*/ 2.);
-            drawGrassPass(V, P, [u.x, u.z], camRight, timeSec, .15, 200, /*10.0,*/ 3.);
-        }
-
-        // Render L-System Plants
-        /*
-        {
-            gl.useProgram(PPLANTS);
-            gl.bindVertexArray(vaoPlants);
-            //gl.enable(gl.BLEND);
-            //gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-            //gl.depthMask(false); // Render transparent objects without writing to depth buffer
-
-            const camX = u.x;
-            const camZ = u.z;
-            //const plants = genPlants(camX, camZ);
-            const plants = genPlants(camX, camZ, 55);
-
-            // Only regenerate plants every 10 frames or if camera moved significantly
-            //if (frameCount % 10 === 0) {// || HYPOT(camX - lastPlantCamX, camZ - lastPlantCamZ) > 2.) {
-                //cachedPlants = genPlants(camX, camZ, 55);
-                //lastPlantCamX = camX;
-                //lastPlantCamZ = camZ;
-            //}
-
-            //for(const p of cachedPlants){
-            for(const p of plants){
-                const px = p.px, pz = p.pz, scale = p.scale;
-
-                // Distance & LOD
-                const dx = camX - px, dz = camZ - pz;
-                const dist = HYPOT(dx, dz);
-
-                //const NEAR_HIDE = 4.0;
-                //const NEAR_FULL = 6.0;
-                //const FAR_START = 18.0;
-                //const FAR_HIDE  = 50.0;
-                if(dist < 4. || dist > 55.) continue;
-
-                //const MIN_ITER = 2, MAX_ITER = 14;
-                const sstep = x => x*x*(3-2*x);
-                let a = (dist - 4.)/(6.-4.); a = sstep(MIN(1, MAX(0,a)));
-                let b = (55. - dist)/(55. - 18.); b = sstep(MIN(1, MAX(0,b)));
-                let q = a * b;
-                if(q < .05) continue;
-
-                const key = p.gx + ',' + p.gz;
-                //const target = 2 + q*(14 - 2);
-                //const iterations = MAX(2, MIN(14, target)) | 0;
-                const iterations = MAX(2, MIN(14, 2 + q*(14 - 2))) | 0;
-                const plantSeed = plantHash(p.gx, p.gz, 4.);
-
-                const angle = ATAN2(camX - px, camZ - pz);
-                const MPlants = new DOMMatrix()
-                    .translate(px, 0, pz)
-                    .rotate(0, angle / D2R, 0) // fix: radians->degrees (was *D2R)
-                    .scale(scale, scale, scale)
-                    .toFloat32Array();
-
-                gl.uniformMatrix4fv(uMPla, false, MPlants);
-                gl.uniformMatrix4fv(uVPla, false, V);
-                gl.uniformMatrix4fv(uPPla, false, P);
-                gl.uniform1f(uTimePla, t * .001);
-                gl.uniform1i(IPla, iterations);
-                gl.uniform3f(uPlantPosPla, px, 0, pz);
-                gl.uniform1f(uPlantSeedPla, plantSeed);
-                gl.drawArrays(gl.TRIANGLES, 0, 6);
+    function drawXRInput(session, frame, V, P, hudWH) {
+        for (const src of session.inputSources || []) {
+            const col = [1, 1, .5];
+            const grip = src.gripSpace ? frame.getPose(src.gripSpace, off) : null;
+            if (grip) {
+                const M = new DOMMatrix(grip.transform.matrix).multiply(new DOMMatrix([.1,0,0,0,0,.1,0,0,0,0,.1,0,0,0,0,1])).rotate(90,0,0).translate(0,-.5,0).toFloat32Array();
+                gl.useProgram(PDisc); gl.bindVertexArray(vaoH);
+                gl.uniformMatrix4fv(uMDisc, false, M); gl.uniformMatrix4fv(uVDisc, false, V); gl.uniformMatrix4fv(uPDisc, false, P);
+                gl.uniform4f(uColDisc, col[0], col[1], col[2], .95);
+                gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
             }
-
-            //gl.depthMask(true);
-            //gl.disable(gl.BLEND);
+            const target = src.targetRaySpace ? frame.getPose(src.targetRaySpace, off) : null;
+            if (target) {
+                const ray = controllerRay(frame, src);
+                const trigger = src.gamepad && src.gamepad.buttons && src.gamepad.buttons[0] ? src.gamepad.buttons[0].value || 0 : 0;
+                const w = .004 + .01 * trigger, hit = HUD_pick(hudWH, ray);
+                const M = new DOMMatrix([w,0,0,0,0,w,0,0,0,0,-(hit ? MIN(3, hit.t) : 3),0,0,0,0,1]);
+                const beam = new DOMMatrix(target.transform.matrix).multiply(M).toFloat32Array();
+                gl.useProgram(PC); gl.bindVertexArray(vaoBeam);
+                gl.uniformMatrix4fv(uMBeam, false, beam); gl.uniformMatrix4fv(uVBeam, false, V); gl.uniformMatrix4fv(uPBeam, false, P);
+                gl.uniform4f(uColBeam, col[0], col[1], col[2], .8);
+                gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
+            }
         }
-        */
+    }
 
-        // Render Reticle if there's a ground hit
-        //if (lastHit) {
-        //    const T = translateScale(lastHit[0], 0.001, lastHit[2], 0.15, 1, 0.15);
-        //    gl.useProgram(PR);
-        //    gl.bindVertexArray(vaoR);
-        //    gl.uniformMatrix4fv(uMR, false, T);
-        //    gl.uniformMatrix4fv(uVR, false, V);
-        //    gl.uniformMatrix4fv(uPR, false, P);
-        //    gl.enable(gl.BLEND);
-        //    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-        //    gl.disable(gl.DEPTH_TEST);
-        //    gl.drawArrays(gl.TRIANGLES, 0, 6);
-        //    gl.enable(gl.DEPTH_TEST);
-        //    gl.disable(gl.BLEND);
-        //}
-
-
-        // Render HUD
-        const T = getHudTransform();
-        const W = INV(V); // Get world-from-view matrix
-        const WH = new DOMMatrix(W).multiply(new DOMMatrix(T)).toFloat32Array(); // Combine to get HUD's world matri
-        HUD_WH_world = WH;
-        hoverBtn = null;
-
-        // Check for hover state if not in mouse-look mode
-        if (I.look.id === null) {
-            const r = rayFromScreen(I.pointer.x, I.pointer.y);
-            const h = HUD_pick(WH, r);
-            if (h && h.button) hoverBtn = h.button;
+    function loop(t, frame) {
+        const session = frame && frame.session;
+        if (session ? session !== xr : xr) return;
+        session ? session.requestAnimationFrame(loop) : requestAnimationFrame(loop);
+        const dt = last ? (t - last) / 1000 : 0;
+        last = t;
+        updateWorld(dt, session);
+        let hudWH;
+        gl.clearColor(0, 0, 0, 1);
+        if (session) {
+            const half = -u.yaw * .5;
+            off = ref.getOffsetReferenceSpace(new XRRigidTransform({x:0,y:0,z:0}, {x:0,y:SIN(half),z:0,w:COS(half)}))
+                .getOffsetReferenceSpace(new XRRigidTransform({x:-u.x,y:0,z:-u.z}));
+            const pose = frame.getViewerPose(off);
+            if (!pose) return;
+            hudWH = new DOMMatrix(pose.transform.matrix).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
+            HUD_WH_world = hudWH;
+            for (const src of session.inputSources || []) {
+                const gp = src.gamepad;
+                if (!gp || !gp.buttons || !gp.buttons.length) continue;
+                const now = !!gp.buttons[0].pressed, prev = pressedMap.get(src) || false;
+                if (now && !prev) {
+                    const hit = HUD_pick(hudWH, rayFrom('VR', frame, src));
+                    if (hit && hit.button) activate(hit.button[5]);
+                }
+                pressedMap.set(src, now);
+            }
+            hoverBtn = null;
+            for (const src of session.inputSources || []) {
+                const hit = HUD_pick(hudWH, controllerRay(frame, src));
+                if (hit && hit.button) { hoverBtn = hit.button; break; }
+            }
+            updHUD(dt);
+            const layer = session.renderState.baseLayer;
+            gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            for (const view of pose.views) {
+                const vp = layer.getViewport(view), Veye = view.transform.inverse.matrix, Peye = view.projectionMatrix;
+                gl.viewport(vp.x, vp.y, vp.width, vp.height);
+                drawWorld(Veye, Peye, view.transform.matrix, t, dt, true);
+                drawHud(hudWH, Veye, Peye);
+                drawXRInput(session, frame, Veye, Peye, hudWH);
+            }
+        } else {
+            buildViewProj();
+            const W = INV(V);
+            hudWH = new DOMMatrix(W).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
+            HUD_WH_world = hudWH;
+            hoverBtn = null;
+            if (I.look.id === null) {
+                const hit = HUD_pick(hudWH, rayFromScreen(I.pointer.x, I.pointer.y));
+                if (hit && hit.button) hoverBtn = hit.button;
+            }
+            updHUD(dt);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, C.width, C.height);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            drawWorld(V, P, W, t, dt, false);
+            drawHud(hudWH, V, P);
         }
-
-        updHUD(dt); // Redraw and upload HUD texture
-
-        drawHud(WH,V,P);
-
-        requestAnimationFrame(loop);
     }
 
     // Helper to update the HUD canvas content
@@ -1855,7 +1631,7 @@
                 return;
             }
             // Request a new session
-            xr = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'hand-tracking'] });
+            xr = await navigator.xr.requestSession('immersive-vr', { 'optionalFeatures': ['local-floor', 'hand-tracking'] });
             uiEnterLabel = 'Exit VR';
 
             await gl.makeXRCompatible();
@@ -1875,387 +1651,12 @@
             });
 
             last = 0;
-            xr.requestAnimationFrame(onXR); // Start the XR render loop
+            xr.requestAnimationFrame(loop); // Start the shared render loop
             resetCatPosition();
 
         } catch (e) {
             log('XR failed: ' + e.message);
             //requestAnimationFrame(loop); // Resume desktop loop
-        }
-    }
-
-    // -- Main Render Loop (WebXR) --
-    
-    function onXR(t, frame) {
-        const s = frame.session;
-        //if (s !== xr) return;
-        s.requestAnimationFrame(onXR);
-        //frameCount++;
-        
-        const dt = ((t - last) / 1000) || 0;
-        last = t;
-        
-        const pose = frame.getViewerPose(ref);
-        if (!pose) return;
-        
-        // Ensure rocks near the player are generated and present in obstacles for collision resolution
-        // render only ever tenth frame to save CPU
-        //if (frameCount % 10 === 0) {
-            //updateRocks(u.x, u.z);
-            for (let i = obstacles.length - 1; i >= 0; i--) {
-                if (obstacles[i]._isRock) obstacles.splice(i, 1);
-            }
-            rocks.length = 0;
-            //const c = 5; const r = 400.0;
-            const minX = FLOOR((u.x - 500.)/5);
-            const maxX = FLOOR((u.x + 500.)/5);
-            const minZ = FLOOR((u.z - 500.)/5);
-            const maxZ = FLOOR((u.z + 500.)/5);
-            for(let gz=minZ; gz<=maxZ; gz++){
-                for(let gx=minX; gx<=maxX; gx++){
-                    const h = rockHash(gx, gz, .1);
-                    if (h < .01){
-                        const jx = rockHash(gx, gz, 1.) - .5;
-                        const jz = rockHash(gx, gz, 2.) - .5;
-                        const px = gx*5 + (jx * 5 * .6) + 5*.5;
-                        const pz = gz*5 + (jz * 5 * .6) + 5*.5;
-                        const dx = px - u.x, dz = pz - u.z;
-                        if (dx*dx + dz*dz <= 500.*500.){
-                            const seed = rockHash(gx, gz, -7.) * 1000.;
-                            const scale = 4. + rockHash(gx, gz, 5.) * 2.; // 1.0 .. 6.0 meters
-                            const rx = px, rz = pz, ry = scale * .45; // small y offset
-                            const radius = scale * 1.2; // collision radius
-                            const rock = { x: rx, y: ry, z: rz, r: radius, seed, scale };
-                            rocks.push(rock);
-                            // also add to obstacles so collision code picks it up
-                            obstacles.push({ x: rx, y: ry, z: rz, r: radius, _isRock: true });
-                        }
-                    }
-                }
-            }
-        //}
-        
-        // Apply movement based on controller input
-        const mv = getMove(s);
-        step(dt, mv);
-        // Update black cat AI & drops
-        updateCat(dt);
-        // MMO tick (send position)
-        mmoTick(dt);
-        // Trigger congrats overlay on catch
-        if (cat.caught > lastCaughtShown) {
-            lastCaughtShown = cat.caught;
-            congratsTimer = 5.5;
-        }
-        // Create an offset reference space to account for user-controlled movement
-        const half = -u.yaw * .5;
-        const rot = new XRRigidTransform({x:0,y:0,z:0}, { x:0,y:SIN(half), z:0, w:COS(half) });
-        const rRef = ref.getOffsetReferenceSpace(rot);
-        off = rRef.getOffsetReferenceSpace(new XRRigidTransform({x:-u.x,y:0,z:-u.z}));
-        const rel = frame.getViewerPose(off);
-        if (!rel) return;// no viewer pose, skip frame
-
-        // One viewer-relative HUD transform is shared by both eyes.
-        const hudWH = new DOMMatrix(rel.transform.matrix).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
-        HUD_WH_world = hudWH;
-
-        // -- VR Input and Interaction --
-        //for (const src of (s.inputSources && Symbol.iterator in Object(s.inputSources) ? s.inputSources : [])) {
-        for (const src of s.inputSources || []) {
-            const gp = src.gamepad;
-            if (!gp || !gp.buttons || !gp.buttons.length) continue;
-
-            const now = !!gp.buttons[0].pressed;
-            const prev = pressedMap.get(src) || false;
-
-            // On button press (edge detection)
-            if (now && !prev) {
-                //playClickSound();
-                const r = rayFrom('VR', frame, src);
-                const h = HUD_pick(hudWH, r);
-
-                if (h && h.button) {
-                    activate(h.button[5]);
-                } //else {
-                    //    const g = rayHitGround(r);
-                    //    if (g) { lastHit = g; log('ground ' + g.map(v => v.toFixed(2)).join(',')); }
-                    //}
-            }
-            pressedMap.set(src, now);
-        }
-
-        // Redraw/upload once per XR frame; each eye reuses this texture.
-        hoverBtn = null;
-        for (const src of s.inputSources || []) {
-            const r = controllerRay(frame, src);
-            const h = HUD_pick(hudWH, r);
-            if (h && h.button) { hoverBtn = h.button; break; }
-        }
-        updHUD(dt);
-
-        // -- VR Rendering --
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, s.renderState.baseLayer.framebuffer);
-        gl.clearColor(0, 0, 0, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        //gl.enable(gl.DEPTH_TEST);
-
-        // Render the scene for each eye
-        for (const v of rel.views) {
-            const vp = s.renderState.baseLayer.getViewport(v);
-            gl.viewport(vp.x, vp.y, vp.width, vp.height);
-
-            // Per-eye matrices
-            const Veye = v.transform.inverse.matrix;
-            /* Sky-only inverse matrices and render pass disabled.
-            const VinvEye = INV(Veye);
-            const PVeye = MULTMAT4(M4(), v.projectionMatrix, Veye);
-            const invPVEye = INV(PVeye);
-
-            // Render Sky
-            gl.useProgram(PSKY);
-            gl.bindVertexArray(vaoSky);
-            gl.disable(gl.DEPTH_TEST);
-            gl.uniformMatrix4fv(uVinv, false, VinvEye);
-            gl.uniformMatrix4fv(uInvPV, false, invPVEye);
-            //gl.uniform3fv(uSun, [0.1, 0.1, -0.9]);
-
-            // Sky uniforms per-eye (same tuning rules apply)
-            gl.activeTexture(gl.TEXTURE1);
-            gl.bindTexture(gl.TEXTURE_2D, noiseTex);
-            gl.uniform1i(uNoiseSky, 1);
-            gl.uniform1f(uTimeSky, t * .001);
-            //gl.uniform1f(uCoverage, cloudCoverage);
-            //gl.uniform1f(uSharpness, cloudSharpness);
-            //gl.uniform1i(uShadowSamples, shadowSamples);
-            //gl.uniform1f(uCloudHeightLoc, cloudHeight);
-            //gl.uniform1f(uCloudScaleLoc, cloudScale);       // adjust for global cloud size
-            //gl.uniform1f(uCloudMotionSpeedLoc, cloudMotionSpeed);
-            gl.drawArrays(gl.TRIANGLES, 0, 3);
-            gl.enable(gl.DEPTH_TEST);
-            */
-
-            // Render Grid
-            /*
-            gl.useProgram(PG);
-            gl.bindVertexArray(vao);
-            gl.uniformMatrix4fv(uM, false, M);
-            gl.uniformMatrix4fv(uV, false, v.transform.inverse.matrix);
-            gl.uniformMatrix4fv(uP, false, v.projectionMatrix);
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-            */
-
-            // --- NEW: Render Items & Obstacles (now works because drawSphere exists) ---
-            for(const itm of items) if (itm.r>0) drawSphere(v.transform.inverse.matrix,v.projectionMatrix,itm.x,itm.y,itm.z,itm.r,[.2,1.,.3]);
-            //for(const o of obstacles)  if(!o._isRock) drawSphere(v.transform.inverse.matrix,v.projectionMatrix,o.x,o.y,o.z,o.r,[0.9,0.2,0.2]);
-            for(const t of traps) drawSphere(v.transform.inverse.matrix,v.projectionMatrix,t.x,t.y,t.z,t.r,[.8,.5,.1]);
-            // Render Black Cat
-            drawCat(v.transform.inverse.matrix,v.projectionMatrix,cat.x,cat.y,cat.z,cat.yaw,cat.anim,.08,[.02,.02,.02]);
-
-            // Render MMO peers (VR eye, smoothed)
-            if (peers && peers.size){
-                const nowMs = performance.now();
-                const targetT = nowMs - 120;
-                peers.forEach((p,id)=>{
-                    if (id===myId) return;
-                    if ((nowMs - (p.last||0)) >= 15000) return;
-                    const s = samplePeer(p, targetT) || p;
-                    drawCat(v.transform.inverse.matrix, v.projectionMatrix, s.x, .6, s.z,(s.yaw||0)+PI,HYPOT(s.x, s.z)||1*dt*3.5,.1, PEER_COL);
-                });
-            }
-
-            // Draw procedural rocks (flat-shaded, stylized)
-            if (rocks.length) {
-                gl.useProgram(PROCK);
-                gl.bindVertexArray(rockVao);
-                gl.uniformMatrix4fv(uR_V, false, v.transform.inverse.matrix);
-                gl.uniformMatrix4fv(uR_P, false, v.projectionMatrix);
-                for (const rk of rocks) {
-                    gl.uniform3f(uR_Pos, rk.x, rk.y, rk.z);
-                    gl.uniform1f(uR_S, rk.scale);
-                    gl.uniform1f(uR_Seed, rk.seed);
-                    gl.drawArrays(gl.TRIANGLES, 0, rockVerts.length / 3);
-                }
-                //gl.enable(gl.DEPTH_TEST);
-            }
-
-
-            // Render Grass
-            {
-                const worldFromView = v.transform.matrix;
-                const camXZ = [worldFromView[12], worldFromView[14]];
-                const camRight = [worldFromView[0], worldFromView[1], worldFromView[2]];
-                const timeSec = t * .001;
-                drawGrassPass(v.transform.inverse.matrix, v.projectionMatrix, camXZ, camRight, timeSec, 1.1, 2000, /*30.0,*/ 1); 
-                drawGrassPass(v.transform.inverse.matrix, v.projectionMatrix, camXZ, camRight, timeSec, .3, 1000, /*20.0,*/ 2);
-                drawGrassPass(v.transform.inverse.matrix, v.projectionMatrix, camXZ, camRight, timeSec, .15, 500, /*10.0,*/ 3);
-            }
-
-            // Render L-System Plants
-            /*
-            {
-                gl.useProgram(PPLANTS);
-                gl.bindVertexArray(vaoPlants);
-                //gl.enable(gl.BLEND);
-                //gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-                //gl.depthMask(false); // Render transparent objects without writing to depth buffer
-
-                const worldFromView = v.transform.matrix;
-                const camX = worldFromView[12];
-                const camZ = worldFromView[14];
-                //const plants = genPlants(camX, camZ);
-                const plants = genPlants(camX, camZ, 120);
-                
-                // Only regenerate plants every 10 frames or if camera moved significantly
-                ///if (frameCount % 10 === 0) {// || HYPOT(camX - lastPlantCamX, camZ - lastPlantCamZ) > 5.) {
-                    //cachedPlants = genPlants(camX, camZ,120);
-                    //lastPlantCamX = camX;
-                    //lastPlantCamZ = camZ;
-                //}
-
-            //if (frameCount % 10 === 0) {
-            //for(const p of cachedPlants){
-            for(const p of plants){
-                const px = p.px, pz = p.pz, scale = p.scale;
-
-                // Distance & LOD
-                const dx = camX - px, dz = camZ - pz;
-                const dist = HYPOT(dx, dz);
-
-                //const NEAR_HIDE = 4.0;
-                //const NEAR_FULL = 6.0;
-                //const FAR_START = 18.0;
-                //const FAR_HIDE  = 50.0;
-                if(dist < 4. || dist > 120.) continue;
-
-                //const MIN_ITER = 2, MAX_ITER = 16;
-                const sstep = x => x*x*(3-2*x);
-                let a = (dist - 4.)/(6.-4.); a = sstep(MIN(1, MAX(0,a)));
-                let b = (120. - dist)/(120. - 18.); b = sstep(MIN(1, MAX(0,b)));
-                let q = a * b;
-                if(q < .05) continue;
-
-                const key = p.gx + ',' + p.gz;
-                //const target = 2 + q*(16 - 2);
-                //const iterations = MAX(2, MIN(16, target)) | 0;
-                const iterations = MAX(2, MIN(16, 2 + q*(14 - 2))) | 0;
-                const plantSeed = plantHash(p.gx, p.gz, 4.);
-
-                const angle = ATAN2(camX - px, camZ - pz);
-                const MPlants = new DOMMatrix()
-                    .translate(px, 0, pz)
-                    .rotate(0, angle / D2R, 0)
-                    .scale(scale, scale, scale)
-                    .toFloat32Array();
-
-                gl.uniformMatrix4fv(uMPla, false, MPlants);
-                gl.uniformMatrix4fv(uVPla, false, v.transform.inverse.matrix);
-                gl.uniformMatrix4fv(uPPla, false, v.projectionMatrix);
-                gl.uniform1f(uTimePla, t * .001);
-                gl.uniform1i(IPla, iterations);
-                gl.uniform3f(uPlantPosPla, px, 0, pz);
-                gl.uniform1f(uPlantSeedPla, plantSeed);
-                gl.drawArrays(gl.TRIANGLES, 0, 6);
-            }
-
-            //gl.depthMask(true);
-            //gl.disable(gl.BLEND);
-            }
-            */
-
-            // Render Reticle
-            //if (lastHit) {
-            //    const Tm = translateScale(lastHit[0], 0.001, lastHit[2], 0.15, 1, 0.15);
-            //    gl.useProgram(PR);
-            //    gl.bindVertexArray(vaoR);
-            //    gl.uniformMatrix4fv(uMR, false, Tm);
-            //    gl.uniformMatrix4fv(uVR, false, v.transform.inverse.matrix);
-            //    gl.uniformMatrix4fv(uPR, false, v.projectionMatrix);
-            //    gl.enable(gl.BLEND); 
-            //    gl.blendFunc(gl.SRC_ALPHA, 
-            //    gl.ONE_MINUS_SRC_ALPHA);
-            //    gl.disable(gl.DEPTH_TEST); 
-            //    gl.drawArrays(gl.TRIANGLES, 0, 6);
-            //    gl.enable(gl.DEPTH_TEST); 
-            //    gl.disable(gl.BLEND);
-            //}
-            
-            // Render the shared HUD texture for this eye.
-            drawHud(hudWH,v.transform.inverse.matrix,v.projectionMatrix);
-
-            // Render Controller Indicators and Rays
-            for (const src of s.inputSources || []) {
-                const col = [1, 1, .5]
-
-                // Hand grip indicator
-                const grip = src.gripSpace ? frame.getPose(src.gripSpace, off) : null;
-                if (grip) {
-                    //const Mhand = new DOMMatrix(grip.transform.matrix).multiply(new DOMMatrix([.06,0,0,0, 0,.06,0,0, 0,0,.06,0, 0,0,0,1])).toFloat32Array();
-                    const Mhand = new DOMMatrix(grip.transform.matrix).multiply(new DOMMatrix([.1,0,0,0, 0,.1,0,0, 0,0,.1,0, 0,0,0,1])).rotate(90,0,0).translate(0,-.5,0).toFloat32Array();
-                    //const Mhand = new DOMMatrix(grip.transform.matrix)
-                    //    .multiply(new DOMMatrix().translate(0,-1,0).rotate(90,0,0).scale(.1,1,.1))
-                    //    .toFloat32Array();
-                    gl.useProgram(PDisc);
-                    gl.bindVertexArray(vaoH);
-
-                    gl.uniformMatrix4fv(uMDisc, false, Mhand);
-                    gl.uniformMatrix4fv(uVDisc, false, v.transform.inverse.matrix); 
-                    gl.uniformMatrix4fv(uPDisc, false, v.projectionMatrix);
-                    gl.uniform4f(uColDisc, col[0], col[1], col[2], .95);
-                    gl.disable(gl.DEPTH_TEST); 
-                    gl.enable(gl.BLEND); 
-                    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-                    gl.drawArrays(gl.TRIANGLES, 0, 6);
-                    gl.disable(gl.BLEND); 
-                    gl.enable(gl.DEPTH_TEST);
-                }
-
-                // Laser beam
-                const targ = src.targetRaySpace ? frame.getPose(src.targetRaySpace, off) : null;
-                if (targ) {
-                    const r = controllerRay(frame, src);
-                    const triggerVal = (src.gamepad && src.gamepad.buttons && src.gamepad.buttons[0]) ? (src.gamepad.buttons[0].value || 0) : 0;
-                    const w = .004 + .01 * triggerVal; // Beam gets thicker when trigger is pressed
-                    let len = 3.;
-                    //const tGround = (0 - r.o[1]) / r.d[1];
-                    //if (tGround > 0) len = MIN(len, MIN(5.0, tGround));
-                    const h = HUD_pick(hudWH, r);
-                    if (h) len = MIN(len, h.t); // Shorten beam if it hits the HUD
-                    
-                    const S = new DOMMatrix([w,0,0,0, 0,w,0,0, 0,0,-len,0, 0,0,0,1]);
-                    const Mbeam = new DOMMatrix(targ.transform.matrix).multiply(S).toFloat32Array();
-                    gl.useProgram(PC); 
-                    gl.bindVertexArray(vaoBeam);
-                    gl.uniformMatrix4fv(uMBeam, false, Mbeam); 
-                    gl.uniformMatrix4fv(uVBeam, false, v.transform.inverse.matrix); 
-                    gl.uniformMatrix4fv(uPBeam, false, v.projectionMatrix);
-                    gl.uniform4f(uColBeam, col[0], col[1], col[2], .8);
-                    gl.disable(gl.DEPTH_TEST); 
-                    gl.enable(gl.BLEND); 
-                    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-                    gl.drawArrays(gl.TRIANGLES, 0, 6);
-                    gl.disable(gl.BLEND); 
-                    gl.enable(gl.DEPTH_TEST);
-
-                    // Ground hit indicator for the controller ray
-                    //const g = rayHitGround(r);
-                    //if (g) {
-                    //    const Mhit = translateScale(g[0], 0.001, g[2], 0.09, 1, 0.09);
-                    //    gl.useProgram(PDisc); 
-                    //    gl.bindVertexArray(vaoR);
-                    //    gl.uniformMatrix4fv(uMDisc, false, Mhit); 
-                    //    gl.uniformMatrix4fv(uVDisc, false, v.transform.inverse.matrix); 
-                    //    gl.uniformMatrix4fv(uPDisc, false, v.projectionMatrix);
-                    //    gl.uniform4f(uColDisc, 1.0, 0.95, 0.3, 0.95);
-                    //    gl.disable(gl.DEPTH_TEST); 
-                    //    gl.enable(gl.BLEND); 
-                    //    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-                    //    gl.drawArrays(gl.TRIANGLES, 0, 6);
-                    //    gl.disable(gl.BLEND); 
-                    //    gl.enable(gl.DEPTH_TEST);
-                    //}
-                }
-            }
         }
     }
 

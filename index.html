@@ -589,150 +589,51 @@
     const speedBoosts = [];            // {timeLeft, amount}
     const items = [];                  // pickup spheres {x,y,z,r>0 means alive}
     const obstacles = [];              // solid spheres for collision {x,y,z,r}
-    const traps = [];                  // spheres spawnned by cat {x,y,z,r}
     // Player capsule constants (smaller than an object w/ props)
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
 
     // -- MODULE: Gameplay-Cat --
-    // Stylized Black Cat the player must catch. Roams near center, avoids player, drops boosts & obstacles.
-    const cat = { x:0, y:.6, z:0, vx:0, vz:0, caught:0, drop:1.2, baseS:2, anim:0, evade:0, yaw:0 };
-
-    function resetCatPosition(){
-        const a = RANDOM()*PI*2, r = RANDOM()*40; // within preferred radius
-        cat.x = COS(a)*r; cat.z = SIN(a)*r; cat.vx = cat.vz = 0;
-        // remove obstacles and traps
-        traps.length = 0;
+    const cat={caught:0};
+    // Minimal complete combat loop: cats seek, orbiting orbs hit, green boosts drop.
+    const cats=[];
+    let skillTime=0;
+    function placeCat(c){
+        const a=RANDOM()*PI*2,r=20+RANDOM()*25;
+        c.x=u.x+COS(a)*r;c.z=u.z+SIN(a)*r;c.vx=c.vz=c.yaw=c.anim=c.hit=0;
+        return c;
     }
-
-    function spawnDrop(x,z){
-        const boost = RANDOM()<.4;
-        (boost?items:traps).push(boost?{x,y:.5,z,r:.4}:{x,y:.6,z,r:.6});
-        if(items.length>100) items.splice(0, items.length-100);
-        if(traps.length>3) traps.splice(0, traps.length-3);
+    function resetCats(){
+        cats.length=0;
+        for(let i=5;i--;)cats.push(placeCat({}));
     }
-
-    function updateCat(dt){
-        // Calculate the vector from the cat to the player on the XZ plane.
-        const dxP = u.x - cat.x, dzP = u.z - cat.z;
-        // Calculate the squared distance to the player for performance (avoids sqrt).
-        const dP2 = dxP*dxP + dzP*dzP;
-        // Calculate the actual distance, ensuring it's not zero to prevent division by zero.
-        const dist = SQRT(dP2)||1;
-        // Initialize force accumulators for this frame.
-        let fx = 0, fz = 0;
-
-        // If the player is far away (distance > 50), the cat will seek them.
-        if(dist > 50){
-            // Predict the player's future position for interception, limiting the look-ahead distance.
-            const lead = MIN(3, dist / (cat.baseS + 5)); // look ahead time based on distance and cat speed
-            // Calculate the vector to the player's predicted position.
-            const tx = (u.x + userVelX*lead) - cat.x, tz = (u.z + userVelZ*lead) - cat.z;
-            // Normalize the target vector to get a direction.
-            const td = HYPOT(tx, tz)||1;
-            // Apply a force towards the predicted position.
-            fx += (tx/td)*10*(1+cat.caught*.5); fz += (tz/td)*10*(1+cat.caught*.5);
-        // If the player is at a medium distance (10 to 50), the cat will orbit them.
-        } else if(dist > 10){
-            // Get the normalized vector towards the player.
-            const nx = dxP/dist, nz = dzP/dist;
-            // Determine the orbit direction (clockwise/counter-clockwise) based on world position.
-            const s = SIN((u.x+u.z)*.2)>0?1:-1;
-            // Apply a force towards the player and a perpendicular force for orbiting.
-            fx += nx*1.1 + (-nz*s)*3; fz += nz*1.1 + (nx*s)*3;
-        // If the player is very close (distance < 10), the cat will flee.
-        } else {
-            // Apply a force directly away from the player.
-            fx -= (dxP/dist)*4*(1+cat.caught*.4); fz -= (dzP/dist)*4*(1+cat.caught*.4);
-        }
-
-        // Calculate the cat's distance from the world origin.
-        const dc = SQRT(cat.x*cat.x + cat.z*cat.z)||1;
-        // If the cat is too far from the center (> 150), apply a strong force to bring it back.
-        if(dc > 150){
-            // The force increases the further away the cat is.
-            //const k=(dc-150)*0.06;
-            // Apply the centering force.
-            fx += (-cat.x/dc*10); fz += (-cat.z/dc*10);
-        // If the cat is too close to the center (< 30), apply a gentle force to push it away.
-        }// else if(dc < 30){
-        //    // Apply a gentle outward force.
-        //    fx += (cat.x/dc)*0.5; fz += (cat.z/dc)*0.5;
-        //}
-
-        // Calculate the cat's current speed and direction for look-ahead checks.
-        const spd = HYPOT(cat.vx, cat.vz) + .1, dirx = cat.vx/spd, dirz = cat.vz/spd;
-        // 'look' is the distance ahead the cat will check for obstacles, scaled by its speed.
-        const look = 10 + spd*.6;
-        // Iterate through all obstacles in the scene.
-        for(const ob of obstacles){
-            // Calculate the vector from the cat to the obstacle.
-            const ox = ob.x - cat.x, oz = ob.z - cat.z;
-            // Define the avoidance radius (obstacle radius + a buffer).
-            const rad = ob.r + 1.3;
-            // Calculate the squared distance to the obstacle.
-            const d2 = ox*ox + oz*oz;
-            // If the cat is inside the avoidance radius, apply a strong repulsion force.
-            if(d2 < rad*rad){
-                // Normalize the repulsion vector.
-                const d = SQRT(d2)||1;
-                // Apply the repulsion force.
-                fx -= (ox/d)*5*(1+cat.caught*.5); fz -= (oz/d)*5*(1+cat.caught*.5);
-            // If the obstacle is within the look-ahead distance, perform a more precise check.
-            } else if(d2 < look*look){
-                // Project the obstacle's position onto the cat's forward vector.
-                const ahead = ox*dirx + oz*dirz;
-                // If the obstacle is in front of the cat and within the look-ahead distance...
-                if(ahead>0 && ahead<look){
-                    // Calculate the perpendicular distance from the cat's path to the obstacle.
-                    const px = ox - dirx*ahead, pz = oz - dirz*ahead;
-                    // Calculate the squared perpendicular distance.
-                    const pd2 = px*px + pz*pz;
-                    // If the perpendicular distance is less than the avoidance radius, a collision is imminent.
-                    if(pd2 < rad*rad){
-                        // Normalize the perpendicular vector.
-                        const pd = SQRT(pd2)||1;
-                        // Apply a steering force away from the obstacle.
-                        fx -= (px/pd)*5*(1+cat.caught*.5); fz -= (pz/pd)*5*(1+cat.caught*.5);
-                    }
+    function dropBoost(x,z){
+        items.push({x,y:.5,z,r:.4});
+        if(items.length>100)items.shift();
+    }
+    function updateEnemies(dt){
+        skillTime+=dt;
+        for(const c of cats){
+            let dx=u.x-c.x,dz=u.z-c.z,d=HYPOT(dx,dz)||1,fx=dx/d*7,fz=dz/d*7;
+            for(const o of obstacles){
+                let ox=c.x-o.x,oz=c.z-o.z,od=HYPOT(ox,oz)||1,r=o.r+2;
+                if(od<r){fx+=(ox*(r-od)-oz)/od*3;fz+=(oz*(r-od)+ox)/od*3;}
+            }
+            c.vx+=fx*dt;c.vz+=fz*dt;
+            let s=HYPOT(c.vx,c.vz)||1,m=2.5;
+            if(s>m){c.vx*=m/s;c.vz*=m/s;s=m;}
+            c.x+=c.vx*dt;c.z+=c.vz*dt;c.vx*=1-dt;c.vz*=1-dt;
+            c.anim+=s*dt*3.5;c.yaw=ATAN2(c.vx,c.vz);
+            c.hit-=dt;
+            if(d<1.1&&c.hit<0){u.x+=dx/d*2;u.z+=dz/d*2;c.hit=1;}
+            for(let i=3;i--;){
+                const a=skillTime*2+i*PI*2/3,ox=u.x+COS(a)*2.3,oz=u.z+SIN(a)*2.3;
+                if((c.x-ox)**2+(c.z-oz)**2<1){
+                    dropBoost(c.x,c.z);placeCat(c);log(`Cat defeated #${++cat.caught}`);break;
                 }
             }
         }
-
-        // Evade impulse when very close
-        cat.evade -= dt;
-        if(dP2 < 9 && cat.evade<=0){ const d = SQRT(dP2)||1, nx = dxP/d, nz = dzP/d, s = RANDOM()<.5?1:-1; fx += (-nz*s)*50*(1+cat.caught*.2); fz += (nx*s)*50*(1+cat.caught*.2); cat.evade = .9 / SQRT(1 + cat.caught*.9); }
-
-        // Integrate & clamp speed
-        cat.vx += fx*dt; cat.vz += fz*dt;
-        const maxS = cat.baseS + cat.caught*.5; let sp = HYPOT(cat.vx, cat.vz)||1;
-        if(sp>maxS){ cat.vx = cat.vx/sp*maxS; cat.vz = cat.vz/sp*maxS; sp = maxS; }
-        cat.x += cat.vx*dt; cat.z += cat.vz*dt;
-
-        // Face movement direction
-        if(sp>.1){
-            const targetYaw = ATAN2(cat.vx, cat.vz); let dy = targetYaw - cat.yaw;
-            if(dy > PI) dy -= 2*PI; else if(dy < -PI) dy += 2*PI; cat.yaw += dy * MIN(1, dt*10);
-        }
-
-        // Friction
-        cat.vx *= (1 - 1.1*dt); cat.vz *= (1 - 1.1*dt);
-
-        // Chase / drops
-        const chased = dP2 < 120;
-        if(chased){ cat.drop -= dt; if(cat.drop<=0){ spawnDrop(cat.x, cat.z); cat.drop = 1.9 + RANDOM()*.8; } }
-
-        // Anim & catch
-        cat.anim += sp*dt*3.5;//3.5 radians per meter
-        if(dP2 < 1/*(.5+CR)*(.5+CR)*/){
-            //cat.caught++; log('Cat caught #'+cat.caught +' at '+Date.now() );
-            //log(`Cat caught #${++cat.caught} @ ${new Date().toISOString().slice(11,23)}`);
-            log(`Cat caught #${++cat.caught}`);
-            if(speedBoosts.length<10) speedBoosts.push({timeLeft:15, amount:.3});
-            resetCatPosition();
-        }
     }
-
-    resetCatPosition();
+    resetCats();
     // -- /MODULE: Gameplay-Cat --
 
     function currentSpeedMult(){
@@ -775,7 +676,6 @@
             }
         };
         for (const o of obstacles) hit(o);
-        for (const o of traps) hit(o);
         // Ground collision (keep eye at least capsule height above 0)
     if (u.y - 1.6 < 0) u.y = 1.6;
     }
@@ -942,7 +842,7 @@
     function activate(a) {
         playClickSound();
         if (typeof a === 'string') chatText = (chatText + a).slice(0,64);
-        else if (a === 0) { u.x=0;u.z=2;u.yaw=0;u.pitch=.2;resetCatPosition(); }
+        else if (a === 0) { u.x=0;u.z=2;u.yaw=0;u.pitch=.2;resetCats(); }
         else if (a === 1) toggleXRFromUI();
         else if (a === 2) toggleMMO();
         else if (a === 3) setChat(true);
@@ -1159,11 +1059,11 @@
             hudCtx.textAlign = 'center';
             hudCtx.textBaseline = 'middle';
             hudCtx.font = 'bold 36px system-ui';
-            hudCtx.fillText(`CAT #${cat.caught} CAUGHT`, x, y);
+            hudCtx.fillText(`CAT #${cat.caught} DEFEATED`, x, y);
             hudCtx.font = '20px system-ui';
             hudCtx.fillText(
                 cat.caught < 13 ?
-                    `${13 - cat.caught} CATS TO CATCH` :
+                    `${13 - cat.caught} CATS TO DEFEAT` :
                     'VICTORY! THE END?',x,y + 52);
             hudCtx.globalAlpha = 1;
         }
@@ -1422,7 +1322,7 @@
             }
         }
         step(dt, getMove(session));
-        updateCat(dt);
+        updateEnemies(dt);
         mmoTick(dt);
         if (cat.caught > lastCaughtShown) {
             lastCaughtShown = cat.caught;
@@ -1432,8 +1332,11 @@
 
     function drawWorld(V, P, W, t, dt, vr) {
         for (const itm of items) if (itm.r > 0) drawSphere(V, P, itm.x, itm.y, itm.z, itm.r, [.2, 1, .3]);
-        for (const trap of traps) drawSphere(V, P, trap.x, trap.y, trap.z, trap.r, [.8, .5, .1]);
-        drawCat(V, P, cat.x, cat.y, cat.z, cat.yaw, cat.anim, .08, [.02, .02, .02]);
+        for(const c of cats)drawCat(V,P,c.x,.6,c.z,c.yaw,c.anim,.08,[.02,.02,.02]);
+        for(let i=3;i--;){
+            const a=skillTime*2+i*PI*2/3;
+            drawSphere(V,P,u.x+COS(a)*2.3,.7,u.z+SIN(a)*2.3,.35,[.3,.6,1]);
+        }
         if (peers && peers.size) {
             const now = performance.now(), target = now - 120;
             peers.forEach((p, id) => {
@@ -1652,7 +1555,7 @@
 
             last = 0;
             xr.requestAnimationFrame(loop); // Start the shared render loop
-            resetCatPosition();
+            resetCats();
 
         } catch (e) {
             log('XR failed: ' + e.message);
@@ -1667,7 +1570,7 @@
     (function main() {
         initXR();
         requestAnimationFrame(loop);
-        log('Catch the Black Cat 13 times');
+        log('Defeat 13 cats with your orbiting skill');
         log('MENU H/X   F INV   C CHAT   Z SETTINGS');
         log('MOVE: WASD/QE or touch sticks');
     })();

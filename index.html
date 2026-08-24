@@ -586,29 +586,41 @@
     //const BOOST_DURATION = 15;          // seconds per pickup
     //const BOOST_AMOUNT  = 0.3;        // +30% per stack
     //const MAX_BOOSTS    = 100;           // safety cap
-    const speedBoosts = [];            // {timeLeft, amount}
-    const items = [];                  // pickup spheres {x,y,z,r>0 means alive}
+    const items = [];                  // XP gems {x,y,z,r>0 means alive}
     const obstacles = [];              // solid spheres for collision {x,y,z,r}
     // Player capsule constants (smaller than an object w/ props)
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
 
     // -- MODULE: Gameplay-Cat --
     const cat={caught:0};
-    // Minimal complete combat loop: cats seek, orbiting orbs hit, green boosts drop.
+    // Cats seek, skills hit automatically, and green XP drops fuel upgrades.
     const cats=[];
-    let skillTime=0;
+    const shots=[];
+    let skillTime=0,level=1,xp=0,choosing=0,orbCount=0,orbSize=.35,orbSpeed=2,
+        boltCount=1,boltRate=4,boltSize=.2,boltTime=0,moveSpeed=3,choices=[],seed=Date.now()|0,hp=100,maxHp=100;
+    function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
     function placeCat(c){
-        const a=RANDOM()*PI*2,r=20+RANDOM()*25;
+        const a=rng()*PI*2,r=20+rng()*25;
         c.x=u.x+COS(a)*r;c.z=u.z+SIN(a)*r;c.vx=c.vz=c.yaw=c.anim=c.hit=0;
+        c.strong=rng()<MIN(.5,.1+level*.03);
         return c;
     }
     function resetCats(){
-        cats.length=0;
-        for(let i=5;i--;)cats.push(placeCat({}));
+        cats.length=shots.length=0;
+        for(let i=MIN(40,3+level*2);i--;)cats.push(placeCat({}));
     }
-    function dropBoost(x,z){
+    function resetRun(){
+        level=1;xp=choosing=orbCount=cat.caught=skillTime=boltTime=0;
+        orbSize=.35;orbSpeed=2;boltCount=1;boltRate=4;boltSize=.2;moveSpeed=3;maxHp=hp=100;
+        items.length=0;choices=[];hudPage=0;u.x=0;u.z=2;resetCats();log('Run ended');
+    }
+    function dropXP(x,z){
         items.push({x,y:.5,z,r:.4});
         if(items.length>100)items.shift();
+    }
+    function defeat(c){
+        dropXP(c.x,c.z);if(c.strong)dropXP(c.x+.5,c.z);
+        placeCat(c);log(`Cat defeated #${++cat.caught}`);
     }
     function updateEnemies(dt){
         skillTime+=dt;
@@ -619,35 +631,44 @@
                 if(od<r){fx+=(ox*(r-od)-oz)/od*3;fz+=(oz*(r-od)+ox)/od*3;}
             }
             c.vx+=fx*dt;c.vz+=fz*dt;
-            let s=HYPOT(c.vx,c.vz)||1,m=2.5;
+            let s=HYPOT(c.vx,c.vz)||1,m=2.5+c.strong*.8;
             if(s>m){c.vx*=m/s;c.vz*=m/s;s=m;}
             c.x+=c.vx*dt;c.z+=c.vz*dt;c.vx*=1-dt;c.vz*=1-dt;
             c.anim+=s*dt*3.5;c.yaw=ATAN2(c.vx,c.vz);
             c.hit-=dt;
-            if(d<1.1&&c.hit<0){u.x+=dx/d*2;u.z+=dz/d*2;c.hit=1;}
-            for(let i=3;i--;){
-                const a=skillTime*2+i*PI*2/3,ox=u.x+COS(a)*2.3,oz=u.z+SIN(a)*2.3;
-                if((c.x-ox)**2+(c.z-oz)**2<1){
-                    dropBoost(c.x,c.z);placeCat(c);log(`Cat defeated #${++cat.caught}`);break;
+            if(d<1.1+c.strong*.2&&c.hit<0){
+                u.x+=dx/d*(2+c.strong);u.z+=dz/d*(2+c.strong);hp-=c.strong?25:10;playSound(90,.2,.25);placeCat(c);
+                if(hp<1){resetRun();return;}
+                continue;
+            }
+            for(let i=orbCount;i--;){
+                const a=skillTime*orbSpeed+i*PI*2/orbCount,ox=u.x+COS(a)*2.3,oz=u.z+SIN(a)*2.3;
+                if((c.x-ox)**2+(c.z-oz)**2<(.5+orbSize)**2){
+                    defeat(c);break;
                 }
             }
         }
     }
-    resetCats();
-    // -- /MODULE: Gameplay-Cat --
-
-    function currentSpeedMult(){
-        let m = 1;
-        for (const b of speedBoosts) m += b.amount;
-        return m;
-    }
-
-    function updateBoosts(dt){
-        for (let i=speedBoosts.length-1;i>=0;i--){
-            speedBoosts[i].timeLeft -= dt;
-            if (speedBoosts[i].timeLeft<=0) speedBoosts.splice(i,1);
+    function updateShots(dt){
+        boltTime-=dt;
+        if(boltCount&&boltTime<0){
+            boltTime=boltRate;
+            let target=cats[0],best=1e9;
+            for(const c of cats){const d=(c.x-u.x)**2+(c.z-u.z)**2;if(d<best){best=d;target=c;}}
+            const aim=ATAN2(target.x-u.x,target.z-u.z);
+            for(let i=boltCount;i--;){
+                const a=aim+(i-(boltCount-1)/2)*.18;
+                shots.push({x:u.x,y:.7,z:u.z,vx:SIN(a)*10,vz:COS(a)*10,t:3});
+            }
+        }
+        for(let i=shots.length;i--;){
+            const s=shots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
+            for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){defeat(c);s.t=0;break;}
+            if(s.t<0)shots.splice(i,1);
         }
     }
+    resetCats();
+    // -- /MODULE: Gameplay-Cat --
 
     function tryPickupItems(){
         // Closest point on capsule segment (vertical)
@@ -658,7 +679,7 @@
             const dx = itm.x - u.x, dy = itm.y - ny, dz = itm.z - u.z;
             if (HYPOT(dx,dy,dz) < itm.r + .5){
                 itm.r = 0; // mark consumed
-                if (speedBoosts.length < 10) speedBoosts.push({ timeLeft: 15, amount: .3 });
+                xp++;if(xp>=level*3&&!choosing)rollChoices();
             }
         }
     }
@@ -729,8 +750,7 @@
     // Updates the user's position and orientation based on movement input and delta time
     function step(dt, mv) {
         // New movement logic
-        updateBoosts(dt);
-        const speed = 3/*MOVES*/ * (currentSpeedMult());
+        const speed = moveSpeed;
         // Apply movement
         const now = performance.now();
         const moveMagnitude = HYPOT(mv.x, mv.y);
@@ -790,7 +810,7 @@
     // -- MODULE: Scene-HUD --
     // -- PART: State-Layout --
     const LOG = [], CHAT = [];
-    let logScroll = 0, hudVisible = true, congratsTimer = 0, lastCaughtShown = 0, hudPage = 0, chatText = '', invertX = false, invertY = false, closedChat = true;
+    let logScroll = 0, hudVisible = true, hudPage = 0, chatText = '', invertX = false, invertY = false, closedChat = true;
     let HUD_WH_world = M4(), hoverBtn = null;
 
     function log(s) { LOG.push(s); LOG.length > 200 && LOG.shift(); logScroll = 0; }
@@ -822,9 +842,28 @@
         [.06,.35,.48,.47,'',2],[.52,.35,.94,.47,'',14],
         [.06,.53,.48,.65,'',16],[.52,.53,.94,.65,'',15],
         [.06,.82,.94,.94,'BACK',17]
+    ], UI_LEVEL=[
+        [.04,.38,.31,.7,'+ ORB',20],[.365,.38,.635,.7,'BIGGER',21],[.69,.38,.96,.7,'FASTER',22]
     ];
+    const RARITY=['COMMON','RARE','LEGENDARY'];
+    function cardText(n,p){return n===0?`+${p} ORB${p>1?'S':''}`:n===1?`+${p*20}% ORB SIZE`:n===2?`+${p*15}% ORB SPEED`:n===3?`+${p} BOLT${p>1?'S':''}`:n===4?`+${p*10}% MOVE`:n===5?`-${p*10}% COOLDOWN`:n===6?`+${p*20}% BOLT SIZE`:`+${p*20} MAX HEALTH`;}
 
-    function currentUI() { return !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
+    function rollChoices(){
+        const tier=()=>{const r=rng();return r<.05?2:r<.3?1:0;},pool=orbCount?[0,1,2,3,4,5,6,7]:[3,4,5,6,7];
+        choices=orbCount?[]:[[0,tier()]];
+        while(choices.length<3){const a=pool[rng()*pool.length|0];if(!choices.some(c=>c[0]===a))choices.push([a,tier()]);}
+        for(let i=3;i--;){const c=choices[i],p=1<<c[1];UI_LEVEL[i][4]=RARITY[c[1]]+'|'+cardText(c[0],p);UI_LEVEL[i][6]=c[1];}
+        choosing=1;hudVisible=true;
+    }
+    function upgrade(c){
+        const n=c[0],p=1<<c[1];
+        n===0?orbCount+=p:n===1?orbSize*=1+p*.2:n===2?orbSpeed*=1+p*.15:n===3?boltCount+=p:n===4?moveSpeed*=1+p*.1:n===5?boltRate=MAX(.15,boltRate*(1-p*.1)):n===6?boltSize*=1+p*.2:(maxHp+=p*20,hp=MIN(maxHp,hp+p*20));
+        xp-=level++*3;choosing=0;hudPage=0;
+        while(cats.length<MIN(40,3+level*2))cats.push(placeCat({}));
+        if(xp>=level*3)rollChoices();
+    }
+
+    function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
     // -- /PART: State-Layout --
 
     // -- PART: Chat-Actions --
@@ -841,8 +880,11 @@
     }
     function activate(a) {
         playClickSound();
+        if(a>19){
+            upgrade(choices[a-20]);
+        }
         if (typeof a === 'string') chatText = (chatText + a).slice(0,64);
-        else if (a === 0) { u.x=0;u.z=2;u.yaw=0;u.pitch=.2;resetCats(); }
+        else if (a === 0) { u.x=0;u.z=2;u.yaw=0;u.pitch=.2;hp=maxHp;resetCats(); }
         else if (a === 1) toggleXRFromUI();
         else if (a === 2) toggleMMO();
         else if (a === 3) setChat(true);
@@ -901,6 +943,16 @@
 
     // -- PART: Canvas-Drawing --
     // --- HUD Drawing ---
+    function drawBars(y){
+        const x=hudVisible?20:140,w=360;
+        for(const b of [[hp,maxHp,'HP','#d44','#422'],[xp,level*3,'XP','#4b8','#243']]){
+            hudCtx.fillStyle=b[4];hudCtx.fillRect(x,y,w,14);
+            hudCtx.fillStyle=b[3];hudCtx.fillRect(x,y,w*MIN(1,b[0]/b[1]),14);
+            hudCtx.fillStyle='#fff';hudCtx.font='11px system-ui';hudCtx.textAlign='left';hudCtx.textBaseline='middle';
+            hudCtx.fillText(`${b[2]} ${b[0]}/${b[1]}`,x+8,y+7);y+=18;
+        }
+        hudCtx.textBaseline='alphabetic';
+    }
     // Draws the entire HUD onto the 2D canvas
     function drawHUDCanvas(dt) {
         const ui = currentUI();
@@ -922,18 +974,19 @@
             hudCtx.textAlign = 'center';
             hudCtx.textBaseline = 'middle';
             hudCtx.fillText('MENU', x + w / 2, y + h / 2);
+            drawBars(44);
 
             // Keep the latest chat messages visible over the closed HUD.
             if (closedChat && CHAT.length) {
                 const lines = CHAT.slice(-3);
                 hudCtx.fillStyle = '#111914dd';
-                hudCtx.fillRect(20, 48, 600, 22 + lines.length * 18);
+                hudCtx.fillRect(20, 84, 600, 22 + lines.length * 18);
                 hudCtx.fillStyle = '#eef';
                 hudCtx.font = '14px monospace';
                 hudCtx.textAlign = 'left';
                 hudCtx.textBaseline = 'alphabetic';
                 lines.forEach((s, i) =>
-                    hudCtx.fillText(s.slice(0, 68), 28, 68 + i * 18)
+                    hudCtx.fillText(s.slice(0, 68), 28, 104 + i * 18)
                 );
             }
         } else {
@@ -948,6 +1001,7 @@
             hudCtx.textBaseline = 'alphabetic';
             hudCtx.font = '20px system-ui';
             hudCtx.fillText(
+                choosing ? 'LEVEL UP' :
                 hudPage === 1 ? 'CHAT' :
                 hudPage === 2 ? 'INVENTORY' :
                 hudPage === 3 ? 'SETTINGS' :
@@ -956,10 +1010,14 @@
                 34
             );
 
+            if(choosing||!hudPage)drawBars(44);
+
             hudCtx.font = '16px system-ui';
             hudCtx.fillStyle = '#eef';
 
-            if (hudPage === 1) {
+            if(choosing){
+                hudCtx.fillText(`LEVEL ${level} — CHOOSE AN UPGRADE`,20,102);
+            } else if (hudPage === 1) {
                 // Chat history and text entry field.
                 const n = xr ? 4 : 11;
                 const iy = xr ? 120 : 270;
@@ -1001,11 +1059,11 @@
                 );
 
                 hudCtx.fillText(
-                    `CATS ${cat.caught}/13   BOOSTS ${speedBoosts.length}   ${timer}m`,20,64
+                    `LEVEL ${level}   CATS ${cat.caught}   ${timer}m`,20,102
                 );
                 hudCtx.fillStyle = mmoEnabled ? '#9f9' : '#899';
                 hudCtx.fillText(
-                    `MMO ${mmoEnabled ? 'ON' : 'OFF'}   PLAYERS ${peerCount}`,20,88
+                    `MMO ${mmoEnabled ? 'ON' : 'OFF'}   PLAYERS ${peerCount}`,20,126
                 );
                 hudCtx.fillStyle = '#899';
                 hudCtx.font = '14px monospace';
@@ -1015,7 +1073,7 @@
                     LOG.length - logScroll
                 );
                 lines.forEach((s, i) =>
-                    hudCtx.fillText(s.slice(0, 48), 20, 126 + i * 19)
+                    hudCtx.fillText(s.slice(0, 48), 20, 158 + i * 17)
                 );
             }
 
@@ -1027,7 +1085,7 @@
                 const h = (b[3] - b[1]) * 320;
                 const a = b[5];
 
-                hudCtx.fillStyle = hoverBtn === b ? '#586b58' : '#27332b';
+                hudCtx.fillStyle = hoverBtn === b ? '#586b58' : choosing ? ['#303638','#17405a','#5a4217'][b[6]] : '#27332b';
                 hudCtx.fillRect(x, y, w, h);
                 hudCtx.fillStyle = '#eef';
                 hudCtx.font = (
@@ -1035,7 +1093,12 @@
                 ) + 'px system-ui';
                 hudCtx.textAlign = 'center';
                 hudCtx.textBaseline = 'middle';
-                hudCtx.fillText(
+                if(choosing){
+                    const q=b[4].split('|');
+                    hudCtx.fillStyle=['#ddd','#6cf','#fc6'][b[6]];hudCtx.font='bold 16px system-ui';
+                    hudCtx.fillText(q[0],x+w/2,y+h*.35);
+                    hudCtx.fillStyle='#eef';hudCtx.font='14px system-ui';hudCtx.fillText(q[1],x+w/2,y+h*.65);
+                }else hudCtx.fillText(
                     a === 1 ? uiEnterLabel :
                     a === 2 ? 'MMO ' + (mmoEnabled ? 'ON' : 'OFF') :
                     a === 14 ? 'INVERT X ' + (invertX ? 'ON' : 'OFF') :
@@ -1048,26 +1111,6 @@
             }
         }
 
-        // Temporary overlay shown after catching a cat.
-        if (congratsTimer > 0) {
-            const x = 330;
-            const y = 128;
-            hudCtx.globalAlpha = congratsTimer > .5 ? 1 : congratsTimer / .5;
-            hudCtx.fillStyle = '#111914dd';
-            hudCtx.fillRect(110, 82, 440, 132);
-            hudCtx.fillStyle = '#eef';
-            hudCtx.textAlign = 'center';
-            hudCtx.textBaseline = 'middle';
-            hudCtx.font = 'bold 36px system-ui';
-            hudCtx.fillText(`CAT #${cat.caught} DEFEATED`, x, y);
-            hudCtx.font = '20px system-ui';
-            hudCtx.fillText(
-                cat.caught < 13 ?
-                    `${13 - cat.caught} CATS TO DEFEAT` :
-                    'VICTORY! THE END?',x,y + 52);
-            hudCtx.globalAlpha = 1;
-        }
-        
         // Upload the canvas content to the WebGL texture
         gl.bindTexture(gl.TEXTURE_2D, hudTex);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -1323,19 +1366,17 @@
         }
         step(dt, getMove(session));
         updateEnemies(dt);
+        updateShots(dt);
         mmoTick(dt);
-        if (cat.caught > lastCaughtShown) {
-            lastCaughtShown = cat.caught;
-            congratsTimer = 5.5;
-        }
     }
 
     function drawWorld(V, P, W, t, dt, vr) {
         for (const itm of items) if (itm.r > 0) drawSphere(V, P, itm.x, itm.y, itm.z, itm.r, [.2, 1, .3]);
-        for(const c of cats)drawCat(V,P,c.x,.6,c.z,c.yaw,c.anim,.08,[.02,.02,.02]);
-        for(let i=3;i--;){
-            const a=skillTime*2+i*PI*2/3;
-            drawSphere(V,P,u.x+COS(a)*2.3,.7,u.z+SIN(a)*2.3,.35,[.3,.6,1]);
+        for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,boltSize,[1,.7,.2]);
+        for(const c of cats)drawCat(V,P,c.x,.6,c.z,c.yaw,c.anim,c.strong?.12:.08,c.strong?[.5,.03,.03]:[.02,.02,.02]);
+        for(let i=orbCount;i--;){
+            const a=skillTime*orbSpeed+i*PI*2/orbCount;
+            drawSphere(V,P,u.x+COS(a)*2.3,.7,u.z+SIN(a)*2.3,orbSize,[.3,.6,1]);
         }
         if (peers && peers.size) {
             const now = performance.now(), target = now - 120;
@@ -1455,7 +1496,6 @@
 
     // Helper to update the HUD canvas content
     function updHUD(dt) {
-    if (congratsTimer > 0) congratsTimer = MAX(0, congratsTimer - dt);
         drawHUDCanvas(dt);
     }
     function drawHud(M,V,P) {
@@ -1570,7 +1610,7 @@
     (function main() {
         initXR();
         requestAnimationFrame(loop);
-        log('Defeat 13 cats with your orbiting skill');
+        log('Survive, collect XP, choose upgrades');
         log('MENU H/X   F INV   C CHAT   Z SETTINGS');
         log('MOVE: WASD/QE or touch sticks');
     })();

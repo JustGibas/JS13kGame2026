@@ -134,7 +134,9 @@
     let ws = null;
     let myId = null;
     const peers = new Map(); // id -> {x,z,yaw,last,hist:[{t,x,z,yaw}], sx,sz,syaw}
-    let mmoSendTimer = 0;
+    const remoteCats = new Map(); // owner id -> Map(enemy id -> predicted enemy)
+    const remoteShots = [];
+    let mmoSendTimer = 0, enemySendTimer = 0;
 
     // Peer interpolation delay (ms). Higher = smoother but more laggy. 120ms is a good balance.
     function lerp(a,b,t){ return a + (b-a)*t; }
@@ -145,6 +147,7 @@
     }
     function pushPeerSample(p, x, z, yaw, now){
         if (!p.hist) p.hist = [];
+        p.speed = p.last ? HYPOT(x-p.x,z-p.z)*1000/(now-p.last||1) : 0;
         p.hist.push({ t: now, x, z, yaw });
         p.last = now;
         // trim old samples
@@ -178,15 +181,17 @@
     }
 
     function logMMO(s){ log('MMO: ' + s); }
+    function sendMMO(s){try{if(ws?.readyState===1)ws.send(s);}catch(_){}}
 
     function toggleMMO(){
         mmoEnabled = !mmoEnabled;
-        if (mmoEnabled) connectMMO(); else disconnectMMO();
+        if (mmoEnabled){resetRun();connectMMO();} else disconnectMMO();
     }
 
     function disconnectMMO(){
         try { if (ws) ws.close(); } catch(_){}
-        ws = null; myId = null; peers.clear();
+        ws = null; myId = null; peers.clear();remoteCats.clear();remoteShots.length=0;
+        mmoSendTimer=enemySendTimer=0;
         logMMO('disabled');
     }
 
@@ -202,7 +207,7 @@
         // send a "cat!" on open to register
         // could be extended to send a name/color/etc
         ws.onopen = _ => { try { ws.send('cat!'); } catch(_){} logMMO('connected'); };
-        ws.onclose = _ => { logMMO('closed'); ws = null; if (mmoEnabled) setTimeout(connectMMO, 1000); };
+        ws.onclose = _ => { logMMO('closed'); ws=null;myId=null;peers.clear();remoteCats.clear();remoteShots.length=0;if(mmoEnabled)setTimeout(connectMMO,1000); };
         ws.onerror = _ => { /* errors surface via close */ };
         ws.onmessage = ev => handleMMOMessage(ev.data);
     }
@@ -212,8 +217,8 @@
         const c = msg[0];
         switch(c){
             case '@': myId = msg.slice(1); logMMO('my id: ' + myId); return;
-            case '+': { const id = msg.slice(1); if (id && !peers.has(id)) peers.set(id, {x:0,z:0,yaw:0,last:performance.now(),hist:[]}); return; }
-            case '-': { const id = msg.slice(1); peers.delete(id); return; }
+            case '+': { const id = msg.slice(1); if (id && !peers.has(id)) peers.set(id, {x:0,z:0,yaw:0,last:0,hist:[]}); return; }
+            case '-': { const id = msg.slice(1); peers.delete(id);remoteCats.delete(id);for(let i=remoteShots.length;i--;)if(remoteShots[i].o===id)remoteShots.splice(i,1);return; }
         }
         // Strip optional direct prefix @targetId|payload -> payload
         let payload = msg;
@@ -244,6 +249,33 @@
             const p = payload.split('|'), id = p[1];
             if (id !== myId) say((id || '?').slice(-4) + ': ' + p.slice(2).join('|').slice(0,64));
         }
+        if (payload[0] === 'e' && payload[1] === '|'){
+            const p=payload.split('|'),owner=p[1];
+            if(owner&&owner!==myId){
+                const group=remoteCats.get(owner)||new Map(),seen=new Set(),now=performance.now();
+                for(const row of (p[2]||'').split(';'))if(row){
+                    const a=row.split(',').map(Number),id=a[0];seen.add(id);
+                    let c=group.get(id);
+                    if(!c||c.v!==a[1])c={i:id,v:a[1],x:a[2],z:a[3],yaw:a[4],hit:0,h:0};
+                    c.tx=a[2];c.tz=a[3];c.tyaw=a[4];c.strong=a[5];c.dead=0;c.last=now;group.set(id,c);
+                }
+                for(const id of group.keys())if(!seen.has(id))group.delete(id);
+                remoteCats.set(owner,group);
+            }
+        }
+        if ((payload[0] === 'h'||payload[0] === 'k') && payload[1] === '|'){
+            const p=payload.split('|'),c=p[1]===myId&&cats[+p[2]];
+            if(c&&c.v===+p[3])payload[0]==='h'?defeat(c):placeCat(c);
+        }
+        if (payload[0] === 'd' && payload[1] === '|'){
+            const p=payload.split('|'),group=remoteCats.get(p[1]),c=group&&group.get(+p[2]);
+            if(p[1]!==myId){dropXP(+p[4],+p[5]);if(+p[6])dropXP(+p[4]+.5,+p[5]);}
+            if(c&&c.v===+p[3]){c.v++;c.dead=1;}
+        }
+        if(payload[0]==='s'&&payload[1]==='|'){
+            const p=payload.split('|');
+            if(p[1]!==myId)remoteShots.push({o:p[1],x:+p[2],y:.7,z:+p[3],vx:+p[4],vz:+p[5],r:+p[6],t:3});
+        }
     }
 
     function mmoTick(dt){
@@ -253,7 +285,12 @@
             mmoSendTimer = 0;
             // compact broadcast with our id
             const msg = 'p|' + myId + '|' + u.x.toFixed(2) + '|' + u.z.toFixed(2) + '|' + u.yaw.toFixed(3);
-            try { ws.send(msg); } catch(_){}
+            sendMMO(msg);
+        }
+        enemySendTimer+=dt;
+        if(enemySendTimer>=.2){
+            enemySendTimer=0;
+            sendMMO('e|'+myId+'|'+cats.map(c=>[c.i,c.v,c.x.toFixed(2),c.z.toFixed(2),c.yaw.toFixed(2),+c.strong]).join(';'));
         }
     }
 
@@ -596,36 +633,41 @@
     // Cats seek, skills hit automatically, and green XP drops fuel upgrades.
     const cats=[];
     const shots=[];
-    let skillTime=0,level=1,xp=0,choosing=0,orbCount=0,orbSize=.35,orbSpeed=2,
+    let skillTime=0,level=1,xp=0,choosing=0,orbCount=0,orbSize=.35,orbSpeed=2,catVersion=0,
         boltCount=1,boltRate=4,boltSize=.2,boltTime=0,moveSpeed=3,choices=[],seed=Date.now()|0,hp=100,maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
     function placeCat(c){
         const a=rng()*PI*2,r=20+rng()*25;
         c.x=u.x+COS(a)*r;c.z=u.z+SIN(a)*r;c.vx=c.vz=c.yaw=c.anim=c.hit=0;
+        c.v=++catVersion;
         c.strong=rng()<MIN(.5,.1+level*.03);
         return c;
     }
     function resetCats(){
         cats.length=shots.length=0;
-        for(let i=MIN(40,3+level*2);i--;)cats.push(placeCat({}));
+        for(let i=MIN(40,3+level*2);i--;)cats.push(placeCat({i:cats.length}));
     }
     function resetRun(){
         level=1;xp=choosing=orbCount=cat.caught=skillTime=boltTime=0;
         orbSize=.35;orbSpeed=2;boltCount=1;boltRate=4;boltSize=.2;moveSpeed=3;maxHp=hp=100;
-        items.length=0;choices=[];hudPage=0;u.x=0;u.z=2;resetCats();log('Run ended');
+        items.length=0;choices=[];hudPage=0;u.x=0;u.z=2;resetCats();log(mmoEnabled?'MMO run started':'Run ended');
     }
     function dropXP(x,z){
         items.push({x,y:.5,z,r:.4});
         if(items.length>100)items.shift();
     }
     function defeat(c){
+        const x=c.x,z=c.z,v=c.v,strong=c.strong;
         dropXP(c.x,c.z);if(c.strong)dropXP(c.x+.5,c.z);
+        if(myId)sendMMO(`d|${myId}|${c.i}|${v}|${x.toFixed(2)}|${z.toFixed(2)}|${+strong}`);
         placeCat(c);log(`Cat defeated #${++cat.caught}`);
     }
     function updateEnemies(dt){
         skillTime+=dt;
         for(const c of cats){
-            let dx=u.x-c.x,dz=u.z-c.z,d=HYPOT(dx,dz)||1,fx=dx/d*7,fz=dz/d*7;
+            let tx=u.x,tz=u.z,best=(tx-c.x)**2+(tz-c.z)**2,now=performance.now();
+            peers.forEach(p=>{const q=(p.x-c.x)**2+(p.z-c.z)**2;if(now-p.last<15000&&q<best){best=q;tx=p.x;tz=p.z;}});
+            let dx=tx-c.x,dz=tz-c.z,d=HYPOT(dx,dz)||1,fx=dx/d*7,fz=dz/d*7;
             for(const o of obstacles){
                 let ox=c.x-o.x,oz=c.z-o.z,od=HYPOT(ox,oz)||1,r=o.r+2;
                 if(od<r){fx+=(ox*(r-od)-oz)/od*3;fz+=(oz*(r-od)+ox)/od*3;}
@@ -649,23 +691,46 @@
             }
         }
     }
+    function updateRemoteCats(dt){
+        const now=performance.now();
+        remoteCats.forEach((group,owner)=>group.forEach(c=>{
+            if(now-c.last>15000||c.dead)return;
+            const k=MIN(1,dt*8);c.x=lerp(c.x,c.tx,k);c.z=lerp(c.z,c.tz,k);c.yaw=lerpAngle(c.yaw||c.tyaw,c.tyaw,k);c.hit-=dt;c.h-=dt;
+            let dx=u.x-c.x,dz=u.z-c.z,d=HYPOT(dx,dz)||1;
+            if(d<1.1+c.strong*.2&&c.hit<0){
+                u.x+=dx/d*(2+c.strong);u.z+=dz/d*(2+c.strong);hp-=c.strong?25:10;c.hit=1;playSound(90,.2,.25);
+                sendMMO(`k|${owner}|${c.i}|${c.v}`);
+                if(hp<1)resetRun();
+            }
+            if(c.h<0)for(let i=orbCount;i--;){
+                const a=skillTime*orbSpeed+i*PI*2/orbCount,ox=u.x+COS(a)*2.3,oz=u.z+SIN(a)*2.3;
+                if((c.x-ox)**2+(c.z-oz)**2<(.5+orbSize)**2){sendMMO(`h|${owner}|${c.i}|${c.v}`);c.h=.5;break;}
+            }
+        }));
+    }
     function updateShots(dt){
         boltTime-=dt;
         if(boltCount&&boltTime<0){
             boltTime=boltRate;
             let target=cats[0],best=1e9;
             for(const c of cats){const d=(c.x-u.x)**2+(c.z-u.z)**2;if(d<best){best=d;target=c;}}
+            remoteCats.forEach(group=>group.forEach(c=>{const d=(c.x-u.x)**2+(c.z-u.z)**2;if(!c.dead&&performance.now()-c.last<15000&&d<best){best=d;target=c;}}));
             const aim=ATAN2(target.x-u.x,target.z-u.z);
             for(let i=boltCount;i--;){
                 const a=aim+(i-(boltCount-1)/2)*.18;
-                shots.push({x:u.x,y:.7,z:u.z,vx:SIN(a)*10,vz:COS(a)*10,t:3});
+                const s={x:u.x,y:.7,z:u.z,vx:SIN(a)*10,vz:COS(a)*10,t:3};shots.push(s);
+                if(myId)sendMMO(`s|${myId}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.vx.toFixed(2)}|${s.vz.toFixed(2)}|${boltSize.toFixed(2)}`);
             }
         }
         for(let i=shots.length;i--;){
             const s=shots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
             for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){defeat(c);s.t=0;break;}
+            if(s.t>0)remoteHit:for(const [owner,group] of remoteCats)for(const c of group.values())if(!c.dead&&(c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){
+                sendMMO(`h|${owner}|${c.i}|${c.v}`);s.t=0;break remoteHit;
+            }
             if(s.t<0)shots.splice(i,1);
         }
+        for(let i=remoteShots.length;i--;){const s=remoteShots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;if((s.t-=dt)<0)remoteShots.splice(i,1);}
     }
     resetCats();
     // -- /MODULE: Gameplay-Cat --
@@ -859,7 +924,7 @@
         const n=c[0],p=1<<c[1];
         n===0?orbCount+=p:n===1?orbSize*=1+p*.2:n===2?orbSpeed*=1+p*.15:n===3?boltCount+=p:n===4?moveSpeed*=1+p*.1:n===5?boltRate=MAX(.15,boltRate*(1-p*.1)):n===6?boltSize*=1+p*.2:(maxHp+=p*20,hp=MIN(maxHp,hp+p*20));
         xp-=level++*3;choosing=0;hudPage=0;
-        while(cats.length<MIN(40,3+level*2))cats.push(placeCat({}));
+        while(cats.length<MIN(40,3+level*2))cats.push(placeCat({i:cats.length}));
         if(xp>=level*3)rollChoices();
     }
 
@@ -1366,6 +1431,7 @@
         }
         step(dt, getMove(session));
         updateEnemies(dt);
+        updateRemoteCats(dt);
         updateShots(dt);
         mmoTick(dt);
     }
@@ -1373,7 +1439,9 @@
     function drawWorld(V, P, W, t, dt, vr) {
         for (const itm of items) if (itm.r > 0) drawSphere(V, P, itm.x, itm.y, itm.z, itm.r, [.2, 1, .3]);
         for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,boltSize,[1,.7,.2]);
+        for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,s.r,[1,.4,.8]);
         for(const c of cats)drawCat(V,P,c.x,.6,c.z,c.yaw,c.anim,c.strong?.12:.08,c.strong?[.5,.03,.03]:[.02,.02,.02]);
+        remoteCats.forEach(group=>group.forEach(c=>!c.dead&&performance.now()-c.last<15000&&drawCat(V,P,c.x,.6,c.z,c.yaw,performance.now()*.008,.1,c.strong?[.5,.03,.03]:[.12,.08,.16])));
         for(let i=orbCount;i--;){
             const a=skillTime*orbSpeed+i*PI*2/orbCount;
             drawSphere(V,P,u.x+COS(a)*2.3,.7,u.z+SIN(a)*2.3,orbSize,[.3,.6,1]);
@@ -1383,7 +1451,7 @@
             peers.forEach((p, id) => {
                 if (id === myId || now - (p.last || 0) >= 15000) return;
                 const q = samplePeer(p, target) || p;
-                drawCat(V, P, q.x, .6, q.z, (q.yaw || 0) + PI, HYPOT(q.x, q.z) || dt * 3.5, .1, PEER_COL);
+                drawCat(V, P, q.x, .6, q.z, (q.yaw || 0) + PI, now*.005*MIN(3,p.speed||0), .1, PEER_COL);
             });
         }
         if (rocks.length) {
@@ -1436,7 +1504,7 @@
         const session = frame && frame.session;
         if (session ? session !== xr : xr) return;
         session ? session.requestAnimationFrame(loop) : requestAnimationFrame(loop);
-        const dt = last ? (t - last) / 1000 : 0;
+        const dt = MIN(last ? (t - last) / 1000 : 0, .05);
         last = t;
         updateWorld(dt, session);
         let hudWH;

@@ -258,7 +258,7 @@
                     let c=group.get(id);
                     if(!c||c.v!==a[1])c={i:id,v:a[1],x:a[2],z:a[3],yaw:a[4],hp:a[6],hit:0,h:0};
                     else if(a[6]<c.hp)damageNumber(c.x,c.z,c.hp-a[6]);
-                    c.tx=a[2];c.tz=a[3];c.tyaw=a[4];c.strong=a[5];c.hp=a[6];c.max=a[7];c.dead=0;c.last=now;group.set(id,c);
+                    c.tx=a[2];c.tz=a[3];c.tyaw=a[4];c.tier=a[5];c.hp=a[6];c.max=a[7];c.dead=0;c.last=now;group.set(id,c);
                 }
                 for(const id of group.keys())if(!seen.has(id))group.delete(id);
                 remoteCats.set(owner,group);
@@ -270,7 +270,7 @@
         }
         if (payload[0] === 'd' && payload[1] === '|'){
             const p=payload.split('|'),group=remoteCats.get(p[1]),c=group&&group.get(+p[2]);
-            if(p[1]!==myId){if(p[8]===myId){dropXP(+p[4],+p[5]);if(+p[6])dropXP(+p[4]+.5,+p[5]);}if(+p[7])damageNumber(+p[4],+p[5],+p[7]);}
+            if(p[1]!==myId){if(p[8]===myId)for(let i=1+(+p[6]>>1);i--;)dropXP(+p[4]+i*.35,+p[5]);if(+p[7])damageNumber(+p[4],+p[5],+p[7]);}
             if(c&&c.v===+p[3]){c.v++;c.dead=1;}
         }
         if(payload[0]==='s'&&payload[1]==='|'){
@@ -291,7 +291,7 @@
         enemySendTimer+=dt;
         if(enemySendTimer>=.2){
             enemySendTimer=0;
-            sendMMO('e|'+myId+'|'+cats.map(c=>[c.i,c.v,c.x.toFixed(2),c.z.toFixed(2),c.yaw.toFixed(2),+c.strong,c.hp,c.max]).join(';'));
+            sendMMO('e|'+myId+'|'+cats.map(c=>[c.i,c.v,c.x.toFixed(2),c.z.toFixed(2),c.yaw.toFixed(2),c.tier,c.hp,c.max]).join(';'));
         }
     }
 
@@ -635,6 +635,15 @@
     const cats=[];
     const shots=[];
     const damageNumbers=[];
+    // One shared power language for enemies, levels, loot, and upgrade rarity.
+    // Index order is always weakest (red) to strongest (violet).
+    const POWER=[
+        ['RED','#e53935',[.9,.04,.03]],['ORANGE','#fb8c00',[1,.25,.01]],
+        ['YELLOW','#fdd835',[1,.7,.02]],['GREEN','#43a047',[.05,.65,.12]],
+        ['CYAN','#00acc1',[.02,.65,.8]],['BLUE','#2979ff',[.04,.2,1]],
+        ['VIOLET','#8e24aa',[.55,.04,.75]]
+    ];
+    const powerTier=n=>MIN(6,(n-1)/3|0),powerValue=t=>t+1;
     let skillTime=0,level=1,xp=0,choosing=0,orbCount=0,orbSize=.35,orbSpeed=2,catVersion=0,
         boltCount=1,boltRate=3,boltSize=.2,boltTime=0,damage=1,moveSpeed=3,choices=[],seed=Date.now()|0,hp=100,maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
@@ -642,8 +651,9 @@
         const a=rng()*PI*2,r=20+rng()*25;
         c.x=u.x+COS(a)*r;c.z=u.z+SIN(a)*r;c.vx=c.vz=c.yaw=c.anim=c.hit=c.h=0;
         c.v=++catVersion;
-        c.strong=rng()<MIN(.5,.1+level*.03);
-        c.max=c.hp=(1+(level>>1))*(c.strong?4:1);
+        const cap=powerTier(level),roll=rng();
+        c.tier=cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):rng()*(cap+1)|0):0;
+        c.max=c.hp=CEIL((1+(level>>1))*(1+c.tier*.65));
         return c;
     }
     function resetCats(){
@@ -665,9 +675,9 @@
         if(c.hp<1)defeat(c,d,killer);
     }
     function defeat(c,d,killer){
-        const x=c.x,z=c.z,v=c.v,strong=c.strong;
-        if(!myId||killer===myId){dropXP(c.x,c.z);if(c.strong)dropXP(c.x+.5,c.z);}
-        if(myId)sendMMO(`d|${myId}|${c.i}|${v}|${x.toFixed(2)}|${z.toFixed(2)}|${+strong}|${d}|${killer}`);
+        const x=c.x,z=c.z,v=c.v,tier=c.tier;
+        if(!myId||killer===myId)for(let i=1+(tier>>1);i--;)dropXP(c.x+i*.35,c.z);
+        if(myId)sendMMO(`d|${myId}|${c.i}|${v}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${d}|${killer}`);
         placeCat(c);log(`Cat defeated #${++cat.caught}`);
     }
     function updateEnemies(dt){
@@ -681,13 +691,13 @@
                 if(od<r){fx+=(ox*(r-od)-oz)/od*3;fz+=(oz*(r-od)+ox)/od*3;}
             }
             c.vx+=fx*dt;c.vz+=fz*dt;
-            let s=HYPOT(c.vx,c.vz)||1,m=2.5+c.strong*.8;
+            let s=HYPOT(c.vx,c.vz)||1,m=2.5+c.tier*.12;
             if(s>m){c.vx*=m/s;c.vz*=m/s;s=m;}
             c.x+=c.vx*dt;c.z+=c.vz*dt;c.vx*=1-dt;c.vz*=1-dt;
             c.anim+=s*dt*3.5;c.yaw=ATAN2(c.vx,c.vz);
             c.hit-=dt;c.h-=dt;
-            if(d<1.1+c.strong*.2&&c.hit<0){
-                u.x+=dx/d*(2+c.strong);u.z+=dz/d*(2+c.strong);hp-=c.strong?25:10;playSound(90,.2,.25);placeCat(c);
+            if(d<1.1+c.tier*.04&&c.hit<0){
+                u.x+=dx/d*(2+c.tier*.2);u.z+=dz/d*(2+c.tier*.2);hp-=10+c.tier*4;playSound(90,.2,.25);placeCat(c);
                 if(hp<1){resetRun();return;}
                 continue;
             }
@@ -705,8 +715,8 @@
             if(now-c.last>15000||c.dead)return;
             const k=MIN(1,dt*8);c.x=lerp(c.x,c.tx,k);c.z=lerp(c.z,c.tz,k);c.yaw=lerpAngle(c.yaw||c.tyaw,c.tyaw,k);c.hit-=dt;c.h-=dt;
             let dx=u.x-c.x,dz=u.z-c.z,d=HYPOT(dx,dz)||1;
-            if(d<1.1+c.strong*.2&&c.hit<0){
-                u.x+=dx/d*(2+c.strong);u.z+=dz/d*(2+c.strong);hp-=c.strong?25:10;c.hit=1;playSound(90,.2,.25);
+            if(d<1.1+c.tier*.04&&c.hit<0){
+                u.x+=dx/d*(2+c.tier*.2);u.z+=dz/d*(2+c.tier*.2);hp-=10+c.tier*4;c.hit=1;playSound(90,.2,.25);
                 sendMMO(`k|${owner}|${c.i}|${c.v}`);
                 if(hp<1)resetRun();
             }
@@ -787,9 +797,9 @@
         let vx = 0, vy = 0, vt = 0;
         // -- SOLUTION: Gameplay-Movement-Keyboard --
         // Keyboard input (WASD for move, QE for turn)
-    const kx = (+!!I.keys.KeyD) - (+!!I.keys.KeyA);
-    const ky = (+!!I.keys.KeyW) - (+!!I.keys.KeyS);
-    const kt = (+!!I.keys.KeyQ) - (+!!I.keys.KeyE);
+    const kx = (+!!I.keys['KeyD']) - (+!!I.keys['KeyA']);
+    const ky = (+!!I.keys['KeyW']) - (+!!I.keys['KeyS']);
+    const kt = (+!!I.keys['KeyQ']) - (+!!I.keys['KeyE']);
         // -- /SOLUTION: Gameplay-Movement-Keyboard --
     
         // -- SOLUTION: Gameplay-Movement-Joystick --
@@ -919,18 +929,17 @@
     ], UI_LEVEL=[
         [.04,.38,.31,.7,'+ ORB',20],[.365,.38,.635,.7,'BIGGER',21],[.69,.38,.96,.7,'FASTER',22]
     ];
-    const RARITY=['COMMON','RARE','LEGENDARY'];
     function cardText(n,p){return n===0?`+${p} ORB${p>1?'S':''}`:n===1?`+${p*20}% ORB SIZE`:n===2?`+${p*15}% ORB SPEED`:n===3?`+${p} BOLT${p>1?'S':''}`:n===4?`+${p*10}% MOVE`:n===5?`-${p*10}% COOLDOWN`:n===6?`+${p*20}% BOLT SIZE`:n===7?`+${p*20} MAX HEALTH`:`+${p} DAMAGE`;}
 
     function rollChoices(){
-        const tier=()=>{const r=rng();return r<.05?2:r<.3?1:0;},pool=orbCount?[0,1,2,3,4,5,6,7,8]:[3,4,5,6,7,8];
+        const tier=()=>{let t=0,cap=MIN(6,1+(level/3|0));while(t<cap&&rng()<.4)t++;return t;},pool=orbCount?[0,1,2,3,4,5,6,7,8]:[3,4,5,6,7,8];
         choices=orbCount?[]:[[0,tier()]];
         while(choices.length<3){const a=pool[rng()*pool.length|0];if(!choices.some(c=>c[0]===a))choices.push([a,tier()]);}
-        for(let i=3;i--;){const c=choices[i],p=1<<c[1];UI_LEVEL[i][4]=RARITY[c[1]]+'|'+cardText(c[0],p);UI_LEVEL[i][6]=c[1];}
+        for(let i=3;i--;){const c=choices[i];UI_LEVEL[i][4]=POWER[c[1]][0]+'|'+cardText(c[0],powerValue(c[1]));UI_LEVEL[i][6]=c[1];}
         choosing=1;hudVisible=true;
     }
     function upgrade(c){
-        const n=c[0],p=1<<c[1];
+        const n=c[0],p=powerValue(c[1]);
         n===0?orbCount+=p:n===1?orbSize*=1+p*.2:n===2?orbSpeed*=1+p*.15:n===3?boltCount+=p:n===4?moveSpeed*=1+p*.1:n===5?boltRate=MAX(.15,boltRate*(1-p*.1)):n===6?boltSize*=1+p*.2:n===7?(maxHp+=p*20,hp=MIN(maxHp,hp+p*20)):damage+=p;
         xp-=level++*3;choosing=0;hudPage=0;
         while(cats.length<MIN(40,3+level*2))cats.push(placeCat({i:cats.length}));
@@ -1067,7 +1076,7 @@
             // Main panel and accent bar.
             hudCtx.fillStyle = '#111914dd';
             hudCtx.fillRect(6, 6, 628, 308);
-            hudCtx.fillStyle = '#9f9';
+            hudCtx.fillStyle = POWER[powerTier(level)][1];
             hudCtx.fillRect(6, 6, 5, 308);
 
             // Page title.
@@ -1090,7 +1099,8 @@
             hudCtx.fillStyle = '#eef';
 
             if(choosing){
-                hudCtx.fillText(`LEVEL ${level} — CHOOSE AN UPGRADE`,20,102);
+                hudCtx.fillStyle=POWER[powerTier(level)][1];
+                hudCtx.fillText(`${POWER[powerTier(level)][0]} LEVEL ${level} — CHOOSE AN UPGRADE`,20,102);
             } else if (hudPage === 1) {
                 // Chat history and text entry field.
                 const n = xr ? 4 : 11;
@@ -1159,7 +1169,7 @@
                 const h = (b[3] - b[1]) * 320;
                 const a = b[5];
 
-                hudCtx.fillStyle = hoverBtn === b ? '#586b58' : choosing ? ['#303638','#17405a','#5a4217'][b[6]] : '#27332b';
+                hudCtx.fillStyle = hoverBtn === b ? '#586b58' : choosing ? POWER[b[6]][1] : '#27332b';
                 hudCtx.fillRect(x, y, w, h);
                 hudCtx.fillStyle = '#eef';
                 hudCtx.font = (
@@ -1169,7 +1179,7 @@
                 hudCtx.textBaseline = 'middle';
                 if(choosing){
                     const q=b[4].split('|');
-                    hudCtx.fillStyle=['#ddd','#6cf','#fc6'][b[6]];hudCtx.font='bold 16px system-ui';
+                    hudCtx.fillStyle=b[6]===2?'#221':'#fff';hudCtx.font='bold 16px system-ui';
                     hudCtx.fillText(q[0],x+w/2,y+h*.35);
                     hudCtx.fillStyle='#eef';hudCtx.font='14px system-ui';hudCtx.fillText(q[1],x+w/2,y+h*.65);
                 }else hudCtx.fillText(
@@ -1449,8 +1459,8 @@
         for (const itm of items) if (itm.r > 0) drawSphere(V, P, itm.x, itm.y, itm.z, itm.r, [.2, 1, .3]);
         for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,boltSize,[1,.7,.2]);
         for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,s.r,[1,.4,.8]);
-        for(const c of cats)drawCat(V,P,c.x,.6,c.z,c.yaw,c.anim,c.strong?.12:.08,c.strong?[.5,.03,.03]:[.02,.02,.02]);
-        remoteCats.forEach(group=>group.forEach(c=>!c.dead&&performance.now()-c.last<15000&&drawCat(V,P,c.x,.6,c.z,c.yaw,performance.now()*.008,.1,c.strong?[.5,.03,.03]:[.12,.08,.16])));
+        for(const c of cats)drawCat(V,P,c.x,.6,c.z,c.yaw,c.anim,.08+c.tier*.01,POWER[c.tier][2]);
+        remoteCats.forEach(group=>group.forEach(c=>!c.dead&&performance.now()-c.last<15000&&drawCat(V,P,c.x,.6,c.z,c.yaw,performance.now()*.008,.1,POWER[c.tier][2])));
         for(let i=orbCount;i--;){
             const a=skillTime*orbSpeed+i*PI*2/orbCount;
             drawSphere(V,P,u.x+COS(a)*2.3,.7,u.z+SIN(a)*2.3,orbSize,[.3,.6,1]);

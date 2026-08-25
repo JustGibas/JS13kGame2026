@@ -256,8 +256,9 @@
                 for(const row of (p[2]||'').split(';'))if(row){
                     const a=row.split(',').map(Number),id=a[0];seen.add(id);
                     let c=group.get(id);
-                    if(!c||c.v!==a[1])c={i:id,v:a[1],x:a[2],z:a[3],yaw:a[4],hit:0,h:0};
-                    c.tx=a[2];c.tz=a[3];c.tyaw=a[4];c.strong=a[5];c.dead=0;c.last=now;group.set(id,c);
+                    if(!c||c.v!==a[1])c={i:id,v:a[1],x:a[2],z:a[3],yaw:a[4],hp:a[6],hit:0,h:0};
+                    else if(a[6]<c.hp)damageNumber(c.x,c.z,c.hp-a[6]);
+                    c.tx=a[2];c.tz=a[3];c.tyaw=a[4];c.strong=a[5];c.hp=a[6];c.max=a[7];c.dead=0;c.last=now;group.set(id,c);
                 }
                 for(const id of group.keys())if(!seen.has(id))group.delete(id);
                 remoteCats.set(owner,group);
@@ -265,11 +266,11 @@
         }
         if ((payload[0] === 'h'||payload[0] === 'k') && payload[1] === '|'){
             const p=payload.split('|'),c=p[1]===myId&&cats[+p[2]];
-            if(c&&c.v===+p[3])payload[0]==='h'?defeat(c):placeCat(c);
+            if(c&&c.v===+p[3])payload[0]==='h'?hurt(c,+p[4]||1,p[5]):placeCat(c);
         }
         if (payload[0] === 'd' && payload[1] === '|'){
             const p=payload.split('|'),group=remoteCats.get(p[1]),c=group&&group.get(+p[2]);
-            if(p[1]!==myId){dropXP(+p[4],+p[5]);if(+p[6])dropXP(+p[4]+.5,+p[5]);}
+            if(p[1]!==myId){if(p[8]===myId){dropXP(+p[4],+p[5]);if(+p[6])dropXP(+p[4]+.5,+p[5]);}if(+p[7])damageNumber(+p[4],+p[5],+p[7]);}
             if(c&&c.v===+p[3]){c.v++;c.dead=1;}
         }
         if(payload[0]==='s'&&payload[1]==='|'){
@@ -290,7 +291,7 @@
         enemySendTimer+=dt;
         if(enemySendTimer>=.2){
             enemySendTimer=0;
-            sendMMO('e|'+myId+'|'+cats.map(c=>[c.i,c.v,c.x.toFixed(2),c.z.toFixed(2),c.yaw.toFixed(2),+c.strong]).join(';'));
+            sendMMO('e|'+myId+'|'+cats.map(c=>[c.i,c.v,c.x.toFixed(2),c.z.toFixed(2),c.yaw.toFixed(2),+c.strong,c.hp,c.max]).join(';'));
         }
     }
 
@@ -633,14 +634,16 @@
     // Cats seek, skills hit automatically, and green XP drops fuel upgrades.
     const cats=[];
     const shots=[];
+    const damageNumbers=[];
     let skillTime=0,level=1,xp=0,choosing=0,orbCount=0,orbSize=.35,orbSpeed=2,catVersion=0,
-        boltCount=1,boltRate=4,boltSize=.2,boltTime=0,moveSpeed=3,choices=[],seed=Date.now()|0,hp=100,maxHp=100;
+        boltCount=1,boltRate=3,boltSize=.2,boltTime=0,damage=1,moveSpeed=3,choices=[],seed=Date.now()|0,hp=100,maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
     function placeCat(c){
         const a=rng()*PI*2,r=20+rng()*25;
-        c.x=u.x+COS(a)*r;c.z=u.z+SIN(a)*r;c.vx=c.vz=c.yaw=c.anim=c.hit=0;
+        c.x=u.x+COS(a)*r;c.z=u.z+SIN(a)*r;c.vx=c.vz=c.yaw=c.anim=c.hit=c.h=0;
         c.v=++catVersion;
         c.strong=rng()<MIN(.5,.1+level*.03);
+        c.max=c.hp=(1+(level>>1))*(c.strong?4:1);
         return c;
     }
     function resetCats(){
@@ -649,17 +652,22 @@
     }
     function resetRun(){
         level=1;xp=choosing=orbCount=cat.caught=skillTime=boltTime=0;
-        orbSize=.35;orbSpeed=2;boltCount=1;boltRate=4;boltSize=.2;moveSpeed=3;maxHp=hp=100;
-        items.length=0;choices=[];hudPage=0;u.x=0;u.z=2;resetCats();log(mmoEnabled?'MMO run started':'Run ended');
+        orbSize=.35;orbSpeed=2;boltCount=damage=1;boltRate=4;boltSize=.2;moveSpeed=3;maxHp=hp=100;
+        items.length=damageNumbers.length=0;choices=[];hudPage=0;u.x=0;u.z=2;resetCats();log(mmoEnabled?'MMO run started':'Run ended');
     }
     function dropXP(x,z){
         items.push({x,y:.5,z,r:.4});
         if(items.length>100)items.shift();
     }
-    function defeat(c){
+    function damageNumber(x,z,n){damageNumbers.push({x,y:1.4,z,n:ROUND(n),t:1});}
+    function hurt(c,d,killer){
+        d=MIN(c.hp,MAX(1,d|0));c.hp-=d;damageNumber(c.x,c.z,d);
+        if(c.hp<1)defeat(c,d,killer);
+    }
+    function defeat(c,d,killer){
         const x=c.x,z=c.z,v=c.v,strong=c.strong;
-        dropXP(c.x,c.z);if(c.strong)dropXP(c.x+.5,c.z);
-        if(myId)sendMMO(`d|${myId}|${c.i}|${v}|${x.toFixed(2)}|${z.toFixed(2)}|${+strong}`);
+        if(!myId||killer===myId){dropXP(c.x,c.z);if(c.strong)dropXP(c.x+.5,c.z);}
+        if(myId)sendMMO(`d|${myId}|${c.i}|${v}|${x.toFixed(2)}|${z.toFixed(2)}|${+strong}|${d}|${killer}`);
         placeCat(c);log(`Cat defeated #${++cat.caught}`);
     }
     function updateEnemies(dt){
@@ -677,16 +685,16 @@
             if(s>m){c.vx*=m/s;c.vz*=m/s;s=m;}
             c.x+=c.vx*dt;c.z+=c.vz*dt;c.vx*=1-dt;c.vz*=1-dt;
             c.anim+=s*dt*3.5;c.yaw=ATAN2(c.vx,c.vz);
-            c.hit-=dt;
+            c.hit-=dt;c.h-=dt;
             if(d<1.1+c.strong*.2&&c.hit<0){
                 u.x+=dx/d*(2+c.strong);u.z+=dz/d*(2+c.strong);hp-=c.strong?25:10;playSound(90,.2,.25);placeCat(c);
                 if(hp<1){resetRun();return;}
                 continue;
             }
-            for(let i=orbCount;i--;){
+            if(c.h<0)for(let i=orbCount;i--;){
                 const a=skillTime*orbSpeed+i*PI*2/orbCount,ox=u.x+COS(a)*2.3,oz=u.z+SIN(a)*2.3;
                 if((c.x-ox)**2+(c.z-oz)**2<(.5+orbSize)**2){
-                    defeat(c);break;
+                    hurt(c,damage,myId);c.h=.5;break;
                 }
             }
         }
@@ -704,7 +712,7 @@
             }
             if(c.h<0)for(let i=orbCount;i--;){
                 const a=skillTime*orbSpeed+i*PI*2/orbCount,ox=u.x+COS(a)*2.3,oz=u.z+SIN(a)*2.3;
-                if((c.x-ox)**2+(c.z-oz)**2<(.5+orbSize)**2){sendMMO(`h|${owner}|${c.i}|${c.v}`);c.h=.5;break;}
+                if((c.x-ox)**2+(c.z-oz)**2<(.5+orbSize)**2){sendMMO(`h|${owner}|${c.i}|${c.v}|${damage}|${myId}`);c.h=.5;break;}
             }
         }));
     }
@@ -718,19 +726,20 @@
             const aim=ATAN2(target.x-u.x,target.z-u.z);
             for(let i=boltCount;i--;){
                 const a=aim+(i-(boltCount-1)/2)*.18;
-                const s={x:u.x,y:.7,z:u.z,vx:SIN(a)*10,vz:COS(a)*10,t:3};shots.push(s);
+                const s={x:u.x,y:.7,z:u.z,vx:SIN(a)*10,vz:COS(a)*10,d:damage,t:3};shots.push(s);
                 if(myId)sendMMO(`s|${myId}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.vx.toFixed(2)}|${s.vz.toFixed(2)}|${boltSize.toFixed(2)}`);
             }
         }
         for(let i=shots.length;i--;){
             const s=shots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
-            for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){defeat(c);s.t=0;break;}
+            for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){hurt(c,s.d,myId);s.t=0;break;}
             if(s.t>0)remoteHit:for(const [owner,group] of remoteCats)for(const c of group.values())if(!c.dead&&(c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){
-                sendMMO(`h|${owner}|${c.i}|${c.v}`);s.t=0;break remoteHit;
+                sendMMO(`h|${owner}|${c.i}|${c.v}|${s.d}|${myId}`);s.t=0;break remoteHit;
             }
             if(s.t<0)shots.splice(i,1);
         }
         for(let i=remoteShots.length;i--;){const s=remoteShots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;if((s.t-=dt)<0)remoteShots.splice(i,1);}
+        for(let i=damageNumbers.length;i--;){const n=damageNumbers[i];n.y+=dt*.5;if((n.t-=dt)<0)damageNumbers.splice(i,1);}
     }
     resetCats();
     // -- /MODULE: Gameplay-Cat --
@@ -911,10 +920,10 @@
         [.04,.38,.31,.7,'+ ORB',20],[.365,.38,.635,.7,'BIGGER',21],[.69,.38,.96,.7,'FASTER',22]
     ];
     const RARITY=['COMMON','RARE','LEGENDARY'];
-    function cardText(n,p){return n===0?`+${p} ORB${p>1?'S':''}`:n===1?`+${p*20}% ORB SIZE`:n===2?`+${p*15}% ORB SPEED`:n===3?`+${p} BOLT${p>1?'S':''}`:n===4?`+${p*10}% MOVE`:n===5?`-${p*10}% COOLDOWN`:n===6?`+${p*20}% BOLT SIZE`:`+${p*20} MAX HEALTH`;}
+    function cardText(n,p){return n===0?`+${p} ORB${p>1?'S':''}`:n===1?`+${p*20}% ORB SIZE`:n===2?`+${p*15}% ORB SPEED`:n===3?`+${p} BOLT${p>1?'S':''}`:n===4?`+${p*10}% MOVE`:n===5?`-${p*10}% COOLDOWN`:n===6?`+${p*20}% BOLT SIZE`:n===7?`+${p*20} MAX HEALTH`:`+${p} DAMAGE`;}
 
     function rollChoices(){
-        const tier=()=>{const r=rng();return r<.05?2:r<.3?1:0;},pool=orbCount?[0,1,2,3,4,5,6,7]:[3,4,5,6,7];
+        const tier=()=>{const r=rng();return r<.05?2:r<.3?1:0;},pool=orbCount?[0,1,2,3,4,5,6,7,8]:[3,4,5,6,7,8];
         choices=orbCount?[]:[[0,tier()]];
         while(choices.length<3){const a=pool[rng()*pool.length|0];if(!choices.some(c=>c[0]===a))choices.push([a,tier()]);}
         for(let i=3;i--;){const c=choices[i],p=1<<c[1];UI_LEVEL[i][4]=RARITY[c[1]]+'|'+cardText(c[0],p);UI_LEVEL[i][6]=c[1];}
@@ -922,7 +931,7 @@
     }
     function upgrade(c){
         const n=c[0],p=1<<c[1];
-        n===0?orbCount+=p:n===1?orbSize*=1+p*.2:n===2?orbSpeed*=1+p*.15:n===3?boltCount+=p:n===4?moveSpeed*=1+p*.1:n===5?boltRate=MAX(.15,boltRate*(1-p*.1)):n===6?boltSize*=1+p*.2:(maxHp+=p*20,hp=MIN(maxHp,hp+p*20));
+        n===0?orbCount+=p:n===1?orbSize*=1+p*.2:n===2?orbSpeed*=1+p*.15:n===3?boltCount+=p:n===4?moveSpeed*=1+p*.1:n===5?boltRate=MAX(.15,boltRate*(1-p*.1)):n===6?boltSize*=1+p*.2:n===7?(maxHp+=p*20,hp=MIN(maxHp,hp+p*20)):damage+=p;
         xp-=level++*3;choosing=0;hudPage=0;
         while(cats.length<MIN(40,3+level*2))cats.push(placeCat({i:cats.length}));
         if(xp>=level*3)rollChoices();
@@ -1470,6 +1479,7 @@
         drawGrassPass(V, P, cam, right, time, 1.1, vr ? 2000 : 500, 1);
         drawGrassPass(V, P, cam, right, time, vr ? .3 : .4, vr ? 1000 : 300, 2);
         drawGrassPass(V, P, cam, right, time, .15, vr ? 500 : 200, 3);
+        drawDamageNumbers(V,P,W);
     }
 
     function drawXRInput(session, frame, V, P, hudWH) {
@@ -1582,6 +1592,23 @@
         gl.uniformMatrix4fv(uS_P,false,P);
         gl.uniform4f(uS_Color,col[0],col[1],col[2],1);
         gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
+    }
+
+    function drawDamageNumbers(V,P,W){
+        if(!damageNumbers.length)return;
+        const masks=[63,6,91,79,102,109,125,7,127,111],pos=[[0,2],[1,1],[1,-1],[0,-2],[-1,-1],[-1,1],[0,0]];
+        gl.useProgram(PC);gl.bindVertexArray(sphereVao);gl.uniformMatrix4fv(uS_V,false,V);gl.uniformMatrix4fv(uS_P,false,P);
+        gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+        for(const n of damageNumbers){
+            const text=''+n.n;
+            for(let j=0;j<text.length;j++)for(let s=0;s<7;s++)if(masks[+text[j]]>>s&1){
+                const v=s===1||s===2||s===4||s===5,x=(j-(text.length-1)/2)*.35+pos[s][0]*.15,y=pos[s][1]*.15,
+                    wx=n.x+W[0]*x+W[4]*y,wy=n.y+W[1]*x+W[5]*y,wz=n.z+W[2]*x+W[6]*y,
+                    M=new F32([W[0]*(v?.035:.13),W[1]*(v?.035:.13),W[2]*(v?.035:.13),0,W[4]*(v?.13:.035),W[5]*(v?.13:.035),W[6]*(v?.13:.035),0,W[8]*.02,W[9]*.02,W[10]*.02,0,wx,wy,wz,1]);
+                gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,1,.25,.05,MIN(1,n.t*2));gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
+            }
+        }
+        gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
     }
 
     // Helper to submit a grass draw call

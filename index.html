@@ -270,12 +270,12 @@
         }
         if (payload[0] === 'd' && payload[1] === '|'){
             const p=payload.split('|'),group=remoteCats.get(p[1]),c=group&&group.get(+p[2]);
-            if(p[1]!==myId){if(p[8]===myId)for(let i=1+(+p[6]>>1);i--;)dropXP(+p[4]+i*.35,+p[5]);if(+p[7])damageNumber(+p[4],+p[5],+p[7]);}
+            if(p[1]!==myId){if(p[8]===myId){playKillSound(+p[4],+p[5]);for(let i=1+(+p[6]>>1);i--;)dropXP(+p[4]+i*.35,+p[5]);}if(+p[7])damageNumber(+p[4],+p[5],+p[7]);}
             if(c&&c.v===+p[3]){c.v++;c.dead=1;}
         }
         if(payload[0]==='s'&&payload[1]==='|'){
             const p=payload.split('|');
-            if(p[1]!==myId)remoteShots.push({o:p[1],x:+p[2],y:.7,z:+p[3],vx:+p[4],vz:+p[5],r:+p[6],t:3});
+            if(p[1]!==myId){remoteShots.push({o:p[1],x:+p[2],y:.7,z:+p[3],vx:+p[4],vz:+p[5],r:+p[6],t:3});playShotSound(+p[2],+p[3]);}
         }
     }
 
@@ -375,6 +375,7 @@
     // Keyboard event listeners for movement and HUD toggle
     document.addEventListener('keydown', e => {
         if (e.target === chatInput) return;
+        initAudio();
         const k = e.code;
         I.keys[k] = true;
         if (!e.repeat && k === 'Enter') { e.preventDefault(); setChat(true); return; }
@@ -672,11 +673,11 @@
     function damageNumber(x,z,n){damageNumbers.push({x,y:1.4,z,n:ROUND(n),t:1});}
     function hurt(c,d,killer){
         d=MIN(c.hp,MAX(1,d|0));c.hp-=d;damageNumber(c.x,c.z,d);
-        if(c.hp<1)defeat(c,d,killer);
+        if(c.hp<1)defeat(c,d,killer);else playHitSound(c.x,c.z);
     }
     function defeat(c,d,killer){
         const x=c.x,z=c.z,v=c.v,tier=c.tier;
-        if(!myId||killer===myId)for(let i=1+(tier>>1);i--;)dropXP(c.x+i*.35,c.z);
+        if(!myId||killer===myId){playKillSound(x,z);for(let i=1+(tier>>1);i--;)dropXP(c.x+i*.35,c.z);}
         if(myId)sendMMO(`d|${myId}|${c.i}|${v}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${d}|${killer}`);
         placeCat(c);log(`Cat defeated #${++cat.caught}`);
     }
@@ -697,7 +698,7 @@
             c.anim+=s*dt*3.5;c.yaw=ATAN2(c.vx,c.vz);
             c.hit-=dt;c.h-=dt;
             if(d<1.1+c.tier*.04&&c.hit<0){
-                u.x+=dx/d*(2+c.tier*.2);u.z+=dz/d*(2+c.tier*.2);hp-=10+c.tier*4;playSound(90,.2,.25);placeCat(c);
+                u.x+=dx/d*(2+c.tier*.2);u.z+=dz/d*(2+c.tier*.2);hp-=10+c.tier*4;playHurtSound();placeCat(c);
                 if(hp<1){resetRun();return;}
                 continue;
             }
@@ -716,7 +717,7 @@
             const k=MIN(1,dt*8);c.x=lerp(c.x,c.tx,k);c.z=lerp(c.z,c.tz,k);c.yaw=lerpAngle(c.yaw||c.tyaw,c.tyaw,k);c.hit-=dt;c.h-=dt;
             let dx=u.x-c.x,dz=u.z-c.z,d=HYPOT(dx,dz)||1;
             if(d<1.1+c.tier*.04&&c.hit<0){
-                u.x+=dx/d*(2+c.tier*.2);u.z+=dz/d*(2+c.tier*.2);hp-=10+c.tier*4;c.hit=1;playSound(90,.2,.25);
+                u.x+=dx/d*(2+c.tier*.2);u.z+=dz/d*(2+c.tier*.2);hp-=10+c.tier*4;c.hit=1;playHurtSound();
                 sendMMO(`k|${owner}|${c.i}|${c.v}`);
                 if(hp<1)resetRun();
             }
@@ -739,12 +740,13 @@
                 const s={x:u.x,y:.7,z:u.z,vx:SIN(a)*10,vz:COS(a)*10,d:damage,t:3};shots.push(s);
                 if(myId)sendMMO(`s|${myId}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.vx.toFixed(2)}|${s.vz.toFixed(2)}|${boltSize.toFixed(2)}`);
             }
+            playShotSound();
         }
         for(let i=shots.length;i--;){
             const s=shots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
             for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){hurt(c,s.d,myId);s.t=0;break;}
             if(s.t>0)remoteHit:for(const [owner,group] of remoteCats)for(const c of group.values())if(!c.dead&&(c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){
-                sendMMO(`h|${owner}|${c.i}|${c.v}|${s.d}|${myId}`);s.t=0;break remoteHit;
+                sendMMO(`h|${owner}|${c.i}|${c.v}|${s.d}|${myId}`);if(c.hp>s.d)playHitSound(c.x,c.z);s.t=0;break remoteHit;
             }
             if(s.t<0)shots.splice(i,1);
         }
@@ -763,7 +765,7 @@
             const dx = itm.x - u.x, dy = itm.y - ny, dz = itm.z - u.z;
             if (HYPOT(dx,dy,dz) < itm.r + .5){
                 itm.r = 0; // mark consumed
-                xp++;if(xp>=level*3&&!choosing)rollChoices();
+                xp++;playXPSound();if(xp>=level*3&&!choosing)rollChoices();
             }
         }
     }
@@ -836,12 +838,6 @@
         // New movement logic
         const speed = moveSpeed;
         // Apply movement
-        const now = performance.now();
-        const moveMagnitude = HYPOT(mv.x, mv.y);
-        if(moveMagnitude > .1 && now - lastStepTime > 500/*stepInterval*/){
-            playStepSound();
-            lastStepTime = now;
-        }
     u.yaw += mv.t * 2/*TURNS*/ * dt; // Apply turning
         
         // Calculate forward and right vectors based on current yaw
@@ -872,23 +868,46 @@
     
     // -- FEATURE: Scene --
     // -- MODULE: Scene-Audio --
-    let audioCtx = null;
-    let lastStepTime = 0;
-    let stepFoot = 0;
+    let audioCtx,soundOut,localOut,lastKillSound=0,lastHitSound=0;
 
     function initAudio(){
-        if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if(!audioCtx){
+            const c=audioCtx=new (window.AudioContext||window.webkitAudioContext)(),f=c.createBiquadFilter(),r=c.createConvolver(),b=c.createBuffer(2,c.sampleRate*1.4,c.sampleRate),w=c.createGain(),s=c.createGain(),m=c.createDynamicsCompressor();
+            for(let i=2;i--;){const a=b.getChannelData(i);for(let j=a.length;j--;)a[j]=(Math.random()*2-1)*(1-j/a.length)**2;}
+            r.buffer=b;f.frequency.value=6000;w.gain.value=.18;
+            f.connect(m).connect(c.destination);s.connect(f);s.connect(r).connect(w).connect(f);soundOut=s;localOut=f;
+        }
+        audioCtx.resume();
     }
-    function playSound(f, d, volume){
+    function playSound(f,d,v,type='sine',end=f,delay=0,attack=.005,x,y,z){
         if(!audioCtx) return;
-        const t=audioCtx.currentTime,o=audioCtx.createOscillator(),g=audioCtx.createGain();
-        o.frequency.value=f;
-        g.gain.setValueAtTime(volume,t);
-        g.gain.exponentialRampToValueAtTime(.001,t+d);
-        o.connect(g);g.connect(audioCtx.destination);o.start(t);o.stop(t+d);
+        const t=audioCtx.currentTime+delay,o=audioCtx.createOscillator(),g=audioCtx.createGain();
+        o.type=type;o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(end,t+d);
+        g.gain.setValueAtTime(.001,t);g.gain.linearRampToValueAtTime(v,t+attack);g.gain.exponentialRampToValueAtTime(.001,t+d);
+        o.connect(g);
+        if(x===undefined)g.connect(localOut);
+        else{const p=audioCtx.createPanner();p.panningModel='HRTF';p.refDistance=3;p.rolloffFactor=.35;p.maxDistance=60;p.positionX.value=x;p.positionY.value=y;p.positionZ.value=z;g.connect(p).connect(soundOut);}
+        o.start(t);o.stop(t+d);
     }
-    function playClickSound(){playSound(300,.06,.2);}
-    function playStepSound(){playSound((stepFoot^=1)?80:65,.1,.12);}
+    function playClickSound(){playSound(520,.05,.08,'square',260);}
+    function playShotSound(x=u.x,z=u.z){playSound(880,.1,.07,'square',180,0,.005,x,.7,z);playSound(1760,.05,.025,'sine',440,0,.005,x,.7,z);}
+    function playKillSound(x,z){
+        if(!audioCtx||audioCtx.currentTime-lastKillSound<.035)return;lastKillSound=audioCtx.currentTime;
+        playSound(260,.14,.08,'triangle',90,0,.005,x,.6,z);playSound(900,.035,.025,'square',180,0,.002,x,.6,z);
+    }
+    function playHitSound(x,z){
+        if(!audioCtx||audioCtx.currentTime-lastHitSound<.025)return;lastHitSound=audioCtx.currentTime;
+        playSound(300,.08,.035,'triangle',130,0,.003,x,.6,z);
+    }
+    function playHurtSound(){playSound(100,.3,.18,'sawtooth',38);}
+    function playXPSound(){const f=600*2**((xp%6)/12);playSound(f,.1,.06,'square',f*2);playSound(f*1.5,.22,.035,'triangle',f*3,.05);}
+    function playLevelSound(){playSound(330,.18,.05,'sawtooth',320);playSound(494,.18,.05,'sawtooth',480,.22);playSound(660,1,.07,'sawtooth',640,.44,.03);}
+    function updateAudioListener(m){
+        if(!audioCtx)return;
+        const l=audioCtx.listener,x=m[12],y=m[13],z=m[14],fx=-m[8],fy=-m[9],fz=-m[10],ux=m[4],uy=m[5],uz=m[6];
+        if(l.positionX){l.positionX.value=x;l.positionY.value=y;l.positionZ.value=z;l.forwardX.value=fx;l.forwardY.value=fy;l.forwardZ.value=fz;l.upX.value=ux;l.upY.value=uy;l.upZ.value=uz;}
+        else{l.setPosition(x,y,z);l.setOrientation(fx,fy,fz,ux,uy,uz);}
+    }
     // -- /MODULE: Scene-Audio --
 
     // -- MODULE: Scene-HUD --
@@ -936,7 +955,7 @@
         choices=orbCount?[]:[[0,tier()]];
         while(choices.length<3){const a=pool[rng()*pool.length|0];if(!choices.some(c=>c[0]===a))choices.push([a,tier()]);}
         for(let i=3;i--;){const c=choices[i];UI_LEVEL[i][4]=POWER[c[1]][0]+'|'+cardText(c[0],powerValue(c[1]));UI_LEVEL[i][6]=c[1];}
-        choosing=1;hudVisible=true;
+        choosing=1;hudVisible=true;playLevelSound();
     }
     function upgrade(c){
         const n=c[0],p=powerValue(c[1]);
@@ -1535,6 +1554,7 @@
                 .getOffsetReferenceSpace(new XRRigidTransform({x:-u.x,y:0,z:-u.z}));
             const pose = frame.getViewerPose(off);
             if (!pose) return;
+            updateAudioListener(pose.transform.matrix);
             hudWH = new DOMMatrix(pose.transform.matrix).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
             HUD_WH_world = hudWH;
             for (const src of session.inputSources || []) {
@@ -1566,6 +1586,7 @@
         } else {
             buildViewProj();
             const W = INV(V);
+            updateAudioListener(W);
             hudWH = new DOMMatrix(W).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
             HUD_WH_world = hudWH;
             hoverBtn = null;

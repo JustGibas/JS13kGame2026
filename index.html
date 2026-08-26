@@ -969,6 +969,14 @@
     let logScroll = 0, hudVisible = true, hudPage = 0, chatText = '', invertX = false, invertY = false, closedChat = true;
     let HUD_WH_world = M4(), hoverBtn = null;
 
+    // --- HUD COLOR PALETTE ---
+    // UI_PANEL: large panel/chat background. UI_BUTTON: every button/card background.
+    // UI_HOVER: hovered button/card. UI_TEXT: primary text/borders. UI_MUTED: secondary text.
+    const UI_PANEL='#000d',UI_BUTTON='#333',UI_HOVER='#666',UI_TEXT='#fff',UI_MUTED='#999';
+    // Bar accents: HP is green and XP is yellow; their empty tracks stay black.
+    // Upgrade card borders and titles separately use their POWER tier color below.
+    const HP_COLOR='#2a2',HP_BACK='#252',XP_COLOR='#aa2',XP_BACK='#552';
+
     function log(s) { LOG.push(s); LOG.length > 200 && LOG.shift(); logScroll = 0; }
     function say(s) { log(s); CHAT.push(s); CHAT.length > 4 && CHAT.shift(); }
 
@@ -1100,10 +1108,11 @@
     // --- HUD Drawing ---
     function drawBars(y){
         const x=hudVisible&&!choosing?20:140,w=360;
-        for(const b of [[hp,maxHp,'HP','#d44','#422'],[xp,level*3,'XP','#4b8','#243']]){
+        // Bar entries: current value, maximum value, label, filled color, empty color.
+        for(const b of [[hp,maxHp,'HP',HP_COLOR,HP_BACK],[xp,level*3,'XP',XP_COLOR,XP_BACK]]){
             hudCtx.fillStyle=b[4];hudCtx.fillRect(x,y,w,14);
             hudCtx.fillStyle=b[3];hudCtx.fillRect(x,y,w*MIN(1,b[0]/b[1]),14);
-            hudCtx.fillStyle='#fff';hudCtx.font='11px system-ui';hudCtx.textAlign='left';hudCtx.textBaseline='middle';
+            hudCtx.fillStyle=UI_TEXT;hudCtx.font='11px system-ui';hudCtx.textAlign='left';hudCtx.textBaseline='middle';
             hudCtx.fillText(`${b[2]} ${b[0]}/${b[1]}`,x+8,y+7);y+=18;
         }
         hudCtx.textBaseline='alphabetic';
@@ -1122,9 +1131,10 @@
             const w = (b[2] - b[0]) * 640;
             const h = (b[3] - b[1]) * 320;
 
-            hudCtx.fillStyle = hoverBtn === b ? '#586b58' : '#27332b';
+            // Closed HUD MENU button background and hover colors.
+            hudCtx.fillStyle = hoverBtn === b ? UI_HOVER : UI_BUTTON;
             hudCtx.fillRect(x, y, w, h);
-            hudCtx.fillStyle = '#eef';
+            hudCtx.fillStyle = UI_TEXT;
             hudCtx.font = '16px system-ui';
             hudCtx.textAlign = 'center';
             hudCtx.textBaseline = 'middle';
@@ -1134,20 +1144,21 @@
             if(choosing){
                 for(const b of ui){
                     const x=b[0]*640,y=b[1]*320,w=(b[2]-b[0])*640,h=(b[3]-b[1])*320,q=b[4].split('|');
-                    hudCtx.fillStyle=hoverBtn===b?'#586b58':'#27332b';hudCtx.fillRect(x,y,w,h);
+                    // Level-up card background, hover, border, title, and description colors.
+                    hudCtx.fillStyle=hoverBtn===b?UI_HOVER:UI_BUTTON;hudCtx.fillRect(x,y,w,h);
                     hudCtx.strokeStyle=POWER[b[6]][1];hudCtx.lineWidth=5;hudCtx.strokeRect(x+2,y+2,w-4,h-4);
                     hudCtx.fillStyle=POWER[b[6]][1];hudCtx.font='bold 19px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';
                     hudCtx.fillText(q[0],x+w/2,y+h*.35);
-                    hudCtx.fillStyle='#eef';hudCtx.font='13px system-ui';hudCtx.fillText(q[1],x+w/2,y+h*.68);
+                    hudCtx.fillStyle=UI_TEXT;hudCtx.font='13px system-ui';hudCtx.fillText(q[1],x+w/2,y+h*.68);
                 }
             }
 
             // Keep the latest chat messages visible over the closed HUD.
             if (!choosing && closedChat && CHAT.length) {
                 const lines = CHAT.slice(-3);
-                hudCtx.fillStyle = '#111914bb';
+                hudCtx.fillStyle = UI_PANEL;
                 hudCtx.fillRect(20, 84, 600, 22 + lines.length * 18);
-                hudCtx.fillStyle = '#eef';
+                hudCtx.fillStyle = UI_TEXT;
                 hudCtx.font = '14px monospace';
                 hudCtx.textAlign = 'left';
                 hudCtx.textBaseline = 'alphabetic';
@@ -1157,9 +1168,10 @@
             }
         } else {
             // Main panel and accent bar.
-            hudCtx.fillStyle = '#111914dd';
+            // Open HUD main panel background and left grayscale border.
+            hudCtx.fillStyle = UI_PANEL;
             hudCtx.fillRect(6, 6, 628, 308);
-            hudCtx.fillStyle = POWER[powerTier(level)][1];
+            hudCtx.fillStyle = UI_TEXT;
             hudCtx.fillRect(6, 6, 5, 308);
 
             // Page title.
@@ -1178,7 +1190,7 @@
             if(!hudPage)drawBars(44);
 
             hudCtx.font = '16px system-ui';
-            hudCtx.fillStyle = '#eef';
+            hudCtx.fillStyle = UI_TEXT;
 
             if (hudPage === 1) {
                 // Chat history and text entry field.
@@ -1197,9 +1209,10 @@
                     )
                 );
 
-                hudCtx.fillStyle = '#27332b';
+                // Chat input field uses the same background as every HUD button.
+                hudCtx.fillStyle = UI_BUTTON;
                 hudCtx.fillRect(20, iy, 390, 28);
-                hudCtx.fillStyle = '#eef';
+                hudCtx.fillStyle = UI_TEXT;
                 hudCtx.fillText(
                     '> ' + chatText.slice(-58) +
                         (performance.now() % 1e3 < 500 ? '_' : ''),
@@ -1208,7 +1221,7 @@
                 );
             } else if (hudPage === 2) {
                 // Inventory placeholder.
-                hudCtx.fillStyle = '#899';
+                hudCtx.fillStyle = UI_MUTED;
                 hudCtx.font = '16px system-ui';
                 hudCtx.fillText('INVENTORY', 20, 82);
                 hudCtx.font = '14px monospace';
@@ -1224,11 +1237,11 @@
                 hudCtx.fillText(
                     `LEVEL ${level}   CATS ${cat.caught}   ${timer}m`,20,102
                 );
-                hudCtx.fillStyle = mmoEnabled ? '#9f9' : '#899';
+                hudCtx.fillStyle = mmoEnabled ? UI_TEXT : UI_MUTED;
                 hudCtx.fillText(
                     `MMO ${mmoEnabled ? 'ON' : 'OFF'}   PLAYERS ${peerCount}`,20,126
                 );
-                hudCtx.fillStyle = '#899';
+                hudCtx.fillStyle = UI_MUTED;
                 hudCtx.font = '14px monospace';
 
                 const lines = LOG.slice(
@@ -1248,9 +1261,10 @@
                 const h = (b[3] - b[1]) * 320;
                 const a = b[5];
 
-                hudCtx.fillStyle = hoverBtn === b ? '#586b58' : '#27332b';
+                // Open HUD button background and hover colors are controlled here.
+                hudCtx.fillStyle = hoverBtn === b ? UI_HOVER : UI_BUTTON;
                 hudCtx.fillRect(x, y, w, h);
-                hudCtx.fillStyle = '#eef';
+                hudCtx.fillStyle = UI_TEXT;
                 hudCtx.font = (
                     (hudPage === 1 && xr) || b[2] - b[0] < .2 ? '13' : '16'
                 ) + 'px system-ui';

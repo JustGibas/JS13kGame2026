@@ -3,9 +3,9 @@
 <head>
     <meta charset="utf-8" />
     <!-- <meta name="viewport" content="width=device-width, initial-scale=1" /> -->
-    <!-- <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" /> -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <!-- <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"> -->
-    <meta name="viewport" content="width=device-width, user-scalable=no">
+    <!-- <meta name="viewport" content="width=device-width, user-scalable=no"> -->
     <title>Wild Catch</title>
     <!--meta name="author" content="Justinas Gibas" /-->
     <!--<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="55%" x="50%" dominant-baseline="middle" text-anchor="middle" font-size="80">🐈‍⬛</text></svg>'>-->
@@ -17,8 +17,18 @@
             background: #000;
             overflow: hidden;
             touch-action: none; /* Prevents default touch actions like scrolling */
+        }
+
+        /* Prevent selection and long-press callouts across the entire game UI. */
+        * {
             user-select: none;
-            /* -webkit-user-select: none; // Safari */
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        canvas, .j {
+            touch-action: none;
         }
 
         /* Styling for the virtual joysticks */
@@ -32,7 +42,7 @@
             z-index: 10;
             display: none; /* Hidden by default, shown for touch devices */
         }
- 
+
         /* The movable part of the joystick */
         .jh {
             position: absolute;
@@ -126,7 +136,7 @@
      let prevUserX = u.x, prevUserZ = u.z; // previous frame planar position
      let userVelX = 0, userVelZ = 0;             // planar velocity for cat pursuit
     let last = 0; // Timestamp of the last frame for calculating delta time
-    let gl, xr = null, ref = null, off = null; // WebGL and WebXR objects
+    let gl, xr = null, ref = null, xrM = M4(); // WebGL and WebXR objects
 
     //gl = C.getContext('webgl2', { antialias: true, xrCompatible: true });
     gl = C.getContext('webgl2', { xrCompatible: true });
@@ -374,7 +384,26 @@
     const DZ = .1;    // Deadzone for joystick/gamepad axes to prevent drift
     // -- VR: Input --
     // Point-to-move must be held briefly so a hand changing pose cannot move the player accidentally.
+    // OPTIONAL: 150ms gesture debounce; remove with its timing and cleanup code for a smaller instant-response build.
     const pointStarted = new Map();
+    /* TEMP XR stick diagnostics; uncomment with the loop call below when needed.
+    let stickLogAt = 0;
+    // Temporary raw WebXR monitor. Kept separate from movement so diagnostics cannot block input.
+    function logXRSticks(session) {
+        const now = performance.now();
+        if (now < stickLogAt) return;
+        stickLogAt = now + 700;
+        try {
+            const rows = [];
+            for (const src of session.inputSources) {
+                const g = src.gamepad;
+                if (!g) continue;
+                const a = Array.from(g.axes, v => v == null || v !== v ? 'n' : Math.round(v * 100) / 100);
+                rows.push((src.handedness[0] || '?') + '[' + a + ']');
+            }
+            log((rows.length ? 'ST ' + rows.join(' ') : 'ST no gamepad src=' + session.inputSources.length) + ' p[' + Math.round(u.x*10)/10 + ',' + Math.round(u.z*10)/10 + ',' + Math.round(u.yaw*10)/10 + ']');
+        } catch (e) { log('ST ERR ' + e.message); }
+    } */
     // -- /VR: Input --
 
     // State for the raycast
@@ -389,7 +418,7 @@
         const k = e.code;
         I.keys[k] = true;
         if (!e.repeat && k === 'Enter') { e.preventDefault(); setChat(true); return; }
-        if (!e.repeat && k === 'KeyF') { hudVisible=true;hudPage=2;return; }
+        // INVENTORY HUD disabled: if (!e.repeat && k === 'KeyF') { hudVisible=true;hudPage=2;return; }
         if (!e.repeat && k === 'KeyC') { setChat(true);return; }
         if (!e.repeat && k === 'KeyZ') { hudVisible=true;hudPage=3;return; }
         if (!e.repeat && choosing && /^(Digit|Numpad)[1-3]$/.test(k)) {
@@ -566,9 +595,9 @@
         if (mode === 'VR' && frame) {
             // Use the controller's target ray space if available
             if (src && src.targetRaySpace) {
-                const pose = frame.getPose(src.targetRaySpace, off || ref || null);
+                const pose = frame.getPose(src.targetRaySpace, ref);
                 if (pose) {
-                    const m = pose.transform.matrix;
+                    const m = MULTMAT4(M4(),xrM,pose.transform.matrix);
                     const o = [m[12], m[13], m[14]];
                     const d = [-m[8], -m[9], -m[10]]; // -Z is forward in WebXR.
                     return { o, d };
@@ -577,9 +606,9 @@
             // Fallback to any available controller
             for (const s of xr.inputSources) {
                 if (s.targetRaySpace) {
-                    const pose = frame.getPose(s.targetRaySpace, off || ref || null);
+                    const pose = frame.getPose(s.targetRaySpace, ref);
                     if (pose) {
-                        const m = pose.transform.matrix;
+                        const m = MULTMAT4(M4(),xrM,pose.transform.matrix);
                         const o = [m[12], m[13], m[14]];
                         const d = [-m[8], -m[9], -m[10]];
                         return { o, d };
@@ -587,9 +616,9 @@
                 }
             }
             // Fallback to gaze/head pose
-            const pose = frame.getViewerPose(off || ref || null);
+            const pose = frame.getViewerPose(ref);
             if (pose) {
-                const m = pose.views[0].transform.matrix;
+                const m = MULTMAT4(M4(),xrM,pose.views[0].transform.matrix);
                 return { o: [m[12], m[13], m[14]], d: [-m[8], -m[9], -m[10]] };
             }
         } else { // Desktop mode
@@ -616,9 +645,9 @@
     // -- VR: Input --
     // Helper to get a ray from a VR controller
     function controllerRay(frame,src) {
-        const pose = src.targetRaySpace ? frame.getPose(src.targetRaySpace, off || ref || null) : null;
+        const pose = src.targetRaySpace ? frame.getPose(src.targetRaySpace, ref) : null;
         if (pose) {
-            const m = pose.transform.matrix;
+            const m = MULTMAT4(M4(),xrM,pose.transform.matrix);
             return { o: [m[12], m[13], m[14]], d: [-m[8], -m[9], -m[10]] };
         }
         return { o: [0, 0, 0], d: [0, 0, -1] }; // Fallback, ray from Head
@@ -853,9 +882,10 @@
 
     // Consolidates input from keyboard, joysticks, and VR controllers into a single movement vector
     // -- VR: Input --
+    // OPTIONAL: remove this whole function and hand-tracking session feature for controller-only VR.
     function handPointMove(frame, src) {
         if (!frame || !src.hand) return null;
-        const base = off || ref;
+        const base = ref;
         const pose = name => {
             const joint = src.hand.get(name);
             return joint && frame.getJointPose(joint, base);
@@ -865,13 +895,15 @@
         const p = x => x.transform.position;
         const dist = (a,b) => HYPOT(a.x-b.x,a.y-b.y,a.z-b.z);
         const extended = (tip, base) => tip && base && dist(p(tip),p(wrist)) > dist(p(base),p(wrist))*1.45;
+        const curl = (tip, base) => tip && base && dist(p(tip),p(wrist)) < dist(p(base),p(wrist))*1.05;
         let curled = 0;
         for (const finger of ['middle','ring','pinky']) {
-            if (!extended(pose(finger+'-finger-tip'), pose(finger+'-finger-phalanx-proximal'))) curled++;
+            if (curl(pose(finger+'-finger-tip'), pose(finger+'-finger-phalanx-proximal'))) curled++;
         }
-        if (!extended(index,indexBase) || curled < 2) { pointStarted.delete(src); return null; }
+        if (!extended(index,indexBase) || curled < 3) { pointStarted.delete(src); return null; }
         const now = performance.now(), started = pointStarted.get(src);
-        if (started === undefined) { pointStarted.set(src,now); return null; }
+        // OPTIONAL: gesture debug feedback only.
+        if (started === undefined) { pointStarted.set(src,now);log('POINT '+src.handedness);return null; }
         if (now-started < 150) return null;
         const ray = rayFrom('VR',frame,src), h = ray && HYPOT(ray.d[0],ray.d[2]);
         if (!ray || h < .35) return null;
@@ -902,15 +934,20 @@
         if (session) {
             for (const src of session.inputSources) {
                 const handMove = handPointMove(frame,src);
-                if (handMove) { vx=handMove.x;vy=handMove.y;continue; }
+                if (handMove) {
+                    if (src.handedness === 'left') vt=-handMove.x;
+                    else { vx=handMove.x;vy=handMove.y; }
+                    continue;
+                }
                 const a = src.gamepad?.axes;
                 if (!a || a.length < 2) continue;
                 const dz = v => ABS(v) > DZ ? v : 0; // Apply deadzone
-                // xr-standard reserves 0/1 for a touchpad; compact/non-standard gamepads may only expose 0/1.
-                const n=a.length>=4?2:0,x=dz(a[n]),y=dz(a[n+1]);
+                // OPTIONAL COMPATIBILITY: Meta Quest uses 2/3; fallback also supports compact 0/1-axis gamepads.
+                const n=a.length>=4?2:0,x=dz(a[n]||0),y=dz(a[n+1]||0);
                 
                 if (src.handedness === 'left') { vx = x; vy = -y; }
                 else if (src.handedness === 'right') { vt = -x; }
+                // OPTIONAL COMPATIBILITY: Meta Quest normally reports left/right handedness.
                 else if (!vx && !vy) { vx = x; vy = -y; } // Fallback for undefined handedness
             }
         }
@@ -1020,7 +1057,7 @@
     // u0,v0,u1,v1,label,action
     const UI_MAIN = [
         [.66,.16,.96,.28,'SETTINGS',13],
-        [.66,.34,.96,.46,'INVENTORY',12],
+        // [.66,.34,.96,.46,'INVENTORY',12], // INVENTORY HUD disabled
         [.66,.52,.96,.64,'CHAT',3],
         [.66,.82,.96,.94,'CLOSE',6]
     ], UI_TAB = [[.4,0,.6,.12,'MENU',7]], CHAT_NAV=[
@@ -1062,7 +1099,8 @@
         if(xp>=level*3)rollChoices();
     }
 
-    function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
+    // INVENTORY HUD disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
+    function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
     // -- /PART: State-Layout --
 
     // -- PART: Chat-Actions --
@@ -1094,7 +1132,7 @@
         else if (a === 8) chatText=chatText.slice(0,-1);
         else if (a === 10) sendChat();
         else if (a === 11) setChat(false);
-        else if (a === 12) hudPage=2;
+        // else if (a === 12) hudPage=2; // INVENTORY HUD disabled
         else if (a === 13) hudPage=3;
         else if (a === 14) invertX=!invertX;
         else if (a === 15) invertY=!invertY;
@@ -1112,7 +1150,8 @@
     // -- PART: Transform-Picking --
     // Returns the correct local transform for the HUD based on its visibility state
     function getHudTransform() {
-        return new DOMMatrix().translate(0,hudVisible&&!choosing?-.05:.5,-1.15).toFloat32Array();
+        // translate(X, Y, Z): X=horizontal; Y=open -.05, closed/choices .5; Z=closed VR -1.5m, everything else -1.15m.
+        return new DOMMatrix().translate(0,hudVisible&&!choosing?-.05:.5,xr&&!hudVisible?-1.5:-1.15).toFloat32Array();
     }
 
     // --- HUD Interaction Needs Input-ray ---
@@ -1216,7 +1255,7 @@
             hudCtx.font = '20px system-ui';
             hudCtx.fillText(
                 hudPage === 1 ? 'CHAT' :
-                hudPage === 2 ? 'INVENTORY' :
+                // hudPage === 2 ? 'INVENTORY' : // INVENTORY HUD disabled
                 hudPage === 3 ? 'SETTINGS' :
                 'WILD CATCH',
                 20,
@@ -1255,14 +1294,15 @@
                     28,
                     iy + 20
                 );
-            } else if (hudPage === 2) {
+            } /* INVENTORY HUD disabled:
+            else if (hudPage === 2) {
                 // Inventory placeholder.
                 hudCtx.fillStyle = UI_MUTED;
                 hudCtx.font = '16px system-ui';
                 hudCtx.fillText('INVENTORY', 20, 82);
                 hudCtx.font = '14px monospace';
                 hudCtx.fillText('Items and equipment', 20, 112);
-            } else if (!hudPage) {
+            } */ else if (!hudPage) {
                 // Main status page.
                 let peerCount = 0,
                     now = performance.now();
@@ -1540,25 +1580,26 @@
     // -- /FEATURE: Scene --
 
     // -- VR: Rendering --
+    // OPTIONAL VISUALS: remove with its call to hide controller discs and beams; HUD ray clicks still work.
     function drawXRInput(session, frame, V, P, hudWH) {
         for (const src of session.inputSources || []) {
             const col = [1, 1, .5];
-            const grip = src.gripSpace ? frame.getPose(src.gripSpace, off) : null;
+            const grip = src.gripSpace ? frame.getPose(src.gripSpace, ref) : null;
             if (grip) {
-                const M = new DOMMatrix(grip.transform.matrix).multiply(new DOMMatrix([.1,0,0,0,0,.1,0,0,0,0,.1,0,0,0,0,1])).rotate(90,0,0).translate(0,-.5,0).toFloat32Array();
+                const M = new DOMMatrix(MULTMAT4(M4(),xrM,grip.transform.matrix)).multiply(new DOMMatrix([.1,0,0,0,0,.1,0,0,0,0,.1,0,0,0,0,1])).rotate(90,0,0).translate(0,-.5,0).toFloat32Array();
                 gl.useProgram(PDisc); gl.bindVertexArray(vaoH);
                 gl.uniformMatrix4fv(uMDisc, false, M); gl.uniformMatrix4fv(uVDisc, false, V); gl.uniformMatrix4fv(uPDisc, false, P);
                 gl.uniform4f(uColDisc, col[0], col[1], col[2], .95);
                 gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
                 gl.drawArrays(gl.TRIANGLES, 0, 6); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
             }
-            const target = src.targetRaySpace ? frame.getPose(src.targetRaySpace, off) : null;
+            const target = src.targetRaySpace ? frame.getPose(src.targetRaySpace, ref) : null;
             if (target) {
                 const ray = controllerRay(frame, src);
                 const trigger = src.gamepad && src.gamepad.buttons && src.gamepad.buttons[0] ? src.gamepad.buttons[0].value || 0 : 0;
                 const w = .004 + .01 * trigger, hit = HUD_pick(hudWH, ray);
                 const M = new DOMMatrix([w,0,0,0,0,w,0,0,0,0,-(hit ? MIN(3, hit.t) : 3),0,0,0,0,1]);
-                const beam = new DOMMatrix(target.transform.matrix).multiply(M).toFloat32Array();
+                const beam = new DOMMatrix(MULTMAT4(M4(),xrM,target.transform.matrix)).multiply(M).toFloat32Array();
                 gl.useProgram(PC); gl.bindVertexArray(vaoBeam);
                 gl.uniformMatrix4fv(uMBeam, false, beam); gl.uniformMatrix4fv(uVBeam, false, V); gl.uniformMatrix4fv(uPBeam, false, P);
                 gl.uniform4f(uColBeam, col[0], col[1], col[2], .8);
@@ -1580,15 +1621,16 @@
         gl.clearColor(0, 0, 0, 1);
         // -- VR: Rendering --
         if (session) {
-            const half = -u.yaw * .5;
-            off = ref.getOffsetReferenceSpace(new XRRigidTransform({x:0,y:0,z:0}, {x:0,y:SIN(half),z:0,w:COS(half)}))
-                .getOffsetReferenceSpace(new XRRigidTransform({x:-u.x,y:0,z:-u.z}));
-            const pose = frame.getViewerPose(off);
+            const cy=COS(u.yaw),sy=SIN(u.yaw);
+            xrM.set([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, u.x,0,u.z,1]);
+            const pose = frame.getViewerPose(ref);
             if (!pose) return;
-            updateAudioListener(pose.transform.matrix);
-            hudWH = new DOMMatrix(pose.transform.matrix).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
+            const headW = MULTMAT4(M4(),xrM,pose.transform.matrix);
+            updateAudioListener(headW);
+            hudWH = new DOMMatrix(headW).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
             HUD_WH_world = hudWH;
             hoverBtn = null;
+            // OPTIONAL VISUAL: button hover highlighting; select/click works without it.
             for (const src of session.inputSources || []) {
                 const hit = HUD_pick(hudWH, controllerRay(frame, src));
                 if (hit && hit.button) { hoverBtn = hit.button; break; }
@@ -1598,9 +1640,9 @@
             gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
             for (const view of pose.views) {
-                const vp = layer.getViewport(view), Veye = view.transform.inverse.matrix, Peye = view.projectionMatrix;
+                const vp = layer.getViewport(view), eyeW=MULTMAT4(M4(),xrM,view.transform.matrix),Veye=INV(eyeW),Peye=view.projectionMatrix;
                 gl.viewport(vp.x, vp.y, vp.width, vp.height);
-                drawWorld(Veye, Peye, view.transform.matrix, t, dt, true);
+                drawWorld(Veye, Peye, eyeW, t, dt, true);
                 drawHud(hudWH, Veye, Peye);
                 drawXRInput(session, frame, Veye, Peye, hudWH);
             }
@@ -1624,6 +1666,8 @@
             drawWorld(V, P, W, t, dt, false);
             drawHud(hudWH, V, P);
         }
+        // Run diagnostics last: even a browser-specific Gamepad value cannot stop this frame's movement/render.
+        // if (session) logXRSticks(session);
     }
 
     // Helper to update the HUD canvas content
@@ -1685,6 +1729,7 @@
     // --- WebXR ---
 
     // Checks for WebXR support
+    // OPTIONAL STATUS: this only reports availability; the Enter VR action also catches failures.
     function initXR() {
         if (!('xr' in navigator)) {
             log('WebXR not available');
@@ -1704,11 +1749,14 @@
                 return;
             }
             // Request a new session
+            // OPTIONAL FEATURE: remove hand-tracking here if hand gestures and pinch HUD input are removed.
             const session=xr=await navigator.xr.requestSession('immersive-vr', { 'optionalFeatures': ['local-floor', 'hand-tracking'] });
             uiEnterLabel = 'Exit VR';
 
+            // OPTIONAL COMPATIBILITY: redundant when the context honors its existing xrCompatible:true flag.
             await gl.makeXRCompatible();
             xr.updateRenderState({ baseLayer: new XRWebGLLayer(xr, gl) });
+            // OPTIONAL FALLBACK: Quest supports local-floor; keep for other WebXR implementations.
             try { ref = await xr.requestReferenceSpace('local-floor'); }
             catch (_) { ref = await xr.requestReferenceSpace('local'); log('XR floor unavailable; using local space'); }
 
@@ -1717,21 +1765,22 @@
                 const hit = HUD_pick(HUD_WH_world, rayFrom('VR',e.frame,e.inputSource));
                 if (hit && hit.button) activate(hit.button[5]);
             });
-            const inputLog = s => log('XR '+(s.handedness||'unknown')+' '+(s.hand?'hand':'controller')+' '+s.profiles.join(',')+(s.gamepad?' axes:'+s.gamepad.axes.length:' no-gamepad'));
-            xr.addEventListener('inputsourceschange', e => { e.removed.forEach(s=>{pointStarted.delete(s);log('XR input disconnected')});e.added.forEach(inputLog); });
-            xr.inputSources.forEach(inputLog);
-            log('HAND MOVE: point index; curl 2 fingers');
+            // OPTIONAL DEBOUNCE CLEANUP: remove with pointStarted and its 150ms timing logic.
+            xr.addEventListener('inputsourceschange', e => e.removed.forEach(s=>pointStarted.delete(s)));
             
 
             xr.addEventListener('end', () => {
                 if (xr !== session) return;
                 // If the canvas holds pointer lock, release it when exiting VR
+                // OPTIONAL CLEANUP: entering VR normally leaves no desktop pointer lock.
                 document.exitPointerLock();
                 //cancelAnimationFrame(onXR); // Stop XR loop
                 xr = null;
-                ref = off = null;
+                ref = null;
+                // OPTIONAL DEBOUNCE CLEANUP: remove with pointStarted.
                 pointStarted.clear();
                 uiEnterLabel = 'Enter VR';
+                // OPTIONAL CLEANUP: the next desktop frame binds and sizes the framebuffer again.
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
                 gl.viewport(0,0,C.width,C.height);
                 requestAnimationFrame(loop); // Resume desktop loop
@@ -1743,11 +1792,12 @@
 
         } catch (e) {
             log('XR failed: ' + e.message);
+            // OPTIONAL ROBUSTNESS: safely recovers if XR setup fails after creating a session.
             // If setup failed after the session was created, close it and restart desktop rendering.
             if (xr) {
                 const failed=xr;xr=null;
                 try { await failed.end(); } catch (_) {}
-                ref=off=null;last=0;requestAnimationFrame(loop);
+                ref=null;last=0;requestAnimationFrame(loop);
             }
         }
     }

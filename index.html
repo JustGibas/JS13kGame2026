@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- <meta name="viewport" content="width=device-width, initial-scale=1" /> -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Wild Catch</title>
     <!--meta name="author" content="Justinas Gibas" /-->
     <!--<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="55%" x="50%" dominant-baseline="middle" text-anchor="middle" font-size="80">🐈‍⬛</text></svg>'>-->
@@ -14,6 +15,8 @@
             background: #000;
             overflow: hidden;
             touch-action: none; /* Prevents default touch actions like scrolling */
+            user-select: none;  
+            -webkit-user-select: none; /* Safari */
         }
 
         /* Styling for the virtual joysticks */
@@ -663,7 +666,7 @@
         // n is the number of attempts to find a valid spawn position for the cat. It tries up to 10 times.
         for(let n=10;n--;){
             a=rng()*PI*2;
-            r=30+rng()*25; // r is the distance from the player, between 30 and 55 units
+            r=50+rng()*25; // r is the distance from the player, between 50 and 75 units
             c.x=u.x+COS(a)*r;
             c.z=u.z+SIN(a)*r;
             ok=1;
@@ -725,10 +728,11 @@
             if(self&&d<1.1+c.tier*.04&&c.hit<0){
                 //u.x+=dx/d*(2+c.tier*.2);
                 //u.z+=dz/d*(2+c.tier*.2);
+                //u.y+=dz/d*(2+c.tier*.2);
                 hp-=10+c.tier*4;
                 playHurtSound();
                 placeCat(c);
-                if(hp<1){resetRun();return;}
+                if(hp<1){resetRun();return;} // DEAD
                 continue;
             }
             if(c.h<0)for(let i=orbCount;i--;){

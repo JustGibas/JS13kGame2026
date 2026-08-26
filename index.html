@@ -133,10 +133,10 @@
     let mmoEnabled = false;
     let ws = null;
     let myId = null;
-    const peers = new Map(); // id -> {x,z,yaw,last,hist:[{t,x,z,yaw}], sx,sz,syaw}
+    const peers = new Map(); // id -> interpolated player and skill state
     const remoteCats = new Map(); // owner id -> Map(enemy id -> predicted enemy)
     const remoteShots = [];
-    let mmoSendTimer = 0, enemySendTimer = 0;
+    let mmoSendTimer = 0, enemySendTimer = 0, shotId=0;
 
     // Peer interpolation delay (ms). Higher = smoother but more laggy. 120ms is a good balance.
     function lerp(a,b,t){ return a + (b-a)*t; }
@@ -217,7 +217,7 @@
         const c = msg[0];
         switch(c){
             case '@': myId = msg.slice(1); logMMO('my id: ' + myId); return;
-            case '+': { const id = msg.slice(1); if (id && !peers.has(id)) peers.set(id, {x:0,z:0,yaw:0,last:0,hist:[]}); return; }
+            case '+': { const id = msg.slice(1); if (id && !peers.has(id)) peers.set(id, {x:0,z:0,yaw:0,last:0,hist:[],oh:[]}); return; }
             case '-': { const id = msg.slice(1); peers.delete(id);remoteCats.delete(id);for(let i=remoteShots.length;i--;)if(remoteShots[i].o===id)remoteShots.splice(i,1);return; }
         }
         // Strip optional direct prefix @targetId|payload -> payload
@@ -226,7 +226,7 @@
             const bar = payload.indexOf('|');
             if (bar > 0) payload = payload.slice(bar+1);
         }
-        // Expected: p|id|x|z|yaw
+        // Expected: p|id|x|z|yaw|orbs|orbSize|orbSpeed|orbPhase|damage
         if (payload[0] === 'p' && payload[1] === '|'){
             const parts = payload.split('|');
             if (parts.length >= 5){
@@ -235,12 +235,13 @@
                     const x = parseFloat(parts[2]);
                     const z = parseFloat(parts[3]);
                     const yaw = parseFloat(parts[4]);
-                    const p = peers.get(id) || {x:0,z:0,yaw:0,last:0,hist:[]};
+                    const p = peers.get(id) || {x:0,z:0,yaw:0,last:0,hist:[],oh:[]};
                     const now = performance.now();
                     const nx = isFinite(x)?x:p.x;
                     const nz = isFinite(z)?z:p.z;
                     const ny = isFinite(yaw)?yaw:p.yaw;
                     pushPeerSample(p, nx, nz, ny, now);
+                    p.oc=+parts[5]||0;p.os=+parts[6]||.35;p.ov=+parts[7]||2;p.op=+parts[8]||0;p.ot=now;p.d=+parts[9]||1;
                     peers.set(id, p);
                 }
             }
@@ -264,9 +265,9 @@
                 remoteCats.set(owner,group);
             }
         }
-        if ((payload[0] === 'h'||payload[0] === 'k') && payload[1] === '|'){
+        if (payload[0] === 'k' && payload[1] === '|'){
             const p=payload.split('|'),c=p[1]===myId&&cats[+p[2]];
-            if(c&&c.v===+p[3])payload[0]==='h'?hurt(c,+p[4]||1,p[5]):placeCat(c);
+            if(c&&c.v===+p[3])placeCat(c);
         }
         if (payload[0] === 'd' && payload[1] === '|'){
             const p=payload.split('|'),group=remoteCats.get(p[1]),c=group&&group.get(+p[2]);
@@ -275,9 +276,11 @@
         }
         if(payload[0]==='s'&&payload[1]==='|'){
             const p=payload.split('|');
-            if(p[1]!==myId){remoteShots.push({o:p[1],x:+p[2],y:.7,z:+p[3],vx:+p[4],vz:+p[5],r:+p[6],t:3});playShotSound(+p[2],+p[3]);}
+            if(p[1]!==myId){remoteShots.push({o:p[1],x:+p[2],y:.7,z:+p[3],vx:+p[4],vz:+p[5],r:+p[6],d:+p[7]||1,i:+p[8],t:3});playShotSound(+p[2],+p[3]);}
         }
+        if(payload[0]==='x'&&payload[1]==='|'){const p=payload.split('|'),a=p[1]===myId?shots:remoteShots;for(let i=a.length;i--;)if(a[i].i===+p[2]&&(p[1]===myId||a[i].o===p[1]))a.splice(i,1);}
     }
+    document.onvisibilitychange=_=>mmoEnabled&&!xr&&(document.hidden?(ws&&(ws.onmessage=ws.onclose=0),disconnectMMO()):connectMMO());
 
     function mmoTick(dt){
         if (!mmoEnabled || !ws || ws.readyState !== 1 || !myId) return;
@@ -285,7 +288,7 @@
         if (mmoSendTimer >= .1){ // ~10 Hz
             mmoSendTimer = 0;
             // compact broadcast with our id
-            const msg = 'p|' + myId + '|' + u.x.toFixed(2) + '|' + u.z.toFixed(2) + '|' + u.yaw.toFixed(3);
+            const msg = 'p|' + myId + '|' + u.x.toFixed(2) + '|' + u.z.toFixed(2) + '|' + u.yaw.toFixed(3)+'|'+orbCount+'|'+orbSize.toFixed(2)+'|'+orbSpeed.toFixed(2)+'|'+(skillTime*orbSpeed).toFixed(2)+'|'+damage;
             sendMMO(msg);
         }
         enemySendTimer+=dt;
@@ -649,8 +652,13 @@
         boltCount=1,boltRate=3,boltSize=.2,boltTime=0,damage=1,moveSpeed=3,choices=[],seed=Date.now()|0,hp=100,maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
     function placeCat(c){
-        const a=rng()*PI*2,r=20+rng()*25;
-        c.x=u.x+COS(a)*r;c.z=u.z+SIN(a)*r;c.vx=c.vz=c.yaw=c.anim=c.hit=c.h=0;
+        let a,r,ok;
+        for(let n=20;n--;){
+            a=rng()*PI*2;r=20+rng()*25;c.x=u.x+COS(a)*r;c.z=u.z+SIN(a)*r;ok=1;
+            peers.forEach(p=>ok&=(p.x-c.x)**2+(p.z-c.z)**2>64);
+            if(ok)break;
+        }
+        c.vx=c.vz=c.yaw=c.anim=c.hit=c.h=0;
         c.v=++catVersion;
         const cap=powerTier(level),roll=rng();
         c.tier=cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):rng()*(cap+1)|0):0;
@@ -679,13 +687,13 @@
         const x=c.x,z=c.z,v=c.v,tier=c.tier;
         if(!myId||killer===myId){playKillSound(x,z);for(let i=1+(tier>>1);i--;)dropXP(c.x+i*.35,c.z);}
         if(myId)sendMMO(`d|${myId}|${c.i}|${v}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${d}|${killer}`);
-        placeCat(c);log(`Cat defeated #${++cat.caught}`);
+        placeCat(c);//log(`Cat defeated #${++cat.caught}`);
     }
     function updateEnemies(dt){
         skillTime+=dt;
         for(const c of cats){
-            let tx=u.x,tz=u.z,best=(tx-c.x)**2+(tz-c.z)**2,now=performance.now();
-            peers.forEach(p=>{const q=(p.x-c.x)**2+(p.z-c.z)**2;if(now-p.last<15000&&q<best){best=q;tx=p.x;tz=p.z;}});
+            let tx=u.x,tz=u.z,best=(tx-c.x)**2+(tz-c.z)**2,now=performance.now(),self=1;
+            peers.forEach(p=>{const q=(p.x-c.x)**2+(p.z-c.z)**2;if(now-p.last<15000&&q<best){best=q;tx=p.x;tz=p.z;self=0;}});
             let dx=tx-c.x,dz=tz-c.z,d=HYPOT(dx,dz)||1,fx=dx/d*7,fz=dz/d*7;
             for(const o of obstacles){
                 let ox=c.x-o.x,oz=c.z-o.z,od=HYPOT(ox,oz)||1,r=o.r+2;
@@ -697,7 +705,7 @@
             c.x+=c.vx*dt;c.z+=c.vz*dt;c.vx*=1-dt;c.vz*=1-dt;
             c.anim+=s*dt*3.5;c.yaw=ATAN2(c.vx,c.vz);
             c.hit-=dt;c.h-=dt;
-            if(d<1.1+c.tier*.04&&c.hit<0){
+            if(self&&d<1.1+c.tier*.04&&c.hit<0){
                 u.x+=dx/d*(2+c.tier*.2);u.z+=dz/d*(2+c.tier*.2);hp-=10+c.tier*4;playHurtSound();placeCat(c);
                 if(hp<1){resetRun();return;}
                 continue;
@@ -708,22 +716,24 @@
                     hurt(c,damage,myId);c.h=.5;break;
                 }
             }
+            peers.forEach((p,id)=>{
+                if(now-p.last<15000&&(p.oh[c.i]||0)<now)for(let i=p.oc;i--;){
+                    const a=p.op+(now-p.ot)/1e3*p.ov+i*PI*2/p.oc,ox=p.x+COS(a)*2.3,oz=p.z+SIN(a)*2.3;
+                    if((c.x-ox)**2+(c.z-oz)**2<(.5+p.os)**2){hurt(c,p.d,id);p.oh[c.i]=now+500;break;}
+                }
+            });
         }
     }
     function updateRemoteCats(dt){
         const now=performance.now();
         remoteCats.forEach((group,owner)=>group.forEach(c=>{
             if(now-c.last>15000||c.dead)return;
-            const k=MIN(1,dt*8);c.x=lerp(c.x,c.tx,k);c.z=lerp(c.z,c.tz,k);c.yaw=lerpAngle(c.yaw||c.tyaw,c.tyaw,k);c.hit-=dt;c.h-=dt;
+            const k=MIN(1,dt*8);c.x=lerp(c.x,c.tx,k);c.z=lerp(c.z,c.tz,k);c.yaw=lerpAngle(c.yaw||c.tyaw,c.tyaw,k);c.hit-=dt;
             let dx=u.x-c.x,dz=u.z-c.z,d=HYPOT(dx,dz)||1;
             if(d<1.1+c.tier*.04&&c.hit<0){
                 u.x+=dx/d*(2+c.tier*.2);u.z+=dz/d*(2+c.tier*.2);hp-=10+c.tier*4;c.hit=1;playHurtSound();
                 sendMMO(`k|${owner}|${c.i}|${c.v}`);
                 if(hp<1)resetRun();
-            }
-            if(c.h<0)for(let i=orbCount;i--;){
-                const a=skillTime*orbSpeed+i*PI*2/orbCount,ox=u.x+COS(a)*2.3,oz=u.z+SIN(a)*2.3;
-                if((c.x-ox)**2+(c.z-oz)**2<(.5+orbSize)**2){sendMMO(`h|${owner}|${c.i}|${c.v}|${damage}|${myId}`);c.h=.5;break;}
             }
         }));
     }
@@ -737,20 +747,23 @@
             const aim=ATAN2(target.x-u.x,target.z-u.z);
             for(let i=boltCount;i--;){
                 const a=aim+(i-(boltCount-1)/2)*.18;
-                const s={x:u.x,y:.7,z:u.z,vx:SIN(a)*10,vz:COS(a)*10,d:damage,t:3};shots.push(s);
-                if(myId)sendMMO(`s|${myId}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.vx.toFixed(2)}|${s.vz.toFixed(2)}|${boltSize.toFixed(2)}`);
+                const s={x:u.x,y:.7,z:u.z,vx:SIN(a)*10,vz:COS(a)*10,d:damage,i:++shotId,t:3};shots.push(s);
+                if(myId)sendMMO(`s|${myId}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.vx.toFixed(2)}|${s.vz.toFixed(2)}|${boltSize.toFixed(2)}|${s.d}|${s.i}`);
             }
             playShotSound();
         }
         for(let i=shots.length;i--;){
             const s=shots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
-            for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){hurt(c,s.d,myId);s.t=0;break;}
+            for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){hurt(c,s.d,myId);if(myId)sendMMO(`x|${myId}|${s.i}`);s.t=0;break;}
             if(s.t>0)remoteHit:for(const [owner,group] of remoteCats)for(const c of group.values())if(!c.dead&&(c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){
-                sendMMO(`h|${owner}|${c.i}|${c.v}|${s.d}|${myId}`);if(c.hp>s.d)playHitSound(c.x,c.z);s.t=0;break remoteHit;
+                playHitSound(c.x,c.z);s.t=0;break remoteHit;
             }
-            if(s.t<0)shots.splice(i,1);
+            if(s.t<=0)shots.splice(i,1);
         }
-        for(let i=remoteShots.length;i--;){const s=remoteShots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;if((s.t-=dt)<0)remoteShots.splice(i,1);}
+        for(let i=remoteShots.length;i--;){const s=remoteShots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
+            for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+s.r)**2){hurt(c,s.d,s.o);sendMMO(`x|${s.o}|${s.i}`);s.t=0;break;}
+            if(s.t<=0)remoteShots.splice(i,1);
+        }
         for(let i=damageNumbers.length;i--;){const n=damageNumbers[i];n.y+=dt*.5;if((n.t-=dt)<0)damageNumbers.splice(i,1);}
     }
     resetCats();
@@ -1490,6 +1503,7 @@
                 if (id === myId || now - (p.last || 0) >= 15000) return;
                 const q = samplePeer(p, target) || p;
                 drawCat(V, P, q.x, .6, q.z, (q.yaw || 0) + PI, now*.005*MIN(3,p.speed||0), .1, PEER_COL);
+                for(let i=p.oc;i--;){const a=p.op+(now-p.ot)/1e3*p.ov+i*PI*2/p.oc;drawSphere(V,P,q.x+COS(a)*2.3,.7,q.z+SIN(a)*2.3,p.os,[1,.4,.8]);}
             });
         }
         if (rocks.length) {

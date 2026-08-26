@@ -322,11 +322,6 @@
         place(-.55,.25, 0,.12);
         place(-.70,.30, cy1*.6,.11);
     }
-    // One complete afterimage sways across the movement direction like a spectral echo.
-    function drawGhost(V,P,c,t){
-        const s=SIN(t*10+(c.i||0))*.2,x=c.x-SIN(c.yaw)*.2+COS(c.yaw)*s,z=c.z-COS(c.yaw)*.2-SIN(c.yaw)*s;
-        drawCat(V,P,x,.6,z,c.yaw,c.anim||t*8,.08,[...POWER[c.tier][2],.2]);
-    }
     // -- /FEATURE: MMO --
 
     // Resize the canvas to fill the window, accounting for device pixel ratio
@@ -751,6 +746,17 @@
             }
         }));
     }
+    // -- MODULE: Gameplay-Projectile-Simulation --
+    // Shared local/remote simulation is both clearer and smaller in the measured PPMd ZIP.
+    function updateProjectiles(list,dt,remote){
+        for(let i=list.length;i--;){const s=list[i],r=remote?s.r:boltSize;s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
+            if(insideBuilding(s.x,s.z,r)){list.splice(i,1);continue;}
+            for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+r)**2){hurt(c,s.d,remote?s.o:myId);if(remote||myId)sendMMO(`x|${remote?s.o:myId}|${s.i}`);s.t=0;break;}
+            if(!remote&&s.t>0)remoteHit:for(const [owner,group] of remoteCats)for(const c of group.values())if(!c.dead&&(c.x-s.x)**2+(c.z-s.z)**2<(.5+r)**2){playHitSound(c.x,c.z);s.t=0;break remoteHit;}
+            if(s.t<=0)list.splice(i,1);
+        }
+    }
+    // -- /MODULE: Gameplay-Projectile-Simulation --
     function updateShots(dt){
         boltTime-=dt;
         if(boltCount&&boltTime<0){
@@ -766,20 +772,7 @@
             }
             playShotSound();
         }
-        for(let i=shots.length;i--;){
-            const s=shots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
-            if(insideBuilding(s.x,s.z,boltSize)){shots.splice(i,1);continue;}
-            for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){hurt(c,s.d,myId);if(myId)sendMMO(`x|${myId}|${s.i}`);s.t=0;break;}
-            if(s.t>0)remoteHit:for(const [owner,group] of remoteCats)for(const c of group.values())if(!c.dead&&(c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){
-                playHitSound(c.x,c.z);s.t=0;break remoteHit;
-            }
-            if(s.t<=0)shots.splice(i,1);
-        }
-        for(let i=remoteShots.length;i--;){const s=remoteShots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
-            if(insideBuilding(s.x,s.z,s.r)){remoteShots.splice(i,1);continue;}
-            for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+s.r)**2){hurt(c,s.d,s.o);sendMMO(`x|${s.o}|${s.i}`);s.t=0;break;}
-            if(s.t<=0)remoteShots.splice(i,1);
-        }
+        updateProjectiles(shots,dt,0);updateProjectiles(remoteShots,dt,1);
         for(let i=damageNumbers.length;i--;){const n=damageNumbers[i];n.y+=dt*.5;if((n.t-=dt)<0)damageNumbers.splice(i,1);}
     }
     // -- /MODULE: Gameplay-Combat --
@@ -1344,8 +1337,6 @@
     const groundVerts = new F32([-500,0,-500,500,0,-500,500,0,500,-500,0,-500,500,0,500,-500,0,500]);
     const groundVao=gl.createVertexArray(),groundBuf=gl.createBuffer();
     gl.bindVertexArray(groundVao);gl.bindBuffer(gl.ARRAY_BUFFER,groundBuf);gl.bufferData(gl.ARRAY_BUFFER,groundVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
-    const PGROUND=prog(`layout(location=0)in vec3 p;uniform mat4 V,P;void main(){gl_Position=P*V*vec4(p,1.);}`,`out vec4 o;void main(){o=vec4(0.,0.,0.,1.);}`);
-    const uGroundV=gl.getUniformLocation(PGROUND,'V'),uGroundP=gl.getUniformLocation(PGROUND,'P');
     const cubeVerts=new F32([
         -1,-1,-1,1,-1,-1,1,1,-1,-1,-1,-1,1,1,-1,-1,1,-1,1,-1,1,-1,-1,1,-1,1,1,1,-1,1,-1,1,1,1,1,1,
         -1,-1,1,-1,-1,-1,-1,1,-1,-1,-1,1,-1,1,-1,-1,1,1,1,-1,-1,1,-1,1,1,1,1,1,-1,-1,1,1,1,1,1,-1,
@@ -1358,8 +1349,6 @@
     gl.bindVertexArray(buildingVao);gl.bindBuffer(gl.ARRAY_BUFFER,buildingBuf);gl.bufferData(gl.ARRAY_BUFFER,cubeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
     const edgeVao=gl.createVertexArray(),edgeBuf=gl.createBuffer();
     gl.bindVertexArray(edgeVao);gl.bindBuffer(gl.ARRAY_BUFFER,edgeBuf);gl.bufferData(gl.ARRAY_BUFFER,edgeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
-    const PBUILD=prog(`layout(location=0)in vec3 p;uniform mat4 M,V,P;void main(){gl_Position=P*V*M*vec4(p,1.);}`,fsColor);
-    const uBuildM=gl.getUniformLocation(PBUILD,'M'),uBuildV=gl.getUniformLocation(PBUILD,'V'),uBuildP=gl.getUniformLocation(PBUILD,'P'),uBuildCol=gl.getUniformLocation(PBUILD,'col');
     for(let z=-11;z<=11;z++)for(let x=-11;x<=11;x++){
         if(ABS(x)<2&&ABS(z)<2||cityHash(x,z)<.28)continue;
         const w=8+cityHash(x,z,1)*4,d=8+cityHash(x,z,2)*4,h=6+cityHash(x,z,3)*26,b={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w,d,h};
@@ -1367,10 +1356,12 @@
     }
     resetCats();
     function drawCity(V,P){
-        gl.useProgram(PBUILD);gl.uniformMatrix4fv(uBuildV,false,V);gl.uniformMatrix4fv(uBuildP,false,P);
+        gl.useProgram(PC);gl.uniformMatrix4fv(uS_V,false,V);gl.uniformMatrix4fv(uS_P,false,P);
+        // Ground and buildings share the general colored-mesh shader.
+        gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,0,0,0,1);gl.bindVertexArray(groundVao);gl.drawArrays(gl.TRIANGLES,0,6);
         for(const b of buildings){
-            gl.uniformMatrix4fv(uBuildM,false,translateScale(b.x,b.h/2,b.z,b.w/2,b.h/2,b.d/2));gl.uniform4f(uBuildCol,0,0,0,1);gl.bindVertexArray(buildingVao);gl.drawArrays(gl.TRIANGLES,0,36);
-            gl.uniformMatrix4fv(uBuildM,false,translateScale(b.x,b.h/2,b.z,b.w/2+.015,b.h/2+.015,b.d/2+.015));gl.uniform4f(uBuildCol,1,1,1,1);gl.bindVertexArray(edgeVao);gl.drawArrays(gl.LINES,0,24);
+            gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2,b.h/2,b.d/2));gl.uniform4f(uS_Color,0,0,0,1);gl.bindVertexArray(buildingVao);gl.drawArrays(gl.TRIANGLES,0,36);
+            gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2+.015,b.h/2+.015,b.d/2+.015));gl.uniform4f(uS_Color,1,1,1,1);gl.bindVertexArray(edgeVao);gl.drawArrays(gl.LINES,0,24);
         }
     }
     // -- /MODULE: Scene-City --
@@ -1413,26 +1404,11 @@
         mmoTick(dt);
     }
 
-    // -- MODULE: Scene-Orb-Renderer --
-    function drawOrbs(V,P,x,z,n,r,ph,scale,col){
-        for(let i=n;i--;){const a=ph+i*PI*2/n;drawSphere(V,P,x+COS(a)*2.3,.7,z+SIN(a)*2.3,r*scale,col);}
-    }
-    // -- /MODULE: Scene-Orb-Renderer --
-
-    // -- MODULE: Scene-Projectile-Renderer --
-    function drawProjectiles(V,P,list,r,pass){
-        for(const s of list){const q=r||s.r*.72;
-            if(!pass)for(let j=3;j--;){const k=j+1;drawSphere(V,P,s.x-s.vx*.065*k,s.y,s.z-s.vz*.065*k,q*(1-j*.12),[1,1,1,.2/k]);}
-            else drawSphere(V,P,s.x,s.y,s.z,q*(pass<2?1.14:1),pass<2?WHITE:BLACK);
-        }
-    }
-    // -- /MODULE: Scene-Projectile-Renderer --
-
     function drawWorld(V, P, W, t, dt, vr) {
-        gl.useProgram(PGROUND);gl.bindVertexArray(groundVao);gl.uniformMatrix4fv(uGroundV,false,V);gl.uniformMatrix4fv(uGroundP,false,P);gl.drawArrays(gl.TRIANGLES,0,6);
         drawCity(V,P);
         const now=performance.now(),tt=t*.001,br=boltSize*.72,live=c=>!c.dead&&now-c.last<15000;
         // -- MODULE: Scene-XP-Mesh --
+        // Mesh and ghost loops intentionally remain separate: a shared pass helper is larger.
         for(const i of items)if(i.r>0){const a=tt*7+i.x*2+i.z;drawSphere(V,P,i.x,i.y,i.z,.14+SIN(a)*.025,WHITE);}
         // -- /MODULE: Scene-XP-Mesh --
         gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
@@ -1440,11 +1416,14 @@
         for(const i of items)if(i.r>0){const a=tt*7+i.x*2+i.z;drawSphere(V,P,i.x+COS(a)*.06,i.y+.025,i.z+SIN(a)*.06,.2,[1,1,1,.08+ABS(SIN(a))*.18]);}
         // -- /MODULE: Scene-XP-Ghost --
         // -- MODULE: Scene-Projectile-Trail --
-        drawProjectiles(V,P,shots,br,0);drawProjectiles(V,P,remoteShots,0,0);
+        // Intentional duplication: these similar loops produce a smaller PPMd ZIP than a shared helper.
+        for(const s of shots)for(let j=3;j--;){const k=j+1;drawSphere(V,P,s.x-s.vx*.065*k,s.y,s.z-s.vz*.065*k,br*(1-j*.12),[1,1,1,.2/k]);}
+        for(const s of remoteShots)for(let j=3;j--;){const k=j+1;drawSphere(V,P,s.x-s.vx*.065*k,s.y,s.z-s.vz*.065*k,s.r*.72*(1-j*.12),[1,1,1,.2/k]);}
         // -- /MODULE: Scene-Projectile-Trail --
         // -- MODULE: Scene-Enemy --
-        for(const c of cats)drawGhost(V,P,c,tt);
-        remoteCats.forEach(group=>group.forEach(c=>live(c)&&drawGhost(V,P,c,tt)));
+        // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
+        for(const c of cats){const s=SIN(tt*10+(c.i||0))*.2,x=c.x-SIN(c.yaw)*.2+COS(c.yaw)*s,z=c.z-COS(c.yaw)*.2-SIN(c.yaw)*s;drawCat(V,P,x,.6,z,c.yaw,c.anim||tt*8,.08,[...POWER[c.tier][2],.2]);}
+        remoteCats.forEach(group=>group.forEach(c=>{if(live(c)){const s=SIN(tt*10+(c.i||0))*.2,x=c.x-SIN(c.yaw)*.2+COS(c.yaw)*s,z=c.z-COS(c.yaw)*.2-SIN(c.yaw)*s;drawCat(V,P,x,.6,z,c.yaw,c.anim||tt*8,.08,[...POWER[c.tier][2],.2]);}}));
         gl.disable(gl.BLEND);
         for(const c of cats)drawCat(V,P,c.x,.6,c.z,c.yaw,c.anim,.08+c.tier*.01,POWER[c.tier][2],1.16);
         remoteCats.forEach(group=>group.forEach(c=>live(c)&&drawCat(V,P,c.x,.6,c.z,c.yaw,now*.008,.1,POWER[c.tier][2],1.16)));
@@ -1454,15 +1433,18 @@
         // -- /MODULE: Scene-Enemy --
         // -- MODULE: Scene-Projectile-Mesh --
         gl.depthMask(false);
-        drawProjectiles(V,P,shots,br,1);drawProjectiles(V,P,remoteShots,0,1);
+        for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,br*1.14,WHITE);
+        for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,s.r*.82,WHITE);
         gl.depthMask(true);
-        drawProjectiles(V,P,shots,br,2);drawProjectiles(V,P,remoteShots,0,2);
+        for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,br,BLACK);
+        for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,s.r*.72,BLACK);
         // -- /MODULE: Scene-Projectile-Mesh --
         // -- MODULE: Scene-Orb-Mesh --
+        // Local and peer loops intentionally repeat: PPMd compresses them smaller than a shared renderer.
         gl.depthMask(false);
-        drawOrbs(V,P,u.x,u.z,orbCount,orbSize,skillTime*orbSpeed,1.08,WHITE);
+        for(let i=orbCount;i--;){const a=skillTime*orbSpeed+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*2.3,.7,u.z+SIN(a)*2.3,orbSize*1.08,WHITE);}
         gl.depthMask(true);
-        drawOrbs(V,P,u.x,u.z,orbCount,orbSize,skillTime*orbSpeed,1,BLACK);
+        for(let i=orbCount;i--;){const a=skillTime*orbSpeed+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*2.3,.7,u.z+SIN(a)*2.3,orbSize,BLACK);}
         // -- /MODULE: Scene-Orb-Mesh --
         if (peers && peers.size) {
             const now = performance.now(), target = now - 120;
@@ -1472,9 +1454,10 @@
                 drawCat(V, P, q.x, .6, q.z, (q.yaw || 0) + PI, now*.005*MIN(3,p.speed||0), .1, PEER_COL);
                 // -- MODULE: Scene-Peer-Orb --
                 const ph=p.op+(now-p.ot)/1e3*p.ov;
-                gl.depthMask(false);drawOrbs(V,P,q.x,q.z,p.oc,p.os,ph,1.08,WHITE);
+                gl.depthMask(false);
+                for(let i=p.oc;i--;){const a=ph+i*PI*2/p.oc;drawSphere(V,P,q.x+COS(a)*2.3,.7,q.z+SIN(a)*2.3,p.os*1.08,WHITE);}
                 gl.depthMask(true);
-                drawOrbs(V,P,q.x,q.z,p.oc,p.os,ph,1,BLACK);
+                for(let i=p.oc;i--;){const a=ph+i*PI*2/p.oc;drawSphere(V,P,q.x+COS(a)*2.3,.7,q.z+SIN(a)*2.3,p.os,BLACK);}
                 // -- /MODULE: Scene-Peer-Orb --
             });
         }

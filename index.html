@@ -630,6 +630,9 @@
     //const MAX_BOOSTS    = 100;           // safety cap
     const items = [];                  // XP gems {x,y,z,r>0 means alive}
     const obstacles = [];              // solid spheres for collision {x,y,z,r}
+    const CITY_BLOCK = 18, buildings = [];
+    const cityHash = (x,z,s=0) => { const n=SIN(x*127.1+z*311.7+s*71.7)*43758.5453; return n-FLOOR(n); };
+    const insideBuilding = (x,z,r=0) => buildings.some(b=>ABS(x-b.x)<b.w/2+r&&ABS(z-b.z)<b.d/2+r);
     // Player capsule constants (smaller than an object w/ props)
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
 
@@ -656,6 +659,7 @@
         for(let n=20;n--;){
             a=rng()*PI*2;r=20+rng()*25;c.x=u.x+COS(a)*r;c.z=u.z+SIN(a)*r;ok=1;
             peers.forEach(p=>ok&=(p.x-c.x)**2+(p.z-c.z)**2>64);
+            ok&=!insideBuilding(c.x,c.z,.6);
             if(ok)break;
         }
         c.vx=c.vz=c.yaw=c.anim=c.hit=c.h=0;
@@ -702,7 +706,11 @@
             c.vx+=fx*dt;c.vz+=fz*dt;
             let s=HYPOT(c.vx,c.vz)||1,m=2.5+c.tier*.12;
             if(s>m){c.vx*=m/s;c.vz*=m/s;s=m;}
-            c.x+=c.vx*dt;c.z+=c.vz*dt;c.vx*=1-dt;c.vz*=1-dt;
+            const px=c.x,pz=c.z;
+            c.x+=c.vx*dt;c.z+=c.vz*dt;
+            const cityHit=resolveCityCollision(c,.45,px,pz);
+            if(cityHit&1)c.vx=0;if(cityHit&2)c.vz=0;
+            c.vx*=1-dt;c.vz*=1-dt;
             c.anim+=s*dt*3.5;c.yaw=ATAN2(c.vx,c.vz);
             c.hit-=dt;c.h-=dt;
             if(self&&d<1.1+c.tier*.04&&c.hit<0){
@@ -754,6 +762,7 @@
         }
         for(let i=shots.length;i--;){
             const s=shots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
+            if(insideBuilding(s.x,s.z,boltSize)){shots.splice(i,1);continue;}
             for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){hurt(c,s.d,myId);if(myId)sendMMO(`x|${myId}|${s.i}`);s.t=0;break;}
             if(s.t>0)remoteHit:for(const [owner,group] of remoteCats)for(const c of group.values())if(!c.dead&&(c.x-s.x)**2+(c.z-s.z)**2<(.5+boltSize)**2){
                 playHitSound(c.x,c.z);s.t=0;break remoteHit;
@@ -761,12 +770,12 @@
             if(s.t<=0)shots.splice(i,1);
         }
         for(let i=remoteShots.length;i--;){const s=remoteShots[i];s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
+            if(insideBuilding(s.x,s.z,s.r)){remoteShots.splice(i,1);continue;}
             for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+s.r)**2){hurt(c,s.d,s.o);sendMMO(`x|${s.o}|${s.i}`);s.t=0;break;}
             if(s.t<=0)remoteShots.splice(i,1);
         }
         for(let i=damageNumbers.length;i--;){const n=damageNumbers[i];n.y+=dt*.5;if((n.t-=dt)<0)damageNumbers.splice(i,1);}
     }
-    resetCats();
     // -- /MODULE: Gameplay-Cat --
 
     function tryPickupItems(){
@@ -795,9 +804,23 @@
                 else { const p = (minD - d)/d; u.x += dx * p; u.z += dz * p; }
             }
         };
-        for (const o of obstacles) hit(o);
+        for (const o of obstacles) if(!o._isBuilding) hit(o);
+        resolveCityCollision(u,.5,prevX,prevZ);
         // Ground collision (keep eye at least capsule height above 0)
     if (u.y - 1.6 < 0) u.y = 1.6;
+    }
+
+    // Circle against a building footprint. Returns 1 for an X wall hit and 2 for Z.
+    function resolveCityCollision(entity,radius,prevX,prevZ){
+        let hit=0;
+        for(const b of buildings){
+            const hx=b.w/2+radius,hz=b.d/2+radius,dx=entity.x-b.x,dz=entity.z-b.z;
+            if(ABS(dx)>=hx||ABS(dz)>=hz)continue;
+            const px=hx-ABS(dx),pz=hz-ABS(dz);
+            if(px<pz){const side=dx||(prevX-b.x);entity.x=b.x+(side>=0?hx:-hx);hit|=1;}
+            else{const side=dz||(prevZ-b.z);entity.z=b.z+(side>=0?hz:-hz);hit|=2;}
+        }
+        return hit;
     }
     // -- /MODULE: Gameplay-Items --
 
@@ -1275,66 +1298,6 @@
     // -- /PART: WebGL-Setup --
 
     // -- /MODULE: Scene-HUD --
-    // -- MODULE: Scene-Noise --
-    // Shared procedural noise texture used by the grass shader.
-    let noiseTex = gl.createTexture();
-
-    function makeTileableNoise(size) {
-
-        const n = size|0;
-        // make a small random grid then bilinearly sample with wrap to create smooth tileable texture
-        const grid = new Float32Array(n * n);
-        for (let i = 0; i < grid.length; i++) grid[i] = RANDOM();
-
-        // bilinear sampling helper with wrap
-        function sampleGrid(u, v) {
-            const x = u * n;
-            const y = v * n;
-            const x0 = ((x|0) + n) % n;
-            const y0 = ((y|0) + n) % n;
-            const x1 = (x0 + 1) % n;
-            const y1 = (y0 + 1) % n;
-            const fx = x - FLOOR(x);
-            const fy = y - FLOOR(y);
-            const a = grid[y0 * n + x0];
-            const b = grid[y0 * n + x1];
-            const c = grid[y1 * n + x0];
-            const d = grid[y1 * n + x1];
-            const ab = a * (1 - fx) + b * fx;
-            const cd = c * (1 - fx) + d * fx;
-            return ab * (1 - fy) + cd * fy;
-        }
-
-        const img = new Uint8Array(n * n * 4);
-        for (let y = 0; y < n; y++) {
-            for (let x = 0; x < n; x++) {
-                const u = (x + .5) / n;
-                const v = (y + .5) / n;
-                // sample at multiple fractional offsets then combine to get smoother noise
-                const v0 = sampleGrid(u, v);
-                const v1 = sampleGrid(u + .5 / n, v + .3 / n);
-                const val = MAX(0, MIN(1, (v0 * .6 + v1 * .4)));
-                const idx = (y * n + x) * 4;
-                const c = (val * 255) | 0;
-                img[idx + 0] = c;
-                img[idx + 1] = c;
-                img[idx + 2] = c;
-                img[idx + 3] = 255;
-            }
-        }
-
-        gl.bindTexture(gl.TEXTURE_2D, noiseTex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, n, n, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-    }
-    // Try: makeTileableNoise(256) or (512) for crisper small-scale details (optional)
-    makeTileableNoise(128);
-    // -- /MODULE: Scene-Noise --
-    
     // -- MODULE: Scene-Items --
     // NEW: Sphere (items/obstacles) minimal shader + geometry (uses shared PC)
 
@@ -1370,62 +1333,41 @@
 
     // -- /MODULE: Scene-Items --
 
-    // -- MODULE: Scene-Rocks --
-    // Stylized low-poly rocks: deterministic placement, flat-ish shading, and collision integration
-    const rocks = []; // currently active rock descriptors {x,y,z,r,seed}
-
-    // Simple deterministic hash for rock placement
-    function rockHash(ix, iz, salt){
-        const s = SIN(ix*127.1 + iz*311.7 + salt*13.13) * 43758.5453;
-        return s - FLOOR(s);
+    // -- MODULE: Scene-City --
+    // Matte-black streets and buildings, defined by crisp white silhouettes.
+    const groundVerts = new F32([-500,0,-500,500,0,-500,500,0,500,-500,0,-500,500,0,500,-500,0,500]);
+    const groundVao=gl.createVertexArray(),groundBuf=gl.createBuffer();
+    gl.bindVertexArray(groundVao);gl.bindBuffer(gl.ARRAY_BUFFER,groundBuf);gl.bufferData(gl.ARRAY_BUFFER,groundVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+    const PGROUND=prog(`layout(location=0)in vec3 p;uniform mat4 V,P;void main(){gl_Position=P*V*vec4(p,1.);}`,`out vec4 o;void main(){o=vec4(0,0,0,1);}`);
+    const uGroundV=gl.getUniformLocation(PGROUND,'V'),uGroundP=gl.getUniformLocation(PGROUND,'P');
+    const cubeVerts=new F32([
+        -1,-1,-1,1,-1,-1,1,1,-1,-1,-1,-1,1,1,-1,-1,1,-1,1,-1,1,-1,-1,1,-1,1,1,1,-1,1,-1,1,1,1,1,1,
+        -1,-1,1,-1,-1,-1,-1,1,-1,-1,-1,1,-1,1,-1,-1,1,1,1,-1,-1,1,-1,1,1,1,1,1,-1,-1,1,1,1,1,1,-1,
+        -1,1,-1,1,1,-1,1,1,1,-1,1,-1,1,1,1,-1,1,1,-1,-1,1,1,-1,1,1,-1,-1,-1,-1,1,1,-1,-1,-1,-1,-1]);
+    const edgeVerts=new F32([
+        -1,-1,-1,1,-1,-1,1,-1,-1,1,-1,1,1,-1,1,-1,-1,1,-1,-1,1,-1,-1,-1,
+        -1,1,-1,1,1,-1,1,1,-1,1,1,1,1,1,1,-1,1,1,-1,1,1,-1,1,-1,
+        -1,-1,-1,-1,1,-1,1,-1,-1,1,1,-1,1,-1,1,1,1,1,-1,-1,1,-1,1,1]);
+    const buildingVao=gl.createVertexArray(),buildingBuf=gl.createBuffer();
+    gl.bindVertexArray(buildingVao);gl.bindBuffer(gl.ARRAY_BUFFER,buildingBuf);gl.bufferData(gl.ARRAY_BUFFER,cubeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+    const edgeVao=gl.createVertexArray(),edgeBuf=gl.createBuffer();
+    gl.bindVertexArray(edgeVao);gl.bindBuffer(gl.ARRAY_BUFFER,edgeBuf);gl.bufferData(gl.ARRAY_BUFFER,edgeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+    const PBUILD=prog(`layout(location=0)in vec3 p;uniform mat4 M,V,P;void main(){gl_Position=P*V*M*vec4(p,1.);}`,fsColor);
+    const uBuildM=gl.getUniformLocation(PBUILD,'M'),uBuildV=gl.getUniformLocation(PBUILD,'V'),uBuildP=gl.getUniformLocation(PBUILD,'P'),uBuildCol=gl.getUniformLocation(PBUILD,'col');
+    for(let z=-11;z<=11;z++)for(let x=-11;x<=11;x++){
+        if(ABS(x)<2&&ABS(z)<2||cityHash(x,z)<.28)continue;
+        const w=8+cityHash(x,z,1)*4,d=8+cityHash(x,z,2)*4,h=6+cityHash(x,z,3)*26,b={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w,d,h};
+        buildings.push(b);obstacles.push({x:b.x,y:.8,z:b.z,r:MIN(w,d)*.43,_isBuilding:true});
     }
-
-    // Build a low-res sphere for rock base (coarse facets)
-    const rockVerts = buildSphere(6, 8); // fewer subdivisions -> larger facets
-    const PRock_vs = `layout(location=0)in vec3 p;uniform mat4 V,P;uniform vec3 a;uniform float b,c;out vec3 d;float h(float x){return fract(sin(x)*43758.5453);}void main(){d=p*b;float n=h((d.x+d.y*1.7+d.z*2.3)*(c+1.));float o=(n-.5)*(.5*b);vec3 w=(d+normalize(d)*o)+a;gl_Position=P*V*vec4(w,1.);}`;
-
-    const PRock_fs = `in vec3 d;out vec4 o;void main(){vec3 n=normalize(d+vec3(0.,0.,-2.5));float s=clamp(dot(n,normalize(vec3(0.,.1,-.5))),0.,1.);float q=floor(s*4.)/4.;vec3 c=mix(vec3(.15,.1,.1),vec3(.35,.3,.2),q);o=vec4(c,1.);}`;
-
-    const PROCK = prog(PRock_vs, PRock_fs);
-    const rockVao = gl.createVertexArray();
-    const rockBuf = gl.createBuffer();
-    gl.bindVertexArray(rockVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, rockBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, rockVerts, gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-    const uR_V = gl.getUniformLocation(PROCK, 'V');
-    const uR_P = gl.getUniformLocation(PROCK, 'P');
-    const uR_Pos = gl.getUniformLocation(PROCK, 'a');
-    const uR_S = gl.getUniformLocation(PROCK, 'b');
-    const uR_Seed = gl.getUniformLocation(PROCK, 'c');
-    // -- /MODULE: Scene-Rocks --
-
-    // -- MODULE: Scene-Grass --
-    // --- Grass Shaders ---
-    // Uses instanced rendering to draw many blades of grass efficiently
-    const vsGrass=`uniform mat4 V,P;uniform vec2 c;uniform vec3 r;uniform float d,a;uniform int n;uniform float s;uniform sampler2D e;out vec3 uCol;float h12(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}vec2 h22(vec2 p){float x=sin(dot(p,vec2(1.,113.)));return fract(vec2(262144.*x,32768.*x));}void main(){int iid=gl_InstanceID;vec2 camCellF=floor(c/a);vec2 cellF=camCellF+vec2(float(iid % n - n/2),float(iid / n - n/2));vec2 baseCenter=(cellF+vec2(.5))*a;vec2 tileKey=floor(baseCenter/a)+vec2(s);float biome=texture(e,baseCenter*.0002).r;float H=mix(.6,.9,h12(tileKey*3.1));float t=float(gl_VertexID/2)/4.;float side=(gl_VertexID%2==0)?-1.:1.;float width=.05*(1.-t)*(.6+.6*h12(tileKey*7.7))*1.45;float gust=.6*sin(dot(baseCenter,vec2(.07,.05))+d*.7)+.4*sin(dot(baseCenter,vec2(-.03,.04))-d*1.2);float sway=.25*gust+.07*sin(d*1.7+h12(tileKey*5.3)*6.2831853);float bend=(t*t)*sway;vec2 baseXZ=baseCenter+(h22(tileKey)-.5)*(a*90.9);vec2 w=vec2(cos(.3*d),sin(.32*d));w*=inversesqrt(dot(w,w)+.001);vec2 windDir=w;vec3 bendOff=vec3(windDir.x,0.,windDir.y)*bend*H;vec3 pos=vec3(baseXZ.x,0.,baseXZ.y)+normalize(r)*(side*width)+vec3(0.,t*H,0.)+bendOff;vec3 c0=mix(vec3(.12,.10,.01),vec3(.05,.12,.02),biome);vec3 c1=mix(vec3(.45,.38,.05),vec3(.30,.70,.22),biome);uCol=mix(c0,c1,smoothstep(0.,1.,t))*(.85+.15*h12(tileKey*11.1));gl_Position=P*V*vec4(pos,1.);}`;
-    const fsGrass = `in vec3 uCol;out vec4 o;void main(){ o = vec4(uCol, 1.0); }`;
-    //const fsGrass = `in vec3 h;out vec4 o;void main(){ o = vec4(h, 1.); }`;
-    const PGRASS = prog(vsGrass, fsGrass);
-    const uVG = gl.getUniformLocation(PGRASS, 'V'), uPG = gl.getUniformLocation(PGRASS, 'P');
-    const uCamXZ = gl.getUniformLocation(PGRASS, 'c');
-    const uCamRight = gl.getUniformLocation(PGRASS, 'r');
-    const uTimeG = gl.getUniformLocation(PGRASS, 'd');
-    const uCell = gl.getUniformLocation(PGRASS, 'a');
-    const uGridN = gl.getUniformLocation(PGRASS, 'n');
-    const uSeed = gl.getUniformLocation(PGRASS, 's');
-    const uNoise = gl.getUniformLocation(PGRASS, 'e');
-
-    // The grass VAO is minimal since all vertex data is generated procedurally in the shader
-    const vaoGrass = gl.createVertexArray(), vboGrass = gl.createBuffer();
-    gl.bindVertexArray(vaoGrass);
-    gl.bindBuffer(gl.ARRAY_BUFFER, vboGrass);
-    gl.bufferData(gl.ARRAY_BUFFER, new F32([0]), gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 1, gl.FLOAT, false, 0, 0);
-
-    // -- /MODULE: Scene-Grass --
+    resetCats();
+    function drawCity(V,P){
+        gl.useProgram(PBUILD);gl.uniformMatrix4fv(uBuildV,false,V);gl.uniformMatrix4fv(uBuildP,false,P);
+        for(const b of buildings){
+            gl.uniformMatrix4fv(uBuildM,false,translateScale(b.x,b.h/2,b.z,b.w/2,b.h/2,b.d/2));gl.uniform4f(uBuildCol,0,0,0,1);gl.bindVertexArray(buildingVao);gl.drawArrays(gl.TRIANGLES,0,36);
+            gl.uniformMatrix4fv(uBuildM,false,translateScale(b.x,b.h/2,b.z,b.w/2+.015,b.h/2+.015,b.d/2+.015));gl.uniform4f(uBuildCol,1,1,1,1);gl.bindVertexArray(edgeVao);gl.drawArrays(gl.LINES,0,24);
+        }
+    }
+    // -- /MODULE: Scene-City --
     
     // -- MODULE: Scene-VR-Disc --
     // Reticle removed; single disc shader used for VR hand/grip indicator
@@ -1459,27 +1401,6 @@
     // Shared simulation and scene renderer. Desktop supplies one synthetic head
     // view; WebXR supplies the headset's real eye views.
     function updateWorld(dt, session) {
-        const range = session ? 500 : 300;
-        for (let i = obstacles.length - 1; i >= 0; i--)
-            if (obstacles[i]._isRock) obstacles.splice(i, 1);
-        rocks.length = 0;
-        const minX = FLOOR((u.x - range) / 5), maxX = FLOOR((u.x + range) / 5);
-        const minZ = FLOOR((u.z - range) / 5), maxZ = FLOOR((u.z + range) / 5);
-        for (let gz = minZ; gz <= maxZ; gz++) for (let gx = minX; gx <= maxX; gx++) {
-            const h = rockHash(gx, gz, .1);
-            if (h < .01) {
-                const px = gx * 5 + (rockHash(gx, gz, 1) - .5) * 3 + 2.5;
-                const pz = gz * 5 + (rockHash(gx, gz, 2) - .5) * 3 + 2.5;
-                const dx = px - u.x, dz = pz - u.z;
-                if (dx * dx + dz * dz <= range * range) {
-                    const seed = rockHash(gx, gz, -7) * 1000;
-                    const scale = 4 + rockHash(gx, gz, 5) * 2;
-                    const rock = { x: px, y: scale * .45, z: pz, r: scale * 1.2, seed, scale };
-                    rocks.push(rock);
-                    obstacles.push({ x: rock.x, y: rock.y, z: rock.z, r: rock.r, _isRock: true });
-                }
-            }
-        }
         step(dt, getMove(session));
         updateEnemies(dt);
         updateRemoteCats(dt);
@@ -1488,6 +1409,8 @@
     }
 
     function drawWorld(V, P, W, t, dt, vr) {
+        gl.useProgram(PGROUND);gl.bindVertexArray(groundVao);gl.uniformMatrix4fv(uGroundV,false,V);gl.uniformMatrix4fv(uGroundP,false,P);gl.drawArrays(gl.TRIANGLES,0,6);
+        drawCity(V,P);
         for (const itm of items) if (itm.r > 0) drawSphere(V, P, itm.x, itm.y, itm.z, itm.r, [.2, 1, .3]);
         for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,boltSize,[1,.7,.2]);
         for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,s.r,[1,.4,.8]);
@@ -1506,22 +1429,6 @@
                 for(let i=p.oc;i--;){const a=p.op+(now-p.ot)/1e3*p.ov+i*PI*2/p.oc;drawSphere(V,P,q.x+COS(a)*2.3,.7,q.z+SIN(a)*2.3,p.os,[1,.4,.8]);}
             });
         }
-        if (rocks.length) {
-            gl.useProgram(PROCK);
-            gl.bindVertexArray(rockVao);
-            gl.uniformMatrix4fv(uR_V, false, V);
-            gl.uniformMatrix4fv(uR_P, false, P);
-            for (const rock of rocks) {
-                gl.uniform3f(uR_Pos, rock.x, rock.y, rock.z);
-                gl.uniform1f(uR_S, rock.scale);
-                gl.uniform1f(uR_Seed, rock.seed);
-                gl.drawArrays(gl.TRIANGLES, 0, rockVerts.length / 3);
-            }
-        }
-        const cam = [W[12], W[14]], right = [W[0], W[1], W[2]], time = t * .001;
-        drawGrassPass(V, P, cam, right, time, 1.1, vr ? 2000 : 500, 1);
-        drawGrassPass(V, P, cam, right, time, vr ? .3 : .4, vr ? 1000 : 300, 2);
-        drawGrassPass(V, P, cam, right, time, .15, vr ? 500 : 200, 3);
         drawDamageNumbers(V,P,W);
     }
 
@@ -1654,26 +1561,6 @@
             }
         }
         gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
-    }
-
-    // Helper to submit a grass draw call
-    function drawGrassPass(Vmat, Pmat, camXZ, camRight, timeSec, cell, gridN, seed) {
-        gl.useProgram(PGRASS);
-        gl.bindVertexArray(vaoGrass);
-        gl.uniformMatrix4fv(uVG, false, Vmat);
-        gl.uniformMatrix4fv(uPG, false, Pmat);
-        gl.uniform2f(uCamXZ, camXZ[0], camXZ[1]);
-        gl.uniform3f(uCamRight, camRight[0], camRight[1], camRight[2]);
-        gl.uniform1f(uTimeG, timeSec);
-        gl.uniform1f(uCell, cell);
-        gl.uniform1i(uGridN, gridN | 0);
-        gl.uniform1f(uSeed, seed);
-        // Bind noise texture once per pass
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, noiseTex);
-        gl.uniform1i(uNoise, 0);
-        //gl.enable(gl.DEPTH_TEST);
-        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 10, gridN * gridN);
     }
 
     // Computes the view and projection matrices for desktop mode

@@ -1367,7 +1367,7 @@
     // -- /MODULE: Scene-Items --
 
     // -- MODULE: Scene-City --
-    // Matte-black streets and buildings, defined by crisp white silhouettes.
+    // Black ground, near black buildings, and crisp white building contour lines.
     const groundVerts = new F32([-500,0,-500,500,0,-500,500,0,500,-500,0,-500,500,0,500,-500,0,500]);
     const groundVao=gl.createVertexArray(),groundBuf=gl.createBuffer();
     gl.bindVertexArray(groundVao);gl.bindBuffer(gl.ARRAY_BUFFER,groundBuf);gl.bufferData(gl.ARRAY_BUFFER,groundVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
@@ -1394,7 +1394,9 @@
         // Ground and buildings share the general colored-mesh shader.
         gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,0,0,0,1);gl.bindVertexArray(groundVao);gl.drawArrays(gl.TRIANGLES,0,6);
         for(const b of buildings){
-            gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2,b.h/2,b.d/2));gl.uniform4f(uS_Color,0,0,0,1);gl.bindVertexArray(buildingVao);gl.drawArrays(gl.TRIANGLES,0,36);
+            // Draw each building as a white cube scaled to its width, height, and depth.
+            gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2,b.h/2,b.d/2));gl.uniform4f(uS_Color,.05,.05,.05,1);gl.bindVertexArray(buildingVao);gl.drawArrays(gl.TRIANGLES,0,36);
+            // Draw a slightly larger black outline around each building to create a crisp contour effect.
             gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2+.015,b.h/2+.015,b.d/2+.015));gl.uniform4f(uS_Color,1,1,1,1);gl.bindVertexArray(edgeVao);gl.drawArrays(gl.LINES,0,24);
         }
     }

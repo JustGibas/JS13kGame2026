@@ -17,7 +17,7 @@
             background: #000;
             overflow: hidden;
             touch-action: none; /* Prevents default touch actions like scrolling */
-            user-select: none;  
+            user-select: none;
             /* -webkit-user-select: none; // Safari */
         }
 
@@ -372,8 +372,10 @@
         pointer: { x: 0, y: 0 }
     };
     const DZ = .1;    // Deadzone for joystick/gamepad axes to prevent drift
-    // A map to track the previous pressed state of VR controller buttons for edge detection (press/release)
-    const pressedMap = new Map();
+    // -- VR: Input --
+    // Point-to-move must be held briefly so a hand changing pose cannot move the player accidentally.
+    const pointStarted = new Map();
+    // -- /VR: Input --
 
     // State for the raycast
     let lastHit = null;
@@ -611,6 +613,7 @@
     //    return null;
     //}
 
+    // -- VR: Input --
     // Helper to get a ray from a VR controller
     function controllerRay(frame,src) {
         const pose = src.targetRaySpace ? frame.getPose(src.targetRaySpace, off || ref || null) : null;
@@ -620,6 +623,7 @@
         }
         return { o: [0, 0, 0], d: [0, 0, -1] }; // Fallback, ray from Head
     }
+    // -- /VR: Input --
 
     //const d = [-sy * cp, -sp, -cy * cp];
     //const o = [user.x, user.y, user.z];
@@ -848,7 +852,35 @@
     //const TURNS = 2;    // Turning speed in radians per second
 
     // Consolidates input from keyboard, joysticks, and VR controllers into a single movement vector
-    function getMove(session) {
+    // -- VR: Input --
+    function handPointMove(frame, src) {
+        if (!frame || !src.hand) return null;
+        const base = off || ref;
+        const pose = name => {
+            const joint = src.hand.get(name);
+            return joint && frame.getJointPose(joint, base);
+        };
+        const wrist = pose('wrist'), index = pose('index-finger-tip'), indexBase = pose('index-finger-phalanx-proximal');
+        if (!wrist || !index || !indexBase) return null;
+        const p = x => x.transform.position;
+        const dist = (a,b) => HYPOT(a.x-b.x,a.y-b.y,a.z-b.z);
+        const extended = (tip, base) => tip && base && dist(p(tip),p(wrist)) > dist(p(base),p(wrist))*1.45;
+        let curled = 0;
+        for (const finger of ['middle','ring','pinky']) {
+            if (!extended(pose(finger+'-finger-tip'), pose(finger+'-finger-phalanx-proximal'))) curled++;
+        }
+        if (!extended(index,indexBase) || curled < 2) { pointStarted.delete(src); return null; }
+        const now = performance.now(), started = pointStarted.get(src);
+        if (started === undefined) { pointStarted.set(src,now); return null; }
+        if (now-started < 150) return null;
+        const ray = rayFrom('VR',frame,src), h = ray && HYPOT(ray.d[0],ray.d[2]);
+        if (!ray || h < .35) return null;
+        const dx=ray.d[0]/h,dz=ray.d[2]/h,cy=COS(u.yaw),sy=SIN(u.yaw);
+        return {x:dx*cy-dz*sy,y:-dx*sy-dz*cy};
+    }
+    // -- /VR: Input --
+
+    function getMove(session, frame) {
         let vx = 0, vy = 0, vt = 0;
         // -- SOLUTION: Gameplay-Movement-Keyboard --
         // Keyboard input (WASD for move, QE for turn)
@@ -865,20 +897,24 @@
         // -- /SOLUTION: Gameplay-Movement-Joystick --
 
         // -- SOLUTION: Gameplay-Movement-VR --
+        // -- VR: Input --
         // VR gamepad input
         if (session) {
             for (const src of session.inputSources) {
+                const handMove = handPointMove(frame,src);
+                if (handMove) { vx=handMove.x;vy=handMove.y;continue; }
                 const a = src.gamepad?.axes;
-                if (!a || a.length < 4) continue;
+                if (!a || a.length < 2) continue;
                 const dz = v => ABS(v) > DZ ? v : 0; // Apply deadzone
-                const x = dz(a[2]);
-                const y = dz(a[3]);
+                // xr-standard reserves 0/1 for a touchpad; compact/non-standard gamepads may only expose 0/1.
+                const n=a.length>=4?2:0,x=dz(a[n]),y=dz(a[n+1]);
                 
                 if (src.handedness === 'left') { vx = x; vy = -y; }
                 else if (src.handedness === 'right') { vt = -x; }
                 else if (!vx && !vy) { vx = x; vy = -y; } // Fallback for undefined handedness
             }
         }
+        // -- /VR: Input --
         // -- /SOLUTION: Gameplay-Movement-VR --
 
         // Return combined movement, prioritizing VR, then keyboard, then joystick
@@ -1402,6 +1438,7 @@
     }
     // -- /MODULE: Scene-City --
     
+    // -- VR: Rendering --
     // -- MODULE: Scene-VR-Disc --
     // Reticle removed; single disc shader used for VR hand/grip indicator
 
@@ -1428,12 +1465,13 @@
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
     // -- /MODULE: Scene-VR-Beam --
+    // -- /VR: Rendering --
     
     // -- CORE: Render --
     // Shared simulation and scene renderer. Desktop supplies one synthetic head
     // view; WebXR supplies the headset's real eye views.
-    function updateWorld(dt, session) {
-        step(dt, getMove(session));
+    function updateWorld(dt, session, frame) {
+        step(dt, getMove(session,frame));
         updateEnemies(dt);
         updateRemoteCats(dt);
         updateShots(dt);
@@ -1501,6 +1539,7 @@
     }
     // -- /FEATURE: Scene --
 
+    // -- VR: Rendering --
     function drawXRInput(session, frame, V, P, hudWH) {
         for (const src of session.inputSources || []) {
             const col = [1, 1, .5];
@@ -1528,6 +1567,7 @@
             }
         }
     }
+    // -- /VR: Rendering --
 
     function loop(t, frame) {
         const session = frame && frame.session;
@@ -1535,9 +1575,10 @@
         session ? session.requestAnimationFrame(loop) : requestAnimationFrame(loop);
         const dt = MIN(last ? (t - last) / 1000 : 0, .05);
         last = t;
-        updateWorld(dt, session);
+        updateWorld(dt, session, frame);
         let hudWH;
         gl.clearColor(0, 0, 0, 1);
+        // -- VR: Rendering --
         if (session) {
             const half = -u.yaw * .5;
             off = ref.getOffsetReferenceSpace(new XRRigidTransform({x:0,y:0,z:0}, {x:0,y:SIN(half),z:0,w:COS(half)}))
@@ -1547,16 +1588,6 @@
             updateAudioListener(pose.transform.matrix);
             hudWH = new DOMMatrix(pose.transform.matrix).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
             HUD_WH_world = hudWH;
-            for (const src of session.inputSources || []) {
-                const gp = src.gamepad;
-                if (!gp || !gp.buttons || !gp.buttons.length) continue;
-                const now = !!gp.buttons[0].pressed, prev = pressedMap.get(src) || false;
-                if (now && !prev) {
-                    const hit = HUD_pick(hudWH, rayFrom('VR', frame, src));
-                    if (hit && hit.button) activate(hit.button[5]);
-                }
-                pressedMap.set(src, now);
-            }
             hoverBtn = null;
             for (const src of session.inputSources || []) {
                 const hit = HUD_pick(hudWH, controllerRay(frame, src));
@@ -1573,7 +1604,9 @@
                 drawHud(hudWH, Veye, Peye);
                 drawXRInput(session, frame, Veye, Peye, hudWH);
             }
-        } else {
+        }
+        // -- /VR: Rendering --
+        else {
             buildViewProj();
             const W = INV(V);
             updateAudioListener(W);
@@ -1648,6 +1681,7 @@
     // -- /CORE: Render --
 
     // -- FEATURE: VR --
+    // -- VR: Session --
     // --- WebXR ---
 
     // Checks for WebXR support
@@ -1657,7 +1691,7 @@
             return;
         }
         //navigator.xr.isSessionSupported('immersive-vr').then(s => log(s ? 'VR ready: Click Enter VR button' : 'VR error: reload and try again'));
-        navigator.xr.isSessionSupported('immersive-vr').then(s => log(s ? 'VR ready: Click Enter VR' : 'VR error'));
+        navigator.xr.isSessionSupported('immersive-vr').then(s => log(s ? 'VR ready: Click Enter VR' : 'VR not supported')).catch(e => log('VR check failed: '+e.message));
     }
     // if vr not avalable we split screen in to stereo view
 
@@ -1670,19 +1704,33 @@
                 return;
             }
             // Request a new session
-            xr = await navigator.xr.requestSession('immersive-vr', { 'optionalFeatures': ['local-floor', 'hand-tracking'] });
+            const session=xr=await navigator.xr.requestSession('immersive-vr', { 'optionalFeatures': ['local-floor', 'hand-tracking'] });
             uiEnterLabel = 'Exit VR';
 
             await gl.makeXRCompatible();
             xr.updateRenderState({ baseLayer: new XRWebGLLayer(xr, gl) });
-            ref = await xr.requestReferenceSpace('local-floor');
+            try { ref = await xr.requestReferenceSpace('local-floor'); }
+            catch (_) { ref = await xr.requestReferenceSpace('local'); log('XR floor unavailable; using local space'); }
+
+            // WebXR select events cover controller triggers and hand pinches, including hand sources with no gamepad.
+            xr.addEventListener('select', e => {
+                const hit = HUD_pick(HUD_WH_world, rayFrom('VR',e.frame,e.inputSource));
+                if (hit && hit.button) activate(hit.button[5]);
+            });
+            const inputLog = s => log('XR '+(s.handedness||'unknown')+' '+(s.hand?'hand':'controller')+' '+s.profiles.join(',')+(s.gamepad?' axes:'+s.gamepad.axes.length:' no-gamepad'));
+            xr.addEventListener('inputsourceschange', e => { e.removed.forEach(s=>{pointStarted.delete(s);log('XR input disconnected')});e.added.forEach(inputLog); });
+            xr.inputSources.forEach(inputLog);
+            log('HAND MOVE: point index; curl 2 fingers');
             
 
             xr.addEventListener('end', () => {
+                if (xr !== session) return;
                 // If the canvas holds pointer lock, release it when exiting VR
                 document.exitPointerLock();
                 //cancelAnimationFrame(onXR); // Stop XR loop
                 xr = null;
+                ref = off = null;
+                pointStarted.clear();
                 uiEnterLabel = 'Enter VR';
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
                 gl.viewport(0,0,C.width,C.height);
@@ -1695,9 +1743,15 @@
 
         } catch (e) {
             log('XR failed: ' + e.message);
-            //requestAnimationFrame(loop); // Resume desktop loop
+            // If setup failed after the session was created, close it and restart desktop rendering.
+            if (xr) {
+                const failed=xr;xr=null;
+                try { await failed.end(); } catch (_) {}
+                ref=off=null;last=0;requestAnimationFrame(loop);
+            }
         }
     }
+    // -- /VR: Session --
 
     // -- /FEATURE: VR --
     

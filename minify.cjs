@@ -161,10 +161,8 @@ async function printSizeReport(sourceScripts, packedHTML, options) {
   }
   console.log("  Estimates minify each feature independently; cross-feature optimization means they may not sum to packed JS.");
 
-  // Scene is currently the dominant feature, so use its existing MODULE tags
-  // for a more actionable second-level breakdown.
+  // Measure MODULE tags inside every feature for an actionable second-level breakdown.
   const modules = regions
-    .filter(region => region.name.toLowerCase() === "scene")
     .flatMap(region => findTaggedRegions(region.source, "MODULE"));
   if (!modules.length) return;
 
@@ -188,7 +186,7 @@ async function printSizeReport(sourceScripts, packedHTML, options) {
   modules.sort((a, b) => (b.ppmdBytes ?? b.rawBytes) - (a.ppmdBytes ?? a.rawBytes));
   const moduleMax = Math.max(...modules.map(region => region.ppmdBytes || 0), 1);
 
-  console.log("\nScene module estimates (largest first)");
+  console.log("\nModule size estimates (largest first)");
   console.log("  Module                  Minified      PPMd       Raw   Share  Relative");
   for (const region of modules) {
     const estimated = region.estimatedBytes;
@@ -197,7 +195,7 @@ async function printSizeReport(sourceScripts, packedHTML, options) {
     console.log(`  ${region.name.slice(0, 22).padEnd(22)} ${estimated == null ? "n/a".padStart(10) : size(estimated).padStart(10)} ${region.ppmdBytes == null ? "n/a".padStart(9) : size(region.ppmdBytes).padStart(9)} ${size(region.rawBytes).padStart(9)}  ${share}  ${bar}`);
     if (region.error) console.log(`    ${region.error}`);
   }
-  console.log("  Module estimates exclude Scene code outside MODULE tags.");
+  console.log("  Module estimates exclude feature code outside MODULE tags.");
 
   // Scene-HUD has several distinct responsibilities. Its PART anchors make the
   // module report actionable without changing the code fed to the real build.

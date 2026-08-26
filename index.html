@@ -324,7 +324,7 @@
     }
     // One complete afterimage sways across the movement direction like a spectral echo.
     function drawGhost(V,P,c,t){
-        const s=SIN(t*7+(c.i||0))*.3,x=c.x-SIN(c.yaw)*.8+COS(c.yaw)*s,z=c.z-COS(c.yaw)*.8-SIN(c.yaw)*s;
+        const s=SIN(t*10+(c.i||0))*.2,x=c.x-SIN(c.yaw)*.2+COS(c.yaw)*s,z=c.z-COS(c.yaw)*.2-SIN(c.yaw)*s;
         drawCat(V,P,x,.6,z,c.yaw,c.anim||t*8,.08,[...POWER[c.tier][2],.2]);
     }
     // -- /FEATURE: MMO --
@@ -379,7 +379,7 @@
     let lastHit = null;
     // -- /MODULE: Input-Core --
     
-    // -- MODULE: Input-KeyPoint --
+    // -- MODULE: Input-Keyboard-Pointer --
     // Keyboard event listeners for movement and HUD toggle
     document.addEventListener('keydown', e => {
         if (e.target === chatInput) return;
@@ -443,7 +443,7 @@
             I.look.id = null;
         }
     });
-    // -- /MODULE: Input-KeyPoint --
+    // -- /MODULE: Input-Keyboard-Pointer --
     
     // -- MODULE: Input-Joystick --
     // --- Virtual Joysticks for Touch Devices ---
@@ -491,7 +491,7 @@
         }
     }
     initJoysticks();
-    // -- /MODULE:Input-Joystick --
+    // -- /MODULE: Input-Joystick --
     // -- MODULE: Input-Ray --
     // --- Raycasting and Picking ---
     // Checks if a world-space ray intersects with a button on the HUD
@@ -535,6 +535,7 @@
 
 
     }
+    // -- /SOLUTION: Input-Ray-Screen --
     // Handles a click/tap interaction in desktop mode
     function interactDesktopAt(px, py) {
         const r = rayFromScreen(px, py);
@@ -629,7 +630,7 @@
 
     // -- FEATURE: Gameplay --
     //let beastMode = false; // toggle beast mode
-    // -- MODULE: Gameplay-Item --
+    // -- MODULE: Gameplay-World --
     //const BOOST_DURATION = 15;          // seconds per pickup
     //const BOOST_AMOUNT  = 0.3;        // +30% per stack
     //const MAX_BOOSTS    = 100;           // safety cap
@@ -641,7 +642,7 @@
     // Player capsule constants (smaller than an object w/ props)
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
 
-    // -- MODULE: Gameplay-Cat --
+    // -- MODULE: Gameplay-Combat --
     const cat={caught:0};
     // Cats seek, skills hit automatically, and green XP drops fuel upgrades.
     const cats=[];
@@ -781,7 +782,7 @@
         }
         for(let i=damageNumbers.length;i--;){const n=damageNumbers[i];n.y+=dt*.5;if((n.t-=dt)<0)damageNumbers.splice(i,1);}
     }
-    // -- /MODULE: Gameplay-Cat --
+    // -- /MODULE: Gameplay-Combat --
 
     function tryPickupItems(){
         // Closest point on capsule segment (vertical)
@@ -827,7 +828,7 @@
         }
         return hit;
     }
-    // -- /MODULE: Gameplay-Items --
+    // -- /MODULE: Gameplay-World --
 
     // -- MODULE: Gameplay-Movement --
     // --- Movement Logic ---
@@ -1401,7 +1402,7 @@
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
     // -- /MODULE: Scene-VR-Beam --
     
-    // -- CORE: render --
+    // -- CORE: Render --
     // Shared simulation and scene renderer. Desktop supplies one synthetic head
     // view; WebXR supplies the headset's real eye views.
     function updateWorld(dt, session) {
@@ -1412,22 +1413,35 @@
         mmoTick(dt);
     }
 
+    // -- MODULE: Scene-Orb-Renderer --
+    function drawOrbs(V,P,x,z,n,r,ph,scale,col){
+        for(let i=n;i--;){const a=ph+i*PI*2/n;drawSphere(V,P,x+COS(a)*2.3,.7,z+SIN(a)*2.3,r*scale,col);}
+    }
+    // -- /MODULE: Scene-Orb-Renderer --
+
+    // -- MODULE: Scene-Projectile-Renderer --
+    function drawProjectiles(V,P,list,r,pass){
+        for(const s of list){const q=r||s.r*.72;
+            if(!pass)for(let j=3;j--;){const k=j+1;drawSphere(V,P,s.x-s.vx*.065*k,s.y,s.z-s.vz*.065*k,q*(1-j*.12),[1,1,1,.2/k]);}
+            else drawSphere(V,P,s.x,s.y,s.z,q*(pass<2?1.14:1),pass<2?WHITE:BLACK);
+        }
+    }
+    // -- /MODULE: Scene-Projectile-Renderer --
+
     function drawWorld(V, P, W, t, dt, vr) {
         gl.useProgram(PGROUND);gl.bindVertexArray(groundVao);gl.uniformMatrix4fv(uGroundV,false,V);gl.uniformMatrix4fv(uGroundP,false,P);gl.drawArrays(gl.TRIANGLES,0,6);
         drawCity(V,P);
-        const now=performance.now(),tt=t*.001,br=boltSize*.72,ol=MIN(.22,orbSpeed*.04),oa=MIN(.32,.1+orbSpeed*.045),live=c=>!c.dead&&now-c.last<15000;
-        // -- MODULE: Scene-XP --
+        const now=performance.now(),tt=t*.001,br=boltSize*.72,live=c=>!c.dead&&now-c.last<15000;
+        // -- MODULE: Scene-XP-Mesh --
         for(const i of items)if(i.r>0){const a=tt*7+i.x*2+i.z;drawSphere(V,P,i.x,i.y,i.z,.14+SIN(a)*.025,WHITE);}
+        // -- /MODULE: Scene-XP-Mesh --
         gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
+        // -- MODULE: Scene-XP-Ghost --
         for(const i of items)if(i.r>0){const a=tt*7+i.x*2+i.z;drawSphere(V,P,i.x+COS(a)*.06,i.y+.025,i.z+SIN(a)*.06,.2,[1,1,1,.08+ABS(SIN(a))*.18]);}
-        // -- /MODULE: Scene-XP --
+        // -- /MODULE: Scene-XP-Ghost --
         // -- MODULE: Scene-Projectile-Trail --
-        for(const s of shots)for(let j=3;j--;){const k=j+1;drawSphere(V,P,s.x-s.vx*.065*k,s.y,s.z-s.vz*.065*k,br*(1-j*.12),[1,1,1,.2/k]);}
-        for(const s of remoteShots)for(let j=3;j--;){const k=j+1;drawSphere(V,P,s.x-s.vx*.065*k,s.y,s.z-s.vz*.065*k,s.r*.72*(1-j*.12),[1,1,1,.2/k]);}
+        drawProjectiles(V,P,shots,br,0);drawProjectiles(V,P,remoteShots,0,0);
         // -- /MODULE: Scene-Projectile-Trail --
-        // -- MODULE: Scene-Orb-Trail --
-        for(let i=orbCount;i--;)for(let j=2;j--;){const k=j+1,a=skillTime*orbSpeed+i*PI*2/orbCount-ol*k;drawSphere(V,P,u.x+COS(a)*2.3,.7,u.z+SIN(a)*2.3,orbSize*(.92-j*.1),[1,1,1,oa/k]);}
-        // -- /MODULE: Scene-Orb-Trail --
         // -- MODULE: Scene-Enemy --
         for(const c of cats)drawGhost(V,P,c,tt);
         remoteCats.forEach(group=>group.forEach(c=>live(c)&&drawGhost(V,P,c,tt)));
@@ -1440,17 +1454,15 @@
         // -- /MODULE: Scene-Enemy --
         // -- MODULE: Scene-Projectile-Mesh --
         gl.depthMask(false);
-        for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,br*1.14,WHITE);
-        for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,s.r*.82,WHITE);
+        drawProjectiles(V,P,shots,br,1);drawProjectiles(V,P,remoteShots,0,1);
         gl.depthMask(true);
-        for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,br,BLACK);
-        for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,s.r*.72,BLACK);
+        drawProjectiles(V,P,shots,br,2);drawProjectiles(V,P,remoteShots,0,2);
         // -- /MODULE: Scene-Projectile-Mesh --
         // -- MODULE: Scene-Orb-Mesh --
         gl.depthMask(false);
-        for(let i=orbCount;i--;){const a=skillTime*orbSpeed+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*2.3,.7,u.z+SIN(a)*2.3,orbSize*1.08,WHITE);}
+        drawOrbs(V,P,u.x,u.z,orbCount,orbSize,skillTime*orbSpeed,1.08,WHITE);
         gl.depthMask(true);
-        for(let i=orbCount;i--;){const a=skillTime*orbSpeed+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*2.3,.7,u.z+SIN(a)*2.3,orbSize,BLACK);}
+        drawOrbs(V,P,u.x,u.z,orbCount,orbSize,skillTime*orbSpeed,1,BLACK);
         // -- /MODULE: Scene-Orb-Mesh --
         if (peers && peers.size) {
             const now = performance.now(), target = now - 120;
@@ -1458,7 +1470,12 @@
                 if (id === myId || now - (p.last || 0) >= 15000) return;
                 const q = samplePeer(p, target) || p;
                 drawCat(V, P, q.x, .6, q.z, (q.yaw || 0) + PI, now*.005*MIN(3,p.speed||0), .1, PEER_COL);
-                for(let i=p.oc;i--;){const a=p.op+(now-p.ot)/1e3*p.ov+i*PI*2/p.oc;drawSphere(V,P,q.x+COS(a)*2.3,.7,q.z+SIN(a)*2.3,p.os,[1,.4,.8]);}
+                // -- MODULE: Scene-Peer-Orb --
+                const ph=p.op+(now-p.ot)/1e3*p.ov;
+                gl.depthMask(false);drawOrbs(V,P,q.x,q.z,p.oc,p.os,ph,1.08,WHITE);
+                gl.depthMask(true);
+                drawOrbs(V,P,q.x,q.z,p.oc,p.os,ph,1,BLACK);
+                // -- /MODULE: Scene-Peer-Orb --
             });
         }
         drawDamageNumbers(V,P,W);
@@ -1665,7 +1682,7 @@
 
     // -- /FEATURE: VR --
     
-    // -- FEATURE: CORE --
+    // -- FEATURE: Application --
     // --- Application Entry Point ---
     (function main() {
         initXR();
@@ -1675,7 +1692,7 @@
         log('MOVE: WASD/QE or touch sticks');
     })();
     
-    // -- /FEATURE: CORE --
+    // -- /FEATURE: Application --
     </script>
 </body>
 </html>

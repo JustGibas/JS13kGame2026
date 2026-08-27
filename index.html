@@ -294,7 +294,7 @@
         }
         if (payload[0] === 'd' && payload[1] === '|'){
             const p=payload.split('|'),group=remoteCats.get(p[1]),c=group&&group.get(+p[2]);
-            if(p[1]!==myId){if(p[8]===myId){playKillSound(+p[4],+p[5]);for(let i=1+(+p[6]>>1);i--;)dropLoot(+p[4]+i*.35,+p[5]);}if(+p[7])damageNumber(+p[4],+p[5],+p[7]);}
+            if(p[1]!==myId){if(p[8]===myId){cat.caught++;playKillSound(+p[4],+p[5]);for(let i=1+(+p[6]>>1);i--;)dropLoot(+p[4]+i*.35,+p[5]);}if(+p[7])damageNumber(+p[4],+p[5],+p[7]);}
             if(c&&c.v===+p[3]){c.v++;c.dead=1;}
         }
         if(payload[0]==='s'&&payload[1]==='|'){
@@ -660,19 +660,20 @@
     //const BOOST_AMOUNT  = 0.3;        // +30% per stack
     //const MAX_BOOSTS    = 100;           // safety cap
     const items = [];                  // pickups: t 0 XP, 1 health, 2 magnet
-    const CITY_BLOCK = 18, buildings = [];
-    let city = {},cityX=1e9,cityZ;
+    const CITY_BLOCK = 18;
+    let buildings = [],city = {},cityX=1e9,cityZ;
     const cityHash = (x,z,s=0) => { const n=SIN(x*127.1+z*311.7+s*71.7)*43758.5453; return n-FLOOR(n); };
     const buildingAt = (x,z) => city[ROUND(x/CITY_BLOCK)+','+ROUND(z/CITY_BLOCK)];
     const insideBuilding = (x,z,r=0) => {const b=buildingAt(x,z);return b&&ABS(x-b.x)<b.w/2+r&&ABS(z-b.z)<b.d/2+r};
     function updateCity(){
         const cx=ROUND(u.x/CITY_BLOCK),cz=ROUND(u.z/CITY_BLOCK);if(cx===cityX&&cz===cityZ)return;
-        cityX=cx;cityZ=cz;buildings.length=0;city={};
-        for(let z=cz-11;z<=cz+11;z++)for(let x=cx-11;x<=cx+11;x++){
-            if(ABS(x)<2&&ABS(z)<2||cityHash(x,z)<.28)continue;
+        cityX=cx;cityZ=cz;const next=[],nextCity={};
+        for(let z=cz-15;z<=cz+15;z++)for(let x=cx-15;x<=cx+15;x++){
+            if(ABS(x)<2&&ABS(z)<2||cityHash(x,z)<.28+HYPOT(x,z)/62)continue;
             const w=8+cityHash(x,z,1)*4,d=8+cityHash(x,z,2)*4,h=6+cityHash(x,z,3)*26,b={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w,d,h};
-            b.r=MIN(w,d)*.43;buildings.push(b);city[x+','+z]=b;
+            b.r=MIN(w,d)*.43;next.push(b);nextCity[x+','+z]=b;
         }
+        if(next.length){buildings=next;city=nextCity;}
     }
     // Player capsule constants (smaller than an object w/ props)
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
@@ -751,7 +752,7 @@
     }
     function defeat(c,d,killer){
         const x=c.x,z=c.z,v=c.v,tier=c.tier;
-        if(!myId||killer===myId){playKillSound(x,z);for(let i=1+(tier>>1);i--;)dropLoot(c.x+i*.35,c.z);}
+        if(!myId||killer===myId){cat.caught++;playKillSound(x,z);for(let i=1+(tier>>1);i--;)dropLoot(c.x+i*.35,c.z);}
         if(myId)sendMMO(`d|${myId}|${c.i}|${v}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${d}|${killer}`);
         placeCat(c);//log(`Cat defeated #${++cat.caught}`);
     }
@@ -1483,9 +1484,11 @@
         //gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,0,0,0,1);gl.bindVertexArray(groundVao);gl.drawArrays(gl.TRIANGLES,0,6);
         for(const b of buildings){
             // Draw each building as a white cube scaled to its width, height, and depth.
-            gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2,b.h/2,b.d/2));gl.uniform4f(uS_Color,.05,.05,.05,1);gl.bindVertexArray(buildingVao);gl.drawArrays(gl.TRIANGLES,0,36);
+            gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2,b.h/2,b.d/2));
+            gl.uniform4f(uS_Color,.05,.05,.05,1);gl.bindVertexArray(buildingVao);gl.drawArrays(gl.TRIANGLES,0,36);
             // Draw a slightly larger black outline around each building to create a crisp contour effect.
-            gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2+.015,b.h/2+.015,b.d/2+.015));gl.uniform4f(uS_Color,1,1,1,1);gl.bindVertexArray(edgeVao);gl.drawArrays(gl.LINES,0,24);
+            gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2+.01,b.h/2+.01,b.d/2+.01)); // 0.01 biger
+            gl.uniform4f(uS_Color,1,1,1,1);gl.bindVertexArray(edgeVao);gl.drawArrays(gl.LINES,0,24);
         }
     }
     // -- /MODULE: Scene-City --
@@ -1573,7 +1576,9 @@
       const eye = [u.x, u.y, u.z];
       const center = [u.x - sy * cp, u.y - sp, u.z - cy * cp];
         LOOKAT(V, eye, center, [0, 1, 0]);
-        PERSP(P, 60, C.width / C.height, .1, 1000.);
+        // Build the perspective projection matrix for the camera. NEAR and FAR clipping planes
+        // PERSP(P, 60, C.width / C.height, .1, 1000.);
+        PERSP(P, 60, C.width / C.height, .2, 3000.);
         PV = MULTMAT4(M4(), P, V);
         invPV = INV(PV);
     }
@@ -1707,7 +1712,9 @@
 
             // OPTIONAL COMPATIBILITY: redundant when the context honors its existing xrCompatible:true flag.
             await gl.makeXRCompatible();
-            xr.updateRenderState({ baseLayer: new XRWebGLLayer(xr, gl) });
+            // Set up the XRWebGLLayer for the session
+            // xr.updateRenderState({ baseLayer: new XRWebGLLayer(xr, gl)});
+            xr.updateRenderState({ baseLayer: new XRWebGLLayer(xr, gl),depthNear:.2,depthFar:3000 }); // vr depth range
             // OPTIONAL FALLBACK: Quest supports local-floor; keep for other WebXR implementations.
             try { ref = await xr.requestReferenceSpace('local-floor'); }
             catch (_) { ref = await xr.requestReferenceSpace('local'); log('XR floor unavailable; using local space'); }

@@ -81,6 +81,7 @@
 
     <script>
     // -- FEATURE: Core --
+    // -- MODULE: Core-Math --
     // Expose Math functions to global scope
     Object.getOwnPropertyNames(Math).forEach(n => window[n.toUpperCase()] = Math[n]);
     // --- Math Library ---
@@ -125,7 +126,9 @@
 
     // Creates a translation and scale matrix
     function translateScale(x,y,z,sx,sy,sz) { return new F32([sx,0,0,0, 0,sy,0,0, 0,0,sz,0, x,y,z,1]); }
+    // -- /MODULE: Core-Math --
 
+    // -- MODULE: Core-Runtime --
     // const D = document
     // const C = D.getElementById('canvas');
     const C = document.getElementById('C');
@@ -142,7 +145,16 @@
     gl = C.getContext('webgl2', { xrCompatible: true });
     //if (!gl) { alert('Need WebGL2'); }
 
+    function lerp(a,b,t){ return a + (b-a)*t; }
+    function lerpAngle(a,b,t){
+        let d = b - a;
+        if (d > PI) d -= 2*PI; else if (d < -PI) d += 2*PI;
+        return a + d * t;
+    }
+    // -- /MODULE: Core-Runtime --
+
     // -- FEATURE: MMO --
+    // -- MODULE: MMO-Connection --
     // Minimal MMO support using JS13k relay. Toggle via HUD. Other players are drawn as whitish cats.
     const MMO_URL = 'wss://relay.js13kgames.com/wild-catch'; // append subpaths to shard into rooms if desired
     let mmoEnabled = false;
@@ -151,15 +163,9 @@
     const peers = new Map(); // id -> interpolated player and skill state
     const remoteCats = new Map(); // owner id -> Map(enemy id -> predicted enemy)
     const remoteShots = [];
-    let mmoSendTimer = 0, enemySendTimer = 0, shotId=0;
+    let mmoSendTimer = 0, enemySendTimer = 0;
 
     // Peer interpolation delay (ms). Higher = smoother but more laggy. 120ms is a good balance.
-    function lerp(a,b,t){ return a + (b-a)*t; }
-    function lerpAngle(a,b,t){
-        let d = b - a;
-        if (d > PI) d -= 2*PI; else if (d < -PI) d += 2*PI;
-        return a + d * t;
-    }
     function pushPeerSample(p, x, z, yaw, now){
         if (!p.hist) p.hist = [];
         p.speed = p.last ? HYPOT(x-p.x,z-p.z)*1000/(now-p.last||1) : 0;
@@ -226,7 +232,9 @@
         ws.onerror = _ => { /* errors surface via close */ };
         ws.onmessage = ev => handleMMOMessage(ev.data);
     }
+    // -- /MODULE: MMO-Connection --
 
+    // -- MODULE: MMO-Messages --
     function handleMMOMessage(msg){
         if (typeof msg !== 'string') return;
         const c = msg[0];
@@ -296,7 +304,9 @@
         if(payload[0]==='x'&&payload[1]==='|'){const p=payload.split('|'),a=p[1]===myId?shots:remoteShots;for(let i=a.length;i--;)if(a[i].i===+p[2]&&(p[1]===myId||a[i].o===p[1]))a.splice(i,1);}
     }
     document.onvisibilitychange=_=>mmoEnabled&&!xr&&(document.hidden?(ws&&(ws.onmessage=ws.onclose=0),disconnectMMO()):connectMMO());
+    // -- /MODULE: MMO-Messages --
 
+    // -- MODULE: MMO-Sync --
     function mmoTick(dt){
         if (!mmoEnabled || !ws || ws.readyState !== 1 || !myId) return;
         mmoSendTimer += dt;
@@ -312,33 +322,11 @@
             sendMMO('e|'+myId+'|'+cats.map(c=>[c.i,c.v,c.x.toFixed(2),c.z.toFixed(2),c.yaw.toFixed(2),c.tier,c.hp,c.max]).join(';'));
         }
     }
+    // -- /MODULE: MMO-Sync --
 
-    // Unified cat model renderer (used for main cat and peers)
-    const PEER_COL = [.7,.7,.8], BLACK=[0,0,0], WHITE=[1,1,1];
-    function drawCat(Vmat, Pmat, x, y, z, yaw, anim, amp, col, scale=1){
-        const cy = COS(yaw-20), sy = SIN(yaw-20);
-        function place(lx, ly, lz, r){
-            const wx = x + lx*cy + lz*sy;
-            const wz = z + lz*cy - lx*sy;
-            drawSphere(Vmat, Pmat, wx, y + ly, wz, r*scale, col);
-        }
-        // Body core (chain) + head
-        place(.10,0,0,.25); place(-.05,0,0,.25); place(-.20,0,0,.24);
-        place(.38,.18,0,.20);
-        place(.38,.33,.12,.08);place(.38,.4,.16,.04);
-        place(.38,.33,-.12,.08);place(.38,.4,-.16,.04);
-        // Animated legs and tail
-        const CYC = v=>SIN(v)*amp, cy0 = CYC(anim), cy1 = CYC(anim+PI), baseY = -.30;
-        place(.15, baseY + cy0, .14, .09);
-        place(.15, baseY + cy1,-.14, .09);
-        place(-.25, baseY + cy1, .15, .09);
-        place(-.25, baseY + cy0,-.15, .09);
-        place(-.40,.15, cy0*.5,.14);
-        place(-.55,.25, 0,.12);
-        place(-.70,.30, cy1*.6,.11);
-    }
     // -- /FEATURE: MMO --
 
+    // -- MODULE: Core-WebGL --
     // Resize the canvas to fill the window, accounting for device pixel ratio
     function resize() {
     const w = innerWidth, h = innerHeight, dpr = devicePixelRatio || 1;
@@ -367,6 +355,7 @@
         if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw gl.getProgramInfoLog(p);
         return p;
     }
+    // -- /MODULE: Core-WebGL --
     // -- /FEATURE: Core --
     
     // -- FEATURE: Input --
@@ -694,7 +683,7 @@
     ];
     const powerTier=n=>MIN(6,(n-1)/3|0),powerValue=t=>t+1;
     let skillTime=0,level=1,xp=0,choosing=0,orbCount=0,orbSize=.25,orbSpeed=2,catVersion=0,
-        boltCount=1,boltRate=3,boltSize=.2,boltTime=0,damage=1,moveSpeed=3,choices=[],seed=Date.now()|0,hp=100,maxHp=100;
+        boltCount=1,boltRate=3,boltSize=.2,boltTime=0,shotId=0,damage=1,moveSpeed=3,choices=[],seed=Date.now()|0,hp=100,maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
     function placeCat(c){
         let a,r,ok;
@@ -724,6 +713,20 @@
         level=1;xp=choosing=orbCount=cat.caught=skillTime=boltTime=0;
         orbSize=.25;orbSpeed=2;boltCount=damage=1;boltRate=4;boltSize=.2;moveSpeed=3;maxHp=hp=100;
         items.length=damageNumbers.length=0;choices=[];hudPage=0;u.x=0;u.z=2;resetCats();log(mmoEnabled?'MMO run started':'Run ended');
+    }
+    function rollChoices(){
+        const tier=()=>{let t=0,cap=MIN(6,1+(level/3|0));while(t<cap&&rng()<.4)t++;return t;},pool=orbCount?[0,1,2,3,4,5,6,7,8]:[3,4,5,6,7,8];
+        choices=orbCount?[]:[[0,tier()]];
+        while(choices.length<3){const a=pool[rng()*pool.length|0];if(!choices.some(c=>c[0]===a))choices.push([a,tier()]);}
+        for(let i=3;i--;){const c=choices[i];UI_LEVEL[i][4]=POWER[c[1]][0]+'|'+cardText(c[0],powerValue(c[1]));UI_LEVEL[i][6]=c[1];}
+        choosing=1;hudVisible=false;playLevelSound();
+    }
+    function upgrade(c){
+        const n=c[0],p=powerValue(c[1]);
+        n===0?orbCount+=p:n===1?orbSize*=1+p*.2:n===2?orbSpeed*=1+p*.15:n===3?boltCount+=p:n===4?moveSpeed*=1+p*.1:n===5?boltRate=MAX(.15,boltRate*(1-p*.1)):n===6?boltSize*=1+p*.2:n===7?(maxHp+=p*20,hp=MIN(maxHp,hp+p*20)):damage+=p;
+        xp-=level++*3;choosing=0;hudPage=0;
+        while(cats.length<MIN(40,3+level*2))cats.push(placeCat({i:cats.length}));
+        if(xp>=level*3)rollChoices();
     }
     function dropXP(x,z){
         items.push({x,y:.16,z,r:.4});
@@ -990,6 +993,15 @@
     }
     // -- /SOLUTION: Gameplay-Movement-Step --
     // -- /MODULE: Gameplay-Movement --
+    // -- MODULE: Gameplay-Update --
+    function updateWorld(dt, session, frame) {
+        step(dt, getMove(session,frame));
+        updateEnemies(dt);
+        updateRemoteCats(dt);
+        updateShots(dt);
+        mmoTick(dt);
+    }
+    // -- /MODULE: Gameplay-Update --
     // -- /FEATURE: Gameplay --
     
     // -- FEATURE: Scene --
@@ -1083,21 +1095,6 @@
         [.025,.28,.325,.56,'+ ORB',20],[.35,.28,.65,.56,'BIGGER',21],[.675,.28,.975,.56,'FASTER',22]
     ];
     function cardText(n,p){return n===0?`+${p} ORB${p>1?'S':''}`:n===1?`+${p*20}% ORB SIZE`:n===2?`+${p*15}% ORB SPEED`:n===3?`+${p} BOLT${p>1?'S':''}`:n===4?`+${p*10}% MOVE`:n===5?`-${p*10}% COOLDOWN`:n===6?`+${p*20}% BOLT SIZE`:n===7?`+${p*20} MAX HEALTH`:`+${p} DAMAGE`;}
-
-    function rollChoices(){
-        const tier=()=>{let t=0,cap=MIN(6,1+(level/3|0));while(t<cap&&rng()<.4)t++;return t;},pool=orbCount?[0,1,2,3,4,5,6,7,8]:[3,4,5,6,7,8];
-        choices=orbCount?[]:[[0,tier()]];
-        while(choices.length<3){const a=pool[rng()*pool.length|0];if(!choices.some(c=>c[0]===a))choices.push([a,tier()]);}
-        for(let i=3;i--;){const c=choices[i];UI_LEVEL[i][4]=POWER[c[1]][0]+'|'+cardText(c[0],powerValue(c[1]));UI_LEVEL[i][6]=c[1];}
-        choosing=1;hudVisible=false;playLevelSound();
-    }
-    function upgrade(c){
-        const n=c[0],p=powerValue(c[1]);
-        n===0?orbCount+=p:n===1?orbSize*=1+p*.2:n===2?orbSpeed*=1+p*.15:n===3?boltCount+=p:n===4?moveSpeed*=1+p*.1:n===5?boltRate=MAX(.15,boltRate*(1-p*.1)):n===6?boltSize*=1+p*.2:n===7?(maxHp+=p*20,hp=MIN(maxHp,hp+p*20)):damage+=p;
-        xp-=level++*3;choosing=0;hudPage=0;
-        while(cats.length<MIN(40,3+level*2))cats.push(placeCat({i:cats.length}));
-        if(xp>=level*3)rollChoices();
-    }
 
     // INVENTORY HUD disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
     function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
@@ -1404,11 +1401,19 @@
     gl.enableVertexAttribArray(1); 
     gl.vertexAttribPointer(1, 2, 
     gl.FLOAT, false, 20, 12);
+    function updHUD(dt) {
+        drawHUDCanvas(dt);
+    }
+    function drawHud(M,V,P) {
+        gl.useProgram(PH);gl.bindVertexArray(vaoH);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,hudTex);
+        gl.uniformMatrix4fv(uMH,false,M);gl.uniformMatrix4fv(uVH,false,V);gl.uniformMatrix4fv(uPH,false,P);
+        gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.drawArrays(gl.TRIANGLES,0,6);gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
+    }
     // -- /PART: WebGL-Setup --
 
     // -- /MODULE: Scene-HUD --
-    // -- MODULE: Scene-Items --
-    // NEW: Sphere (items/obstacles) minimal shader + geometry (uses shared PC)
+    // -- MODULE: Scene-Sphere-Renderer --
+    // Shared sphere geometry and renderer.
 
     function buildSphere(lat=10, lon=12){
         const v=[];
@@ -1440,7 +1445,18 @@
     const uS_P = gl.getUniformLocation(PC,'P');
     const uS_Color = gl.getUniformLocation(PC,'col');
 
-    // -- /MODULE: Scene-Items --
+    function drawSphere(V,P,x,y,z,r,col){
+        gl.useProgram(PC);
+        gl.bindVertexArray(sphereVao);
+        const Msp = translateScale(x,y,z,r,r,r);
+        gl.uniformMatrix4fv(uS_M,false,Msp);
+        gl.uniformMatrix4fv(uS_V,false,V);
+        gl.uniformMatrix4fv(uS_P,false,P);
+        gl.uniform4f(uS_Color,col[0],col[1],col[2],col[3]??1);
+        gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
+    }
+
+    // -- /MODULE: Scene-Sphere-Renderer --
 
     // -- MODULE: Scene-City --
     // Black ground, near black buildings, and crisp white building contour lines.
@@ -1507,17 +1523,67 @@
     // -- /MODULE: Scene-VR-Beam --
     // -- /VR: Rendering --
     
-    // -- CORE: Render --
-    // Shared simulation and scene renderer. Desktop supplies one synthetic head
-    // view; WebXR supplies the headset's real eye views.
-    function updateWorld(dt, session, frame) {
-        step(dt, getMove(session,frame));
-        updateEnemies(dt);
-        updateRemoteCats(dt);
-        updateShots(dt);
-        mmoTick(dt);
+    // Shared scene renderer. Desktop supplies one synthetic head view; WebXR
+    // supplies the headset's real eye views.
+    // -- MODULE: Scene-Cat-Renderer --
+    const PEER_COL = [.7,.7,.8], BLACK=[0,0,0], WHITE=[1,1,1];
+    function drawCat(Vmat, Pmat, x, y, z, yaw, anim, amp, col, scale=1){
+        const cy = COS(yaw-20), sy = SIN(yaw-20);
+        function place(lx, ly, lz, r){
+            const wx = x + lx*cy + lz*sy;
+            const wz = z + lz*cy - lx*sy;
+            drawSphere(Vmat, Pmat, wx, y + ly, wz, r*scale, col);
+        }
+        place(.10,0,0,.25); place(-.05,0,0,.25); place(-.20,0,0,.24);
+        place(.38,.18,0,.20);
+        place(.38,.33,.12,.08);place(.38,.4,.16,.04);
+        place(.38,.33,-.12,.08);place(.38,.4,-.16,.04);
+        const CYC = v=>SIN(v)*amp, cy0 = CYC(anim), cy1 = CYC(anim+PI), baseY = -.30;
+        place(.15, baseY + cy0, .14, .09);
+        place(.15, baseY + cy1,-.14, .09);
+        place(-.25, baseY + cy1, .15, .09);
+        place(-.25, baseY + cy0,-.15, .09);
+        place(-.40,.15, cy0*.5,.14);
+        place(-.55,.25, 0,.12);
+        place(-.70,.30, cy1*.6,.11);
     }
+    // -- /MODULE: Scene-Cat-Renderer --
 
+    // -- MODULE: Scene-Damage-Numbers --
+    function drawDamageNumbers(V,P,W){
+        if(!damageNumbers.length)return;
+        const masks=[63,6,91,79,102,109,125,7,127,111],pos=[[0,2],[1,1],[1,-1],[0,-2],[-1,-1],[-1,1],[0,0]];
+        gl.useProgram(PC);gl.bindVertexArray(sphereVao);gl.uniformMatrix4fv(uS_V,false,V);gl.uniformMatrix4fv(uS_P,false,P);
+        gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+        for(const n of damageNumbers){
+            const text=''+n.n;
+            for(let j=0;j<text.length;j++)for(let s=0;s<7;s++)if(masks[+text[j]]>>s&1){
+                const v=s===1||s===2||s===4||s===5,x=(j-(text.length-1)/2)*.35+pos[s][0]*.15,y=pos[s][1]*.15,
+                    wx=n.x+W[0]*x+W[4]*y,wy=n.y+W[1]*x+W[5]*y,wz=n.z+W[2]*x+W[6]*y,
+                    M=new F32([W[0]*(v?.035:.13),W[1]*(v?.035:.13),W[2]*(v?.035:.13),0,W[4]*(v?.13:.035),W[5]*(v?.13:.035),W[6]*(v?.13:.035),0,W[8]*.02,W[9]*.02,W[10]*.02,0,wx,wy,wz,1]);
+                gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,1,1,1,MIN(1,n.t*2));gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
+            }
+        }
+        gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
+    }
+    // -- /MODULE: Scene-Damage-Numbers --
+
+    // -- MODULE: Scene-Camera --
+    function buildViewProj() {
+      const cy = COS(u.yaw),
+          sy = SIN(u.yaw);
+      const cp = COS(u.pitch),
+          sp = SIN(u.pitch);
+      const eye = [u.x, u.y, u.z];
+      const center = [u.x - sy * cp, u.y - sp, u.z - cy * cp];
+        LOOKAT(V, eye, center, [0, 1, 0]);
+        PERSP(P, 60, C.width / C.height, .1, 1000.);
+        PV = MULTMAT4(M4(), P, V);
+        invPV = INV(PV);
+    }
+    // -- /MODULE: Scene-Camera --
+
+    // -- MODULE: Scene-World-Renderer --
     function drawWorld(V, P, W, t, dt, vr) {
         drawCity(V,P);
         const now=performance.now(),tt=t*.001,br=boltSize*.72,live=c=>!c.dead&&now-c.last<15000;
@@ -1577,8 +1643,11 @@
         }
         drawDamageNumbers(V,P,W);
     }
+    // -- /MODULE: Scene-World-Renderer --
     // -- /FEATURE: Scene --
 
+    // -- FEATURE: VR --
+    // -- MODULE: VR-Input-Rendering --
     // -- VR: Rendering --
     // OPTIONAL VISUALS: remove with its call to hide controller discs and beams; HUD ray clicks still work.
     function drawXRInput(session, frame, V, P, hudWH) {
@@ -1609,122 +1678,9 @@
         }
     }
     // -- /VR: Rendering --
+    // -- /MODULE: VR-Input-Rendering --
 
-    function loop(t, frame) {
-        const session = frame && frame.session;
-        if (session ? session !== xr : xr) return;
-        session ? session.requestAnimationFrame(loop) : requestAnimationFrame(loop);
-        const dt = MIN(last ? (t - last) / 1000 : 0, .05);
-        last = t;
-        updateWorld(dt, session, frame);
-        let hudWH;
-        gl.clearColor(0, 0, 0, 1);
-        // -- VR: Rendering --
-        if (session) {
-            const cy=COS(u.yaw),sy=SIN(u.yaw);
-            xrM.set([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, u.x,0,u.z,1]);
-            const pose = frame.getViewerPose(ref);
-            if (!pose) return;
-            const headW = MULTMAT4(M4(),xrM,pose.transform.matrix);
-            updateAudioListener(headW);
-            hudWH = new DOMMatrix(headW).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
-            HUD_WH_world = hudWH;
-            hoverBtn = null;
-            // OPTIONAL VISUAL: button hover highlighting; select/click works without it.
-            for (const src of session.inputSources || []) {
-                const hit = HUD_pick(hudWH, controllerRay(frame, src));
-                if (hit && hit.button) { hoverBtn = hit.button; break; }
-            }
-            updHUD(dt);
-            const layer = session.renderState.baseLayer;
-            gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-            for (const view of pose.views) {
-                const vp = layer.getViewport(view), eyeW=MULTMAT4(M4(),xrM,view.transform.matrix),Veye=INV(eyeW),Peye=view.projectionMatrix;
-                gl.viewport(vp.x, vp.y, vp.width, vp.height);
-                drawWorld(Veye, Peye, eyeW, t, dt, true);
-                drawHud(hudWH, Veye, Peye);
-                drawXRInput(session, frame, Veye, Peye, hudWH);
-            }
-        }
-        // -- /VR: Rendering --
-        else {
-            buildViewProj();
-            const W = INV(V);
-            updateAudioListener(W);
-            hudWH = new DOMMatrix(W).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
-            HUD_WH_world = hudWH;
-            hoverBtn = null;
-            if (I.look.id === null) {
-                const hit = HUD_pick(hudWH, rayFromScreen(I.pointer.x, I.pointer.y));
-                if (hit && hit.button) hoverBtn = hit.button;
-            }
-            updHUD(dt);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            gl.viewport(0, 0, C.width, C.height);
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-            drawWorld(V, P, W, t, dt, false);
-            drawHud(hudWH, V, P);
-        }
-        // Run diagnostics last: even a browser-specific Gamepad value cannot stop this frame's movement/render.
-        // if (session) logXRSticks(session);
-    }
-
-    // Helper to update the HUD canvas content
-    function updHUD(dt) {
-        drawHUDCanvas(dt);
-    }
-    function drawHud(M,V,P) {
-        gl.useProgram(PH);gl.bindVertexArray(vaoH);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,hudTex);
-        gl.uniformMatrix4fv(uMH,false,M);gl.uniformMatrix4fv(uVH,false,V);gl.uniformMatrix4fv(uPH,false,P);
-        gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.drawArrays(gl.TRIANGLES,0,6);gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
-    }
-
-    // Helper to submit a sphere draw call
-    function drawSphere(V,P,x,y,z,r,col){
-        gl.useProgram(PC);
-        gl.bindVertexArray(sphereVao);
-        const Msp = translateScale(x,y,z,r,r,r);
-        gl.uniformMatrix4fv(uS_M,false,Msp);
-        gl.uniformMatrix4fv(uS_V,false,V);
-        gl.uniformMatrix4fv(uS_P,false,P);
-        gl.uniform4f(uS_Color,col[0],col[1],col[2],col[3]??1);
-        gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
-    }
-
-    function drawDamageNumbers(V,P,W){
-        if(!damageNumbers.length)return;
-        const masks=[63,6,91,79,102,109,125,7,127,111],pos=[[0,2],[1,1],[1,-1],[0,-2],[-1,-1],[-1,1],[0,0]];
-        gl.useProgram(PC);gl.bindVertexArray(sphereVao);gl.uniformMatrix4fv(uS_V,false,V);gl.uniformMatrix4fv(uS_P,false,P);
-        gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-        for(const n of damageNumbers){
-            const text=''+n.n;
-            for(let j=0;j<text.length;j++)for(let s=0;s<7;s++)if(masks[+text[j]]>>s&1){
-                const v=s===1||s===2||s===4||s===5,x=(j-(text.length-1)/2)*.35+pos[s][0]*.15,y=pos[s][1]*.15,
-                    wx=n.x+W[0]*x+W[4]*y,wy=n.y+W[1]*x+W[5]*y,wz=n.z+W[2]*x+W[6]*y,
-                    M=new F32([W[0]*(v?.035:.13),W[1]*(v?.035:.13),W[2]*(v?.035:.13),0,W[4]*(v?.13:.035),W[5]*(v?.13:.035),W[6]*(v?.13:.035),0,W[8]*.02,W[9]*.02,W[10]*.02,0,wx,wy,wz,1]);
-                gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,1,1,1,MIN(1,n.t*2));gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
-            }
-        }
-        gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
-    }
-
-    // Computes the view and projection matrices for desktop mode
-    function buildViewProj() {
-      const cy = COS(u.yaw),
-          sy = SIN(u.yaw);
-      const cp = COS(u.pitch),
-          sp = SIN(u.pitch);
-      const eye = [u.x, u.y, u.z];
-      const center = [u.x - sy * cp, u.y - sp, u.z - cy * cp];
-        LOOKAT(V, eye, center, [0, 1, 0]);
-        PERSP(P, 60, C.width / C.height, .1, 1000.);
-        PV = MULTMAT4(M4(), P, V);
-        invPV = INV(PV);
-    }
-    // -- /CORE: Render --
-
-    // -- FEATURE: VR --
+    // -- MODULE: VR-Session --
     // -- VR: Session --
     // --- WebXR ---
 
@@ -1802,10 +1758,68 @@
         }
     }
     // -- /VR: Session --
+    // -- /MODULE: VR-Session --
 
     // -- /FEATURE: VR --
     
     // -- FEATURE: Application --
+    // -- MODULE: Application-Loop --
+    function loop(t, frame) {
+        const session = frame && frame.session;
+        if (session ? session !== xr : xr) return;
+        session ? session.requestAnimationFrame(loop) : requestAnimationFrame(loop);
+        const dt = MIN(last ? (t - last) / 1000 : 0, .05);
+        last = t;
+        updateWorld(dt, session, frame);
+        let hudWH;
+        gl.clearColor(0, 0, 0, 1);
+        if (session) {
+            const cy=COS(u.yaw),sy=SIN(u.yaw);
+            xrM.set([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, u.x,0,u.z,1]);
+            const pose = frame.getViewerPose(ref);
+            if (!pose) return;
+            const headW = MULTMAT4(M4(),xrM,pose.transform.matrix);
+            updateAudioListener(headW);
+            hudWH = new DOMMatrix(headW).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
+            HUD_WH_world = hudWH;
+            hoverBtn = null;
+            for (const src of session.inputSources || []) {
+                const hit = HUD_pick(hudWH, controllerRay(frame, src));
+                if (hit && hit.button) { hoverBtn = hit.button; break; }
+            }
+            updHUD(dt);
+            const layer = session.renderState.baseLayer;
+            gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            for (const view of pose.views) {
+                const vp = layer.getViewport(view), eyeW=MULTMAT4(M4(),xrM,view.transform.matrix),Veye=INV(eyeW),Peye=view.projectionMatrix;
+                gl.viewport(vp.x, vp.y, vp.width, vp.height);
+                drawWorld(Veye, Peye, eyeW, t, dt, true);
+                drawHud(hudWH, Veye, Peye);
+                drawXRInput(session, frame, Veye, Peye, hudWH);
+            }
+        }
+        else {
+            buildViewProj();
+            const W = INV(V);
+            updateAudioListener(W);
+            hudWH = new DOMMatrix(W).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
+            HUD_WH_world = hudWH;
+            hoverBtn = null;
+            if (I.look.id === null) {
+                const hit = HUD_pick(hudWH, rayFromScreen(I.pointer.x, I.pointer.y));
+                if (hit && hit.button) hoverBtn = hit.button;
+            }
+            updHUD(dt);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, C.width, C.height);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            drawWorld(V, P, W, t, dt, false);
+            drawHud(hudWH, V, P);
+        }
+    }
+    // -- /MODULE: Application-Loop --
+    // -- MODULE: Application-Startup --
     // --- Application Entry Point ---
     (function main() {
         initXR();
@@ -1814,6 +1828,7 @@
         log('MENU H/X   F INV   C CHAT   Z SETTINGS');
         log('MOVE: WASD/QE or touch sticks');
     })();
+    // -- /MODULE: Application-Startup --
     
     // -- /FEATURE: Application --
     </script>

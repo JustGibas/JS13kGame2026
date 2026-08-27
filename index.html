@@ -660,10 +660,20 @@
     //const BOOST_AMOUNT  = 0.3;        // +30% per stack
     //const MAX_BOOSTS    = 100;           // safety cap
     const items = [];                  // pickups: t 0 XP, 1 health, 2 magnet
-    const obstacles = [];              // solid spheres for collision {x,y,z,r}
     const CITY_BLOCK = 18, buildings = [];
+    let city = {},cityX=1e9,cityZ;
     const cityHash = (x,z,s=0) => { const n=SIN(x*127.1+z*311.7+s*71.7)*43758.5453; return n-FLOOR(n); };
-    const insideBuilding = (x,z,r=0) => buildings.some(b=>ABS(x-b.x)<b.w/2+r&&ABS(z-b.z)<b.d/2+r);
+    const buildingAt = (x,z) => city[ROUND(x/CITY_BLOCK)+','+ROUND(z/CITY_BLOCK)];
+    const insideBuilding = (x,z,r=0) => {const b=buildingAt(x,z);return b&&ABS(x-b.x)<b.w/2+r&&ABS(z-b.z)<b.d/2+r};
+    function updateCity(){
+        const cx=ROUND(u.x/CITY_BLOCK),cz=ROUND(u.z/CITY_BLOCK);if(cx===cityX&&cz===cityZ)return;
+        cityX=cx;cityZ=cz;buildings.length=0;city={};
+        for(let z=cz-11;z<=cz+11;z++)for(let x=cx-11;x<=cx+11;x++){
+            if(ABS(x)<2&&ABS(z)<2||cityHash(x,z)<.28)continue;
+            const w=8+cityHash(x,z,1)*4,d=8+cityHash(x,z,2)*4,h=6+cityHash(x,z,3)*26,b={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w,d,h};
+            b.r=MIN(w,d)*.43;buildings.push(b);city[x+','+z]=b;
+        }
+    }
     // Player capsule constants (smaller than an object w/ props)
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
 
@@ -751,7 +761,7 @@
             let tx=u.x,tz=u.z,best=(tx-c.x)**2+(tz-c.z)**2,now=performance.now(),self=1;
             peers.forEach(p=>{const q=(p.x-c.x)**2+(p.z-c.z)**2;if(now-p.last<15000&&q<best){best=q;tx=p.x;tz=p.z;self=0;}});
             let dx=tx-c.x,dz=tz-c.z,d=HYPOT(dx,dz)||1,fx=dx/d*7,fz=dz/d*7;
-            for(const o of obstacles){
+            const o=buildingAt(c.x,c.z);if(o){
                 let ox=c.x-o.x,oz=c.z-o.z,od=HYPOT(ox,oz)||1,r=o.r+2;
                 if(od<r){fx+=(ox*(r-od)-oz)/od*3;fz+=(oz*(r-od)+ox)/od*3;}
             }
@@ -851,18 +861,6 @@
     }
 
     function resolveCollisions(prevX, prevZ){
-        // Capsule vs sphere obstacles
-    const baseY = u.y - 1.6, topY = baseY + 1.6;
-        const hit = o => {
-            const ny = MAX(baseY, MIN(topY, o.y));
-            let dx = u.x - o.x, dy = ny - o.y, dz = u.z - o.z;
-            const d = HYPOT(dx,dy,dz), minD = .5 + o.r;
-            if (d < minD){
-                if (d < .0001) { u.x = prevX; u.z = prevZ; }
-                else { const p = (minD - d)/d; u.x += dx * p; u.z += dz * p; }
-            }
-        };
-        for (const o of obstacles) if(!o._isBuilding) hit(o);
         resolveCityCollision(u,.5,prevX,prevZ);
         // Ground collision (keep eye at least capsule height above 0)
     if (u.y - 1.6 < 0) u.y = 1.6;
@@ -870,15 +868,12 @@
 
     // Circle against a building footprint. Returns 1 for an X wall hit and 2 for Z.
     function resolveCityCollision(entity,radius,prevX,prevZ){
-        let hit=0;
-        for(const b of buildings){
-            const hx=b.w/2+radius,hz=b.d/2+radius,dx=entity.x-b.x,dz=entity.z-b.z;
-            if(ABS(dx)>=hx||ABS(dz)>=hz)continue;
-            const px=hx-ABS(dx),pz=hz-ABS(dz);
-            if(px<pz){const side=dx||(prevX-b.x);entity.x=b.x+(side>=0?hx:-hx);hit|=1;}
-            else{const side=dz||(prevZ-b.z);entity.z=b.z+(side>=0?hz:-hz);hit|=2;}
-        }
-        return hit;
+        const b=buildingAt(entity.x,entity.z);if(!b)return 0;
+        const hx=b.w/2+radius,hz=b.d/2+radius,dx=entity.x-b.x,dz=entity.z-b.z;
+        if(ABS(dx)>=hx||ABS(dz)>=hz)return 0;
+        const px=hx-ABS(dx),pz=hz-ABS(dz);
+        if(px<pz){const side=dx||(prevX-b.x);entity.x=b.x+(side>=0?hx:-hx);return 1;}
+        const side=dz||(prevZ-b.z);entity.z=b.z+(side>=0?hz:-hz);return 2;
     }
     // -- /MODULE: Gameplay-World --
 
@@ -1002,6 +997,7 @@
     function updateWorld(dt, session, frame) {
         hp=MIN(maxHp,hp+regen*dt);
         step(dt, getMove(session,frame));
+        updateCity();
         updateEnemies(dt);
         updateRemoteCats(dt);
         updateShots(dt);
@@ -1465,10 +1461,10 @@
     // -- /MODULE: Scene-Sphere-Renderer --
 
     // -- MODULE: Scene-City --
-    // Black ground, near black buildings, and crisp white building contour lines.
-    const groundVerts = new F32([-500,0,-500,500,0,-500,500,0,500,-500,0,-500,500,0,500,-500,0,500]);
-    const groundVao=gl.createVertexArray(),groundBuf=gl.createBuffer();
-    gl.bindVertexArray(groundVao);gl.bindBuffer(gl.ARRAY_BUFFER,groundBuf);gl.bufferData(gl.ARRAY_BUFFER,groundVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+    // Near black buildings with crisp white contour lines.
+    //const groundVerts = new F32([-500,0,-500,500,0,-500,500,0,500,-500,0,-500,500,0,500,-500,0,500]);
+    //const groundVao=gl.createVertexArray(),groundBuf=gl.createBuffer();
+    //gl.bindVertexArray(groundVao);gl.bindBuffer(gl.ARRAY_BUFFER,groundBuf);gl.bufferData(gl.ARRAY_BUFFER,groundVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
     const cubeVerts=new F32([
         -1,-1,-1,1,-1,-1,1,1,-1,-1,-1,-1,1,1,-1,-1,1,-1,1,-1,1,-1,-1,1,-1,1,1,1,-1,1,-1,1,1,1,1,1,
         -1,-1,1,-1,-1,-1,-1,1,-1,-1,-1,1,-1,1,-1,-1,1,1,1,-1,-1,1,-1,1,1,1,1,1,-1,-1,1,1,1,1,1,-1,
@@ -1481,16 +1477,10 @@
     gl.bindVertexArray(buildingVao);gl.bindBuffer(gl.ARRAY_BUFFER,buildingBuf);gl.bufferData(gl.ARRAY_BUFFER,cubeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
     const edgeVao=gl.createVertexArray(),edgeBuf=gl.createBuffer();
     gl.bindVertexArray(edgeVao);gl.bindBuffer(gl.ARRAY_BUFFER,edgeBuf);gl.bufferData(gl.ARRAY_BUFFER,edgeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
-    for(let z=-11;z<=11;z++)for(let x=-11;x<=11;x++){
-        if(ABS(x)<2&&ABS(z)<2||cityHash(x,z)<.28)continue;
-        const w=8+cityHash(x,z,1)*4,d=8+cityHash(x,z,2)*4,h=6+cityHash(x,z,3)*26,b={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w,d,h};
-        buildings.push(b);obstacles.push({x:b.x,y:.8,z:b.z,r:MIN(w,d)*.43,_isBuilding:true});
-    }
-    resetCats();
+    updateCity();resetCats();
     function drawCity(V,P){
         gl.useProgram(PC);gl.uniformMatrix4fv(uS_V,false,V);gl.uniformMatrix4fv(uS_P,false,P);
-        // Ground and buildings share the general colored-mesh shader.
-        gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,0,0,0,1);gl.bindVertexArray(groundVao);gl.drawArrays(gl.TRIANGLES,0,6);
+        //gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,0,0,0,1);gl.bindVertexArray(groundVao);gl.drawArrays(gl.TRIANGLES,0,6);
         for(const b of buildings){
             // Draw each building as a white cube scaled to its width, height, and depth.
             gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2,b.h/2,b.d/2));gl.uniform4f(uS_Color,.05,.05,.05,1);gl.bindVertexArray(buildingVao);gl.drawArrays(gl.TRIANGLES,0,36);

@@ -299,7 +299,7 @@
         }
         if(payload[0]==='s'&&payload[1]==='|'){
             const p=payload.split('|');
-            if(p[1]!==myId){remoteShots.push({o:p[1],x:+p[2],y:.7,z:+p[3],vx:+p[4],vz:+p[5],r:+p[6],d:+p[7]||1,i:+p[8],t:3});playShotSound(+p[2],+p[3]);}
+            if(p[1]!==myId){remoteShots.push({o:p[1],x:+p[2],y:.7,z:+p[3],vx:+p[4],vz:+p[5],d:+p[6]||1,i:+p[7],t:3});playShotSound(+p[2],+p[3]);}
         }
         if(payload[0]==='x'&&payload[1]==='|'){const p=payload.split('|'),a=p[1]===myId?shots:remoteShots;for(let i=a.length;i--;)if(a[i].i===+p[2]&&(p[1]===myId||a[i].o===p[1]))a.splice(i,1);}
     }
@@ -313,7 +313,7 @@
         if (mmoSendTimer >= .1){ // ~10 Hz
             mmoSendTimer = 0;
             // compact broadcast with our id
-            const msg = 'p|' + myId + '|' + u.x.toFixed(2) + '|' + u.z.toFixed(2) + '|' + u.yaw.toFixed(3)+'|'+orbCount+'|'+orbSize.toFixed(2)+'|'+orbSpeed.toFixed(2)+'|'+(skillTime*orbSpeed).toFixed(2)+'|'+damage+'|'+orbRadius.toFixed(2);
+            const msg = 'p|' + myId + '|' + u.x.toFixed(2) + '|' + u.z.toFixed(2) + '|' + u.yaw.toFixed(3)+'|'+orbCount+'|'+orbSize.toFixed(2)+'|'+(skillTime%30<15?orbSpeed:-orbSpeed).toFixed(2)+'|'+orbAngle.toFixed(2)+'|'+damage+'|'+orbRadius.toFixed(2);
             sendMMO(msg);
         }
         enemySendTimer+=dt;
@@ -682,8 +682,8 @@
         ['VIOLET','#8e24aa',[.55,.04,.75]]
     ];
     const powerTier=n=>MIN(6,(n-1)/3|0),powerValue=t=>t+1;
-    let skillTime=0,level=1,xp=0,choosing=0,orbCount=0,orbSize=.25,orbRadius=2.3,orbSpeed=2,catVersion=0,
-        boltCount=1,boltRate=3,boltSize=.2,boltTime=0,shotId=0,damage=1,moveSpeed=3,regen=0,choices=[],seed=Date.now()|0,hp=100,maxHp=100;
+    let skillTime=0,orbAngle=0,level=1,xp=0,choosing=0,orbCount=0,orbSize=.25,orbRadius=2.3,orbSpeed=2,catVersion=0,
+        boltCount=1,boltRate=3,boltTime=0,shotId=0,damage=1,moveSpeed=3,regen=0,choices=[],seed=Date.now()|0,hp=100,maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
     function placeCat(c){
         let a,r,ok;
@@ -710,12 +710,12 @@
         for(let i=MIN(40,3+level*2);i--;)cats.push(placeCat({i:cats.length}));
     }
     function resetRun(){
-        level=1;xp=choosing=orbCount=cat.caught=skillTime=boltTime=0;
-        orbSize=.25;orbRadius=2.3;orbSpeed=2;boltCount=damage=1;boltRate=4;boltSize=.2;moveSpeed=3;regen=0;maxHp=hp=100;
+        level=1;xp=choosing=orbCount=cat.caught=skillTime=orbAngle=boltTime=0;
+        orbSize=.25;orbRadius=2.3;orbSpeed=2;boltCount=damage=1;boltRate=4;moveSpeed=3;regen=0;maxHp=hp=100;
         items.length=damageNumbers.length=0;choices=[];hudPage=0;u.x=0;u.z=2;resetCats();log(mmoEnabled?'MMO run started':'Run ended');
     }
     function rollChoices(){
-        const tier=()=>{let t=0,cap=MIN(6,1+(level/3|0));while(t<cap&&rng()<.4)t++;return t;},pool=orbCount?[0,1,2,3,4,5,6,7,8,9]:[3,4,5,6,7,8,9];
+        const tier=()=>{let t=0,cap=MIN(6,1+(level/3|0));while(t<cap&&rng()<.4)t++;return t;},pool=orbCount?[0,1,2,3,4,5,6,7,8]:[3,4,5,6,7,8];
         choices=orbCount?[]:[[0,tier()]];
         while(choices.length<3){const a=pool[rng()*pool.length|0];if(!choices.some(c=>c[0]===a))choices.push([a,tier()]);}
         for(let i=3;i--;){const c=choices[i];UI_LEVEL[i][4]=POWER[c[1]][0]+'|'+cardText(c[0],powerValue(c[1]));UI_LEVEL[i][6]=c[1];}
@@ -723,14 +723,15 @@
     }
     function upgrade(c){
         const n=c[0],p=powerValue(c[1]);
-        n===0?orbCount+=p:n===1?(orbRadius*=1+p*.15,orbSize*=1+p*.03):n===2?orbSpeed*=1+p*.15:n===3?boltCount+=p:n===4?moveSpeed*=1+p*.1:n===5?boltRate=MAX(.15,boltRate*(1-p*.1)):n===6?boltSize*=1+p*.2:n===7?(maxHp+=p*20,hp=MIN(maxHp,hp+p*20)):n===8?damage+=p:regen+=p/10;
+        n===0?orbCount+=p:n===1?(orbRadius*=1+p*.15,orbSize*=1+p*.03):n===2?orbSpeed*=1+p*.15:n===3?boltCount+=p:n===4?moveSpeed*=1+p*.1:n===5?boltRate=MAX(.15,boltRate*(1-p*.1)):n===6?(maxHp+=p*20,hp=MIN(maxHp,hp+p*20)):n===7?damage+=p:regen+=p/10;
         xp-=level++*3;choosing=0;hudPage=0;
         while(cats.length<MIN(40,3+level*2))cats.push(placeCat({i:cats.length}));
         if(xp>=level*3)rollChoices();
     }
     function dropXP(x,z,t=0){
         items.push({x,y:.16,z,r:.4,t});
-        if(items.length>100)items.shift();
+        // number of items in the world
+        if(items.length>1000)items.shift();
     }
     function dropLoot(x,z){const r=rng();dropXP(x,z,r<.02?2:r<.08?1:0);}
     function damageNumber(x,z,n){damageNumbers.push({x,y:1.4,z,n:ROUND(n),t:1});}
@@ -745,7 +746,7 @@
         placeCat(c);//log(`Cat defeated #${++cat.caught}`);
     }
     function updateEnemies(dt){
-        skillTime+=dt;
+        skillTime+=dt;orbAngle+=dt*orbSpeed*(skillTime%30<15?1:-1);
         for(const c of cats){
             let tx=u.x,tz=u.z,best=(tx-c.x)**2+(tz-c.z)**2,now=performance.now(),self=1;
             peers.forEach(p=>{const q=(p.x-c.x)**2+(p.z-c.z)**2;if(now-p.last<15000&&q<best){best=q;tx=p.x;tz=p.z;self=0;}});
@@ -775,7 +776,7 @@
                 continue;
             }
             if(c.h<0)for(let i=orbCount;i--;){
-                const a=skillTime*orbSpeed+i*PI*2/orbCount,ox=u.x+COS(a)*orbRadius,oz=u.z+SIN(a)*orbRadius;
+                const a=orbAngle+i*PI*2/orbCount,ox=u.x+COS(a)*orbRadius,oz=u.z+SIN(a)*orbRadius;
                 if((c.x-ox)**2+(c.z-oz)**2<(.5+orbSize)**2){
                     hurt(c,damage,myId);c.h=.5;break;
                 }
@@ -804,7 +805,7 @@
     // -- MODULE: Gameplay-Projectile-Simulation --
     // Shared local/remote simulation is both clearer and smaller in the measured PPMd ZIP.
     function updateProjectiles(list,dt,remote){
-        for(let i=list.length;i--;){const s=list[i],r=remote?s.r:boltSize;s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
+        for(let i=list.length;i--;){const s=list[i],r=.2;s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
             if(insideBuilding(s.x,s.z,r)){list.splice(i,1);continue;}
             for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+r)**2){hurt(c,s.d,remote?s.o:myId);if(remote||myId)sendMMO(`x|${remote?s.o:myId}|${s.i}`);s.t=0;break;}
             if(!remote&&s.t>0)remoteHit:for(const [owner,group] of remoteCats)for(const c of group.values())if(!c.dead&&(c.x-s.x)**2+(c.z-s.z)**2<(.5+r)**2){playHitSound(c.x,c.z);s.t=0;break remoteHit;}
@@ -823,7 +824,7 @@
             for(let i=boltCount;i--;){
                 const a=aim+(i-(boltCount-1)/2)*.18;
                 const s={x:u.x,y:.7,z:u.z,vx:SIN(a)*10,vz:COS(a)*10,d:damage,i:++shotId,t:3};shots.push(s);
-                if(myId)sendMMO(`s|${myId}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.vx.toFixed(2)}|${s.vz.toFixed(2)}|${boltSize.toFixed(2)}|${s.d}|${s.i}`);
+                if(myId)sendMMO(`s|${myId}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.vx.toFixed(2)}|${s.vz.toFixed(2)}|${s.d}|${s.i}`);
             }
             playShotSound();
         }
@@ -1099,7 +1100,7 @@
     ], UI_LEVEL=[
         [.025,.28,.325,.56,'+ ORB',20],[.35,.28,.65,.56,'EXPAND',21],[.675,.28,.975,.56,'FASTER',22]
     ];
-    function cardText(n,p){return n===0?`+${p} ORB${p>1?'S':''}`:n===1?`+${p*15}% ORBIT SIZE`:n===2?`+${p*15}% ORB SPEED`:n===3?`+${p} BOLT${p>1?'S':''}`:n===4?`+${p*10}% MOVE`:n===5?`-${p*10}% COOLDOWN`:n===6?`+${p*20}% BOLT SIZE`:n===7?`+${p*20} MAX HEALTH`:n===8?`+${p} DAMAGE`:`+${p/10} HP/SEC`;}
+    function cardText(n,p){return n===0?`+${p} ORB${p>1?'S':''}`:n===1?`+${p*15}% ORBIT SIZE`:n===2?`+${p*15}% ORB SPEED`:n===3?`+${p} BOLT${p>1?'S':''}`:n===4?`+${p*10}% MOVE`:n===5?`-${p*10}% COOLDOWN`:n===6?`+${p*20} MAX HEALTH`:n===7?`+${p} DAMAGE`:`+${p/10} HP/SEC`;}
 
     // INVENTORY HUD disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
     function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
@@ -1591,7 +1592,7 @@
     // -- MODULE: Scene-World-Renderer --
     function drawWorld(V, P, W, t, dt, vr) {
         drawCity(V,P);
-        const now=performance.now(),tt=t*.001,br=boltSize*.72,live=c=>!c.dead&&now-c.last<15000;
+        const now=performance.now(),tt=t*.001,br=.144,live=c=>!c.dead&&now-c.last<15000;
         // -- MODULE: Scene-XP-Mesh --
         // Mesh and ghost loops intentionally remain separate: a shared pass helper is larger.
         for(const i of items)if(i.r>0){const a=tt*7+i.x*2+i.z,r=.14+SIN(a)*.025;i.t===2?(drawSphere(V,P,i.x-.08,i.y,i.z,r,POWER[0][2]),drawSphere(V,P,i.x+.08,i.y,i.z,r,POWER[5][2])):drawSphere(V,P,i.x,i.y,i.z,r,i.t===1?POWER[3][2]:WHITE);}
@@ -1603,7 +1604,7 @@
         // -- MODULE: Scene-Projectile-Trail --
         // Intentional duplication: these similar loops produce a smaller PPMd ZIP than a shared helper.
         for(const s of shots)for(let j=3;j--;){const k=j+1;drawSphere(V,P,s.x-s.vx*.065*k,s.y,s.z-s.vz*.065*k,br*(1-j*.12),[1,1,1,.2/k]);}
-        for(const s of remoteShots)for(let j=3;j--;){const k=j+1;drawSphere(V,P,s.x-s.vx*.065*k,s.y,s.z-s.vz*.065*k,s.r*.72*(1-j*.12),[1,1,1,.2/k]);}
+        for(const s of remoteShots)for(let j=3;j--;){const k=j+1;drawSphere(V,P,s.x-s.vx*.065*k,s.y,s.z-s.vz*.065*k,br*(1-j*.12),[1,1,1,.2/k]);}
         // -- /MODULE: Scene-Projectile-Trail --
         // -- MODULE: Scene-Enemy --
         // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
@@ -1619,17 +1620,17 @@
         // -- MODULE: Scene-Projectile-Mesh --
         gl.depthMask(false);
         for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,br*1.14,WHITE);
-        for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,s.r*.82,WHITE);
+        for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,.164,WHITE);
         gl.depthMask(true);
         for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,br,BLACK);
-        for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,s.r*.72,BLACK);
+        for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,br,BLACK);
         // -- /MODULE: Scene-Projectile-Mesh --
         // -- MODULE: Scene-Orb-Mesh --
         // Local and peer loops intentionally repeat: PPMd compresses them smaller than a shared renderer.
         gl.depthMask(false);
-        for(let i=orbCount;i--;){const a=skillTime*orbSpeed+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*orbRadius,.7,u.z+SIN(a)*orbRadius,orbSize*1.08,WHITE);}
+        for(let i=orbCount;i--;){const a=orbAngle+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*orbRadius,.7,u.z+SIN(a)*orbRadius,orbSize*1.08,WHITE);}
         gl.depthMask(true);
-        for(let i=orbCount;i--;){const a=skillTime*orbSpeed+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*orbRadius,.7,u.z+SIN(a)*orbRadius,orbSize,BLACK);}
+        for(let i=orbCount;i--;){const a=orbAngle+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*orbRadius,.7,u.z+SIN(a)*orbRadius,orbSize,BLACK);}
         // -- /MODULE: Scene-Orb-Mesh --
         if (peers && peers.size) {
             const now = performance.now(), target = now - 120;
@@ -1699,7 +1700,7 @@
         //navigator.xr.isSessionSupported('immersive-vr').then(s => log(s ? 'VR ready: Click Enter VR button' : 'VR error: reload and try again'));
         navigator.xr.isSessionSupported('immersive-vr').then(s => log(s ? 'VR ready: Click Enter VR' : 'VR not supported')).catch(e => log('VR check failed: '+e.message));
     }
-    // if vr not avalable we split screen in to stereo view
+    // if vr not avalable we split screen in to stereo view some day
 
     // Toggles an immersive VR session
     async function toggleXRFromUI() {

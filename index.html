@@ -60,7 +60,7 @@
     #L { bottom: 36px; left: 36px; }
     #R { bottom: 36px; right: 36px; }
 
-    #chatInput { position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0 }
+    /* CHAT disabled: #chatInput { position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0 } */
 
         /* Media query to show joysticks only on touch-capable (coarse pointer) devices */
         @media (pointer:coarse) {
@@ -77,7 +77,7 @@
     <div id="L" class="j"><div class="jh"></div></div>
     <div id="R" class="j"><div class="jh"></div></div>
     <!-- <input id="chatInput" maxlength="64" /> -->
-    <input id="chatInput" maxlength="64" autocomplete="off" />
+    <!-- CHAT disabled: <input id="chatInput" maxlength="64" autocomplete="off" /> -->
 
     <script>
     // -- FEATURE: Core --
@@ -132,7 +132,7 @@
     // const D = document
     // const canvas = D.getElementById('canvas');
     const canvas = document.getElementById('C');
-    const chatInput = document.getElementById('chatInput');
+    // CHAT disabled: const chatInput = document.getElementById('chatInput');
     
     // State variables for the user/camera, rendering loop, and WebGL/WebXR contexts
      let player = { x: 0, y: 1.6, z: 2, yaw: 0, pitch: .2 }; // User position and orientation
@@ -201,7 +201,7 @@
         return history[count-1];
     }
 
-    function logMMO(message){ log('MMO: '+message); }
+    // LOG disabled: function logMMO(message){ log('MMO: '+message); }
     function sendMMO(message){try{if(ws?.readyState===1)ws.send(message);}catch(_){}}
 
     function toggleMMO(){
@@ -213,23 +213,24 @@
         try { if (ws) ws.close(); } catch(_){}
         ws = null; myId = null; peers.clear();remoteEnemies.clear();remoteShots.length=0;
         mmoSendTimer=enemySendTimer=0;
-        logMMO('disabled');
+        // LOG disabled: logMMO('disabled');
     }
 
     function connectMMO(){
         if (ws) try { ws.close(); } catch(_){}
-        logMMO('connecting…');
+        // LOG disabled: logMMO('connecting…');
         try {
             ws = new WebSocket(MMO_URL);
         } catch (error) {
-            logMMO('WebSocket error: ' + error.message);
+            // LOG disabled: logMMO('WebSocket error: ' + error.message);
             return;
         }
-        // send a "cat!" on open to register
-        // could be extended to send a name/color/etc
-        ws.onopen = _ => { try { ws.send('cat!'); } catch(_){} logMMO('connected'); };
-        ws.onclose = _ => { logMMO('closed'); ws=null;myId=null;peers.clear();remoteEnemies.clear();remoteShots.length=0;if(mmoEnabled)setTimeout(connectMMO,1000); };
-        ws.onerror = _ => { /* errors surface via close */ };
+        // Relay assigns the client ID automatically; no opening payload is required.
+        // Unneeded relay payload disabled: ws.onopen = _ => { try { ws.send('cat!'); } catch(_){} logMMO('connected'); };
+        // LOG disabled: ws.onopen=_=>logMMO('connected');
+        // LOG disabled: ws.onclose = _ => { logMMO('closed'); ws=null;myId=null;peers.clear();remoteEnemies.clear();remoteShots.length=0;if(mmoEnabled)setTimeout(connectMMO,1000); };
+        ws.onclose=_=>{ws=null;myId=null;peers.clear();remoteEnemies.clear();remoteShots.length=0;if(mmoEnabled)setTimeout(connectMMO,1000)};
+        // OPTIONAL handler disabled: ws.onerror = _ => { /* errors surface via close */ };
         ws.onmessage = ev => handleMMOMessage(ev.data);
     }
     // -- /MODULE: MMO-Connection --
@@ -239,16 +240,21 @@
         if(typeof message!=='string')return;
         const command=message[0];
         switch(command){
-            case '@':myId=message.slice(1);logMMO('my id: '+myId);return;
+            // LOG disabled: case '@':myId=message.slice(1);logMMO('my id: '+myId);return;
+            case '@':myId=message.slice(1);return;
             case '+':{const id=message.slice(1);if(id&&!peers.has(id))peers.set(id,{x:0,z:0,yaw:0,last:0,hist:[],oh:[]});return;}
             case '-':{const id=message.slice(1);peers.delete(id);remoteEnemies.delete(id);for(let i=remoteShots.length;i--;)if(remoteShots[i].o===id)remoteShots.splice(i,1);return;}
         }
-        // Strip optional direct prefix @targetId|payload -> payload
+        /* DIRECT MMO compatibility disabled to save bytes.
+        Restore this block and remove `const payload=message` below if older clients
+        send targeted messages in the form @targetId|payload.
         let payload=message;
         if (payload[0] === '@'){
             const bar = payload.indexOf('|');
             if (bar > 0) payload = payload.slice(bar+1);
         }
+        */
+        const payload=message;
         // Expected: p|id|x|z|yaw|orbs|orbPhase|damage
         if (payload[0] === 'p' && payload[1] === '|'){
             const parts = payload.split('|');
@@ -275,10 +281,12 @@
                 }
             }
         }
+        /* MMO CHAT disabled:
         if (payload[0] === 'c' && payload[1] === '|'){
             const parts = payload.split('|'), id = parts[1];
             if (id !== myId) say((id || '?').slice(-4) + ': ' + parts.slice(2).join('|').slice(0,64));
         }
+        */
         if (payload[0] === 'e' && payload[1] === '|'){
             const parts=payload.split('|'),
                 owner=parts[1];
@@ -467,14 +475,14 @@
     // -- MODULE: Input-Keyboard-Pointer --
     // Keyboard event listeners for movement and HUD toggle
     document.addEventListener('keydown', event => {
-        if (event.target === chatInput) return;
+        // CHAT disabled: if (event.target === chatInput) return;
         initAudio();
         const key=event.code;
         input.keys[key]=true;
         if(key.startsWith('Arrow'))event.preventDefault();
-        if(!event.repeat&&key==='Enter'){event.preventDefault();setChat(true);return;}
+        // CHAT disabled: if(!event.repeat&&key==='Enter'){event.preventDefault();setChat(true);return;}
         // INVENTORY HUD disabled: if (!event.repeat && key === 'KeyF') { hudVisible=true;hudPage=2;return; }
-        if(!event.repeat&&key==='KeyC'){setChat(true);return;}
+        // CHAT disabled: if(!event.repeat&&key==='KeyC'){setChat(true);return;}
         if(!event.repeat&&key==='KeyZ'){hudVisible=true;hudPage=3;return;}
         if(!event.repeat&&choosing&&/^(Digit|Numpad)[1-3]$/.test(key)){
             event.preventDefault();playClickSound();upgrade(choices[+key.slice(-1)-1]);return;
@@ -803,14 +811,14 @@
     }
     function spawnEnemy(enemy){
         let angle,radius,valid;
-        // Try up to ten positions before accepting the final candidate.
+        // Keep new enemies at least 50 units away from active peers.
         for(let attempts=10;attempts--;){
             angle=rng()*PI*2;
             radius=50+rng()*25; // distance from the player, between 50 and 75 units
             enemy.x=player.x+COS(angle)*radius;
             enemy.z=player.z+SIN(angle)*radius;
             valid=1;
-            peers.forEach(peer=>valid&=(peer.x-enemy.x)**2+(peer.z-enemy.z)**2>64);
+            peers.forEach(peer=>valid&=HYPOT(peer.x-enemy.x,peer.z-enemy.z)>=50);
             valid&=!insideBuilding(enemy.x,enemy.z,.6);
             if(valid)break;
         }
@@ -854,7 +862,7 @@
         player.x=0;
         player.z=2;
         resetEnemies();
-        log(mmoEnabled?'MMO run started':'Run ended');
+        // LOG disabled: log(mmoEnabled?'MMO run started':'Run ended');
     }
     function rollChoices(){
         const rollTier=()=>{
@@ -943,7 +951,9 @@
             const px=enemy.x,pz=enemy.z;
             enemy.x+=enemy.vx*dt;enemy.z+=enemy.vz*dt;
             const cityHit=resolveCityCollision(enemy,.45,px,pz);
-            if(cityHit&1)enemy.vx=0;if(cityHit&2)enemy.vz=0;
+            // Preserve a strong tangential component so direct pursuit cannot pin enemies to walls.
+            if(cityHit&1){enemy.vx=0;enemy.vz+=(SIGN(enemy.z-building.z)||(enemy.i&1?1:-1))*maxSpeed;}
+            if(cityHit&2){enemy.vz=0;enemy.vx+=(SIGN(enemy.x-building.x)||(enemy.i&1?1:-1))*maxSpeed;}
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
             enemy.hit-=dt;enemy.h-=dt;
@@ -976,9 +986,9 @@
         remoteEnemies.forEach((group,owner)=>group.forEach(enemy=>{
             if(now-enemy.last>15000||enemy.dead)return;
             const interpolation=MIN(1,dt*8);enemy.x=lerp(enemy.x,enemy.tx,interpolation);enemy.z=lerp(enemy.z,enemy.tz,interpolation);enemy.yaw=lerpAngle(enemy.yaw||enemy.tyaw,enemy.tyaw,interpolation);enemy.hit-=dt;
-            let dx=player.x-enemy.x,dz=player.z-enemy.z,distance=HYPOT(dx,dz)||1;
-            if(distance<.6+enemy.scale*.6&&enemy.hit<0){
-                player.x+=dx/distance*(2+enemy.tier*.2);player.z+=dz/distance*(2+enemy.tier*.2);hp-=enemy.max;enemy.hit=1;playHurtSound();
+            if((player.x-enemy.x)**2+(player.z-enemy.z)**2<(.6+enemy.scale*.6)**2&&enemy.hit<0){
+                // KNOCKBACK disabled: let dx=player.x-enemy.x,dz=player.z-enemy.z,distance=HYPOT(dx,dz)||1;player.x+=dx/distance*(2+enemy.tier*.2);player.z+=dz/distance*(2+enemy.tier*.2);
+                hp-=enemy.max;enemy.hit=1;playHurtSound();
                 sendMMO(`k|${owner}|${enemy.i}|${enemy.v}`);
                 if(hp<1)resetRun();
             }
@@ -1024,14 +1034,14 @@
             boltTime=boltRate;
             let target=enemies[0],best=1e9;
             for(const enemy of enemies){
-                const distance=(enemy.x-player.x)**2+(enemy.z-player.z)**2;
+                const distance=HYPOT(enemy.x-player.x,enemy.z-player.z);
                 if(distance<best){
                     best=distance;
                     target=enemy;
                 }
             }
             remoteEnemies.forEach(group=>group.forEach(enemy=>{
-                const distance=(enemy.x-player.x)**2+(enemy.z-player.z)**2;
+                const distance=HYPOT(enemy.x-player.x,enemy.z-player.z);
                 if(!enemy.dead&&performance.now()-enemy.last<15000&&distance<best){
                     best=distance;
                     target=enemy;
@@ -1142,9 +1152,11 @@
         const finger=extended(index,indexBase)?[index,indexBase]:extended(thumb,thumbBase)?[thumb,thumbBase]:0;
         if(!finger||curled<3){pointStarted.delete(source);return null;}
         const now=performance.now(),started=pointStarted.get(source);
-        // OPTIONAL: gesture debug feedback only.
-        if(started===undefined){pointStarted.set(source,now);log('POINT '+source.handedness);return null;}
-        if (now-started < 150) return null;
+        // OPTIONAL: gesture debug feedback
+        // if(started===undefined){pointStarted.set(source,now);log('POINT '+source.handedness);return null;}
+        if(started===undefined){pointStarted.set(source,now);return null;}
+        // if (now-started < 150) return null;
+        if (now-started < 100) return null;
         // FINGERTIP STEERING: use the proximal-to-tip vector and reject mostly vertical pointing.
         const tip=position(finger[0]),basePosition=position(finger[1]),dx=tip.x-basePosition.x,dy=tip.y-basePosition.y,dz=tip.z-basePosition.z,horizontal=HYPOT(dx,dz);
         if(horizontal<HYPOT(dx,dy,dz)*.35)return null;
@@ -1173,7 +1185,8 @@
         // VR gamepad input
         if (session) {
             for (const source of session.inputSources) {
-                const left=source.handedness===(opts[5]?'right':'left'),handMove=handPointMove(frame,source);
+                // CHAT disabled: const left=source.handedness===(opts[5]?'right':'left'),handMove=handPointMove(frame,source);
+                const left=source.handedness===(opts[4]?'right':'left'),handMove=handPointMove(frame,source);
                 if (handMove) {
                     if (left) vt=-handMove.x;
                     else { vx=handMove.x;vy=handMove.y; }
@@ -1248,7 +1261,8 @@
         localOutput,
         lastKillSound=0,
         lastHitSound=0,
-        opts=[0,0,1,1,1,0];
+        // CHAT disabled: opts=[0,0,1,1,1,0];
+        opts=[0,0,1,1,0];
 
     function initAudio(){
         if(!audioContext){
@@ -1294,7 +1308,9 @@
         y,
         z
     ){
-        if(!audioContext||!opts[3])return;
+        // CHAT disabled: if(!audioContext||!opts[3])return;
+        // if(!audioContext||!opts[2]||x!==undefined&&HYPOT(x-player.x,z-player.z)>60)return;
+        if(!audioContext||!opts[2])return;
 
         const startTime=audioContext.currentTime+delay,
             oscillator=audioContext.createOscillator(),
@@ -1313,8 +1329,7 @@
         else{
             const panner=audioContext.createPanner();
             panner.panningModel='HRTF';
-            panner.refDistance=3;
-            panner.rolloffFactor=.35;
+            panner.distanceModel='linear';
             panner.maxDistance=60;
             panner.positionX.value=x;
             panner.positionY.value=y;
@@ -1329,7 +1344,8 @@
         playSound(520,.05,.08,'square',260);
     }
     function playShotSound(x=player.x,z=player.z){
-        if(opts[4]){
+        // CHAT disabled: if(opts[4]){
+        if(opts[3]){
             playSound(880,.1,.07,'square',180,0,.005,x,.7,z);
             playSound(1760,.05,.025,'sine',440,0,.005,x,.7,z);
         }
@@ -1384,33 +1400,32 @@
 
     // -- MODULE: Scene-HUD --
     // -- PART: State-Layout --
-    const LOG = [], CHAT = [];
-    let logScroll = 0, hudVisible = true, hudPage = 0, chatText = '';
+    // CHAT disabled: const LOG = [], CHAT = [];
+    // LOG disabled: const LOG=[];
+    // CHAT disabled: let logScroll = 0, hudVisible = true, hudPage = 0, chatText = '';
+    let hudVisible=true,hudPage=0;
     let HUD_WH_world = M4(), hoverBtn = null;
 
     // --- HUD COLOR PALETTE ---
     // UI_PANEL: large panel/chat background. UI_BUTTON: every button/card background.
-    // UI_HOVER: hovered button/card. UI_TEXT: primary text/borders. UI_MUTED: secondary text.
-    const UI_PANEL='#000d',UI_BUTTON='#333',UI_HOVER='#666',UI_TEXT='#fff',UI_MUTED='#999';
+    // UI_HOVER: hovered button/card. UI_TEXT: primary text/borders.
+    // MUTED TEXT disabled: const UI_PANEL='#000d',UI_BUTTON='#333',UI_HOVER='#666',UI_TEXT='#fff',UI_MUTED='#999';
+    const UI_PANEL='#000d',UI_BUTTON='#333',UI_HOVER='#666',UI_TEXT='#fff';
     // Bar accents: HP is green and XP is yellow; their empty tracks stay black.
     // Upgrade card borders and titles separately use their POWER tier color below.
     const HP_COLOR='#2a2',HP_BACK='#252',XP_COLOR='#aa2',XP_BACK='#552';
 
-    function log(message) { LOG.push(message); LOG.length > 200 && LOG.shift(); logScroll = 0; }
-    function say(message) { log(message); CHAT.push(message); CHAT.length > 4 && CHAT.shift(); }
+    // CHAT disabled: function log(message) { LOG.push(message); LOG.length > 200 && LOG.shift(); logScroll = 0; }
+    // LOG disabled: function log(message){LOG.push(message);LOG.length>200&&LOG.shift()}
+    // CHAT disabled: function say(message) { log(message); CHAT.push(message); CHAT.length > 4 && CHAT.shift(); }
 
     let uiEnterLabel = 'ENTER VR';
-    // u0,v0,u1,v1,label,action
-    const UI_MAIN = [
-        [.66,.16,.96,.28,'SETTINGS',13],
-        // [.66,.34,.96,.46,'INVENTORY',12], // INVENTORY HUD disabled
-        [.66,.52,.96,.64,'CHAT',3],
-        [.66,.82,.96,.94,'CLOSE',6]
-    ], UI_TAB = [[.4,0,.6,.12,'MENU',7]], CHAT_NAV=[
+    /* VR/desktop CHAT input disabled:
+    const CHAT_NAV=[
         [.66,.62,.80,.72,'UP',4],[.82,.62,.96,.72,'DOWN',5]
     ], KEY_NAV=[
         [.66,.375,.80,.46,'UP',4],[.82,.375,.96,.46,'DOWN',5]
-    ], UI_KEYS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((character,i)=>{
+    ], UI_KEYS=[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((character,i)=>{
         const x=.03+i%9*.07,y=.48+(i/9|0)*.14;
         return [x,y,x+.06,y+.11,character,character];
     }).concat([
@@ -1418,13 +1433,24 @@
         [.68,.62,.96,.73,'BACK',8],
         [.65,.85,.81,.93,'SEND',10],
         [.82,.85,.96,.93,'CANCEL',11]
-    ]).concat(KEY_NAV), UI_CHAT=CHAT_NAV.concat(UI_KEYS.slice(28,30)), UI_BACK=[
+    ]).concat(KEY_NAV), UI_CHAT=CHAT_NAV.concat(UI_KEYS.slice(28,30));
+    */
+    // u0,v0,u1,v1,label,action
+    const UI_MAIN = [
+        [.66,.16,.96,.28,'SETTINGS',13],
+        // [.66,.34,.96,.46,'INVENTORY',12], // INVENTORY HUD disabled
+        // CHAT disabled: [.66,.52,.96,.64,'CHAT',3],
+        [.66,.82,.96,.94,'CLOSE',6]
+    ], UI_TAB = [[.4,0,.6,.12,'MENU',7]], UI_BACK=[
         [.66,.85,.96,.95,'BACK',17]
     ], UI_SETTINGS=[
         [.06,.15,.48,.26,'',2],[.52,.15,.94,.26,'',1],
-        [.06,.31,.48,.42,'AUDIO',17],[.52,.31,.94,.42,'SWAP HANDS',19],
-        [.06,.47,.48,.58,'SHOTS',18],[.52,.47,.94,.58,'INVERT X',14],
-        [.06,.63,.48,.74,'CLOSED CHAT',16],[.52,.63,.94,.74,'INVERT Y',15],
+        // CHAT disabled: [.06,.31,.48,.42,'AUDIO',17],[.52,.31,.94,.42,'SWAP HANDS',19],
+        [.06,.31,.48,.42,'AUDIO',16],[.52,.31,.94,.42,'SWAP HANDS',18],
+        // CHAT disabled: [.06,.47,.48,.58,'SHOTS',18],[.52,.47,.94,.58,'INVERT X',14],
+        [.06,.47,.48,.58,'SHOTS',17],[.52,.47,.94,.58,'INVERT X',14],
+        // CHAT disabled: [.06,.63,.48,.74,'CLOSED CHAT',16],
+        [.52,.63,.94,.74,'INVERT Y',15],
         [.06,.82,.94,.94,'BACK',0]
     ], UI_LEVEL=[
         [.025,.28,.325,.56,'+ ORB',20],
@@ -1446,10 +1472,12 @@
     }
 
     // INVENTORY HUD disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
-    function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
+    // CHAT disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
+    function currentUI(){return choosing?UI_LEVEL:!hudVisible?UI_TAB:hudPage===3?UI_SETTINGS:UI_MAIN}
     // -- /PART: State-Layout --
 
     // -- PART: Chat-Actions --
+    /* CHAT disabled:
     function setChat(open) {
         hudPage = open ? 1 : 0; chatText = ''; chatInput.value = ''; logScroll=0;
         if (open && !xr) { hudVisible = true; document.exitPointerLock?.(); chatInput.focus(); }
@@ -1461,30 +1489,34 @@
         if (!ws || ws.readyState !== 1 || !myId) return log('CHAT: MMO OFFLINE');
         ws.send('c|' + myId + '|' + message); say('YOU: ' + message); setChat(false);
     }
+    */
     function activate(action) {
         playClickSound();
         if(action>19)return upgrade(choices[action-20]);
-        if (typeof action === 'string') chatText = (chatText + action).slice(0,64);
-        else if (!action) hudPage=0;
+        // CHAT disabled: if (typeof action === 'string') chatText = (chatText + action).slice(0,64);
+        if (!action) hudPage=0;
         else if (action === 1) toggleXRFromUI();
         else if (action === 2) toggleMMO();
-        else if (action === 3) setChat(true);
-        else if (action === 4) logScroll=MIN(MAX(0,LOG.length-1),logScroll+1);
-        else if (action === 5) logScroll=MAX(0,logScroll-1);
-        else if (action === 6) { setChat(false);hudVisible=false; }
+        // CHAT disabled: else if (action === 3) setChat(true);
+        // CHAT disabled: else if (action === 4) logScroll=MIN(MAX(0,LOG.length-1),logScroll+1);
+        // CHAT disabled: else if (action === 5) logScroll=MAX(0,logScroll-1);
+        // CHAT disabled: else if (action === 6) { setChat(false);hudVisible=false; }
+        else if(action===6)hudVisible=false;
         else if (action === 7) hudVisible=true;
-        else if (action === 8) chatText=chatText.slice(0,-1);
-        else if (action === 10) sendChat();
-        else if (action === 11) setChat(false);
+        // CHAT disabled: else if (action === 8) chatText=chatText.slice(0,-1);
+        // CHAT disabled: else if (action === 10) sendChat();
+        // CHAT disabled: else if (action === 11) setChat(false);
         else if (action === 13) hudPage=3;
         else if (action>13) opts[action-14]^=1;
     }
+    /* CHAT disabled:
     chatInput.oninput = _ => chatText = chatInput.value.slice(0,64);
     chatInput.onkeydown = event => {
         event.stopPropagation();
         if(event.key==='Enter'){event.preventDefault();sendChat();}
         else if(event.key==='Escape')setChat(false);
     };
+    */
     // -- /PART: Chat-Actions --
 
     // -- PART: Transform-Picking --
@@ -1568,6 +1600,7 @@
                 }
             }
 
+            /* CLOSED CHAT UI disabled:
             // Keep the latest chat messages visible over the closed HUD.
             if (!choosing && opts[2] && CHAT.length) {
                 const lines = CHAT.slice(-3);
@@ -1581,6 +1614,7 @@
                     hudCtx.fillText(message.slice(0, 68), 28, 104 + i * 18)
                 );
             }
+            */
         } else {
             // Main panel and accent bar.
             // Open HUD main panel background and left grayscale border.
@@ -1593,6 +1627,7 @@
             hudCtx.textAlign = 'left';
             hudCtx.textBaseline = 'alphabetic';
             hudCtx.font = '20px system-ui';
+            /* CHAT disabled:
             hudCtx.fillText(
                 hudPage === 1 ? 'CHAT' :
                 // hudPage === 2 ? 'INVENTORY' : // INVENTORY HUD disabled
@@ -1601,12 +1636,15 @@
                 20,
                 34
             );
+            */
+            hudCtx.fillText(hudPage===3?'SETTINGS':'WILD CATCH',20,34);
 
             if(!hudPage)drawBars(44);
 
             hudCtx.font = '16px system-ui';
             hudCtx.fillStyle = UI_TEXT;
 
+            /* CHAT UI disabled:
             if (hudPage === 1) {
                 // Chat history and text entry field.
                 const lineCount=xr?4:11;
@@ -1634,7 +1672,9 @@
                     28,
                     iy + 20
                 );
-            } /* INVENTORY HUD disabled:
+            }
+            */
+            /* INVENTORY HUD disabled:
             else if (hudPage === 2) {
                 // Inventory placeholder.
                 hudCtx.fillStyle = UI_MUTED;
@@ -1642,7 +1682,8 @@
                 hudCtx.fillText('INVENTORY', 20, 82);
                 hudCtx.font = '14px monospace';
                 hudCtx.fillText('Items and equipment', 20, 112);
-            } */ else if (!hudPage) {
+            } */
+            if (!hudPage) {
                 // Main status page.
                 let peerCount = 0,
                     now = performance.now();
@@ -1653,20 +1694,20 @@
                 hudCtx.fillText(
                     `LEVEL ${level}   DEFEATED ${runStats.defeated}   ${timer}m`,20,102
                 );
-                hudCtx.fillStyle = mmoEnabled ? UI_TEXT : UI_MUTED;
+                // MUTED TEXT disabled: hudCtx.fillStyle = mmoEnabled ? UI_TEXT : UI_MUTED;
                 hudCtx.fillText(
                     `MMO ${mmoEnabled ? 'ON' : 'OFF'}   PLAYERS ${peerCount}`,20,126
                 );
-                hudCtx.fillStyle = UI_MUTED;
-                hudCtx.font = '14px monospace';
+                // LOG/MUTED TEXT disabled: hudCtx.fillStyle = UI_MUTED;
+                // LOG disabled: hudCtx.font = '14px monospace';
 
-                const lines = LOG.slice(
-                    MAX(0, LOG.length - 9 - logScroll),
-                    LOG.length - logScroll
-                );
+                /* LOG disabled:
+                // CHAT disabled: const lines=LOG.slice(MAX(0,LOG.length-9-logScroll),LOG.length-logScroll);
+                const lines=LOG.slice(-9);
                 lines.forEach((message, i) =>
                     hudCtx.fillText(message.slice(0, 48), 20, 158 + i * 17)
                 );
+                */
             }
 
             // Draw every button belonging to the active page.
@@ -1681,9 +1722,12 @@
                 hudCtx.fillStyle = hoverBtn === button ? UI_HOVER : UI_BUTTON;
                 hudCtx.fillRect(buttonX,buttonY,width,height);
                 hudCtx.fillStyle = UI_TEXT;
+                /* CHAT disabled:
                 hudCtx.font = (
                     (hudPage === 1 && xr) || button[2] - button[0] < .2 ? '13' : '16'
                 ) + 'px system-ui';
+                */
+                hudCtx.font=(button[2]-button[0]<.2?'13':'16')+'px system-ui';
                 hudCtx.textAlign = 'center';
                 hudCtx.textBaseline = 'middle';
                 hudCtx.fillText(
@@ -2041,13 +2085,14 @@
             uiEnterLabel = 'Exit VR';
 
             // OPTIONAL COMPATIBILITY: redundant when the context honors its existing xrCompatible:true flag.
-            await gl.makeXRCompatible();
+            // OPTIONAL compatibility disabled: await gl.makeXRCompatible();
             // Set up the XRWebGLLayer for the session
             // xr.updateRenderState({ baseLayer: new XRWebGLLayer(xr, gl)});
             xr.updateRenderState({ baseLayer: new XRWebGLLayer(xr, gl),depthNear:.2,depthFar:3000 }); // vr depth range
             // OPTIONAL FALLBACK: Quest supports local-floor; keep for other WebXR implementations.
             try { ref = await xr.requestReferenceSpace('local-floor'); }
-            catch (_) { ref = await xr.requestReferenceSpace('local'); log('XR floor unavailable; using local space'); }
+            // LOG disabled: catch (_) { ref = await xr.requestReferenceSpace('local'); log('XR floor unavailable; using local space'); }
+            catch(_){ref=await xr.requestReferenceSpace('local')}
 
             // WebXR select events cover controller triggers and hand pinches, including hand sources with no gamepad.
             xr.addEventListener('select', event => {
@@ -2056,7 +2101,7 @@
             });
             xr.addEventListener('selectstart',event=>selecting.add(event.inputSource));
             xr.addEventListener('selectend',event=>selecting.delete(event.inputSource));
-            // OPTIONAL DEBOUNCE CLEANUP: remove with pointStarted and its 150ms timing logic.
+            // OPTIONAL DEBOUNCE CLEANUP: remove with pointStarted and its 100ms timing logic.
             xr.addEventListener('inputsourceschange',event=>event.removed.forEach(source=>{pointStarted.delete(source);selecting.delete(source)}));
             
 
@@ -2083,7 +2128,7 @@
             resetEnemies();
 
         } catch (error) {
-            log('XR failed: ' + error.message);
+            // LOG disabled: log('XR failed: ' + error.message);
             // OPTIONAL ROBUSTNESS: safely recovers if XR setup fails after creating a session.
             // If setup failed after the session was created, close it and restart desktop rendering.
             if (xr) {
@@ -2160,9 +2205,10 @@
     (function main() {
         //initXR(); // OPTIONAL WebXR startup status preflight.
         requestAnimationFrame(loop);
-        log('Survive, collect XP, get upgrades');
-        log('MENU H/X  C CHAT  Z SETTINGS');
-        log('MOVE: WASD/QE or touch');
+        // LOG disabled: log('Survive, collect XP, get upgrades');
+        // CHAT disabled: log('MENU H/X  C CHAT  Z SETTINGS');
+        // LOG disabled: log('MENU H/X  Z SETTINGS');
+        // LOG disabled: log('MOVE: WASD/QE or touch');
     })();
     // -- /MODULE: Application-Startup --
     

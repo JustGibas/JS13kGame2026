@@ -83,42 +83,42 @@
     // -- FEATURE: Core --
     // -- MODULE: Core-Math --
     // Expose Math functions to global scope
-    Object.getOwnPropertyNames(Math).forEach(n => window[n.toUpperCase()] = Math[n]);
+    Object.getOwnPropertyNames(Math).forEach(name => window[name.toUpperCase()] = Math[name]);
     // --- Math Library ---
     const D2R = 0.0174532925 // or PI / 180;
     //const D2R = PI / 180;
     const F32 = Float32Array;
-    const M4 = (v) => new F32(v || [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
-    const V3 = (v) => new F32(v || 3);
+    const M4 = values => new F32(values || [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+    const V3 = values => new F32(values || 3);
     const T_V3_A = V3(), T_V3_B = V3(), T_V3_C = V3(); // Reusable temporary V3s
     const T_V4_A = V3(4), T_V4_B = V3(4); // Reusable temporary V4s
     const T_V3_RAY_O = V3(), T_V3_RAY_D = V3(); // For raycasting results (Origin, Direction)
-    const SUB=(t,n,r)=>(t[0]=n[0]-r[0],t[1]=n[1]-r[1],t[2]=n[2]-r[2],t);
-    const DOT=(t,n)=>t[0]*n[0]+t[1]*n[1]+t[2]*n[2];
-    const CROSS=(t,n,r)=>(t[0]=n[1]*r[2]-n[2]*r[1],t[1]=n[2]*r[0]-n[0]*r[2],t[2]=n[0]*r[1]-n[1]*r[0],t);
-    const LEN=(t)=>HYPOT(t[0],t[1],t[2]);
-    const NORM=(t,n)=>{var r=LEN(n);return r>0&&(t[0]=n[0]/r,t[1]=n[1]/r,t[2]=n[2]/r),t};
-    const MULTMAT4 = (o, a, b) => (o.set((new DOMMatrix(a)).multiply(new DOMMatrix(b)).toFloat32Array()), o);
-    const INV = (m) => (new DOMMatrix(m)).inverse().toFloat32Array();
-    const PERSP = (o, f, a, n, fa) => { const t = 1 / TAN(f * D2R / 2); o.set([t/a,0,0,0, 0,t,0,0, 0,0,(fa+n)/(n-fa),-1, 0,0,(2*fa*n)/(n-fa),0]); return o; };
-    const LOOKAT = (o, e, c, u) => { SUB(T_V3_A,e,c); NORM(T_V3_A,T_V3_A); CROSS(T_V3_B,u,T_V3_A); NORM(T_V3_B,T_V3_B); CROSS(T_V3_C,T_V3_A,T_V3_B); o.set([T_V3_B[0],T_V3_C[0],T_V3_A[0],0, T_V3_B[1],T_V3_C[1],T_V3_A[1],0, T_V3_B[2],T_V3_C[2],T_V3_A[2],0, -DOT(T_V3_B,e),-DOT(T_V3_C,e),-DOT(T_V3_A,e),1]); return o; };
+    const SUB=(out,left,right)=>(out[0]=left[0]-right[0],out[1]=left[1]-right[1],out[2]=left[2]-right[2],out);
+    const DOT=(left,right)=>left[0]*right[0]+left[1]*right[1]+left[2]*right[2];
+    const CROSS=(out,left,right)=>(out[0]=left[1]*right[2]-left[2]*right[1],out[1]=left[2]*right[0]-left[0]*right[2],out[2]=left[0]*right[1]-left[1]*right[0],out);
+    const LEN=vector=>HYPOT(vector[0],vector[1],vector[2]);
+    const NORM=(out,vector)=>{var length=LEN(vector);return length>0&&(out[0]=vector[0]/length,out[1]=vector[1]/length,out[2]=vector[2]/length),out};
+    const MULTMAT4 = (out,left,right) => (out.set((new DOMMatrix(left)).multiply(new DOMMatrix(right)).toFloat32Array()), out);
+    const INV = matrix => (new DOMMatrix(matrix)).inverse().toFloat32Array();
+    const PERSP = (out,fov,aspect,near,far) => { const scale=1/TAN(fov*D2R/2);out.set([scale/aspect,0,0,0,0,scale,0,0,0,0,(far+near)/(near-far),-1,0,0,(2*far*near)/(near-far),0]);return out; };
+    const LOOKAT = (out,eye,center,up) => { SUB(T_V3_A,eye,center);NORM(T_V3_A,T_V3_A);CROSS(T_V3_B,up,T_V3_A);NORM(T_V3_B,T_V3_B);CROSS(T_V3_C,T_V3_A,T_V3_B);out.set([T_V3_B[0],T_V3_C[0],T_V3_A[0],0,T_V3_B[1],T_V3_C[1],T_V3_A[1],0,T_V3_B[2],T_V3_C[2],T_V3_A[2],0,-DOT(T_V3_B,eye),-DOT(T_V3_C,eye),-DOT(T_V3_A,eye),1]);return out; };
     // --- World Matrices ---
     const M = M4(), V = M4(), P = M4(); // Model, View, Projection
     let PV = M4(), invPV = M4(); // Combined and inverse matrices for picking
 
     // Multiplies a 3D point (w=1) by a 4x4 matrix
-    function mulPoint(m, p) { const x=p[0],y=p[1],z=p[2],w=1; return [m[0]*x+m[4]*y+m[8]*z+m[12]*w, m[1]*x+m[5]*y+m[9]*z+m[13]*w, m[2]*x+m[6]*y+m[10]*z+m[14]*w]; }
+    function mulPoint(matrix,point) { const x=point[0],y=point[1],z=point[2],w=1;return [matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12]*w,matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13]*w,matrix[2]*x+matrix[6]*y+matrix[10]*z+matrix[14]*w]; }
 
     // Multiplies a 3D direction (w=0) by a 4x4 matrix
-    function mulDir(m, d) { const x=d[0],y=d[1],z=d[2],w=0; return [m[0]*x+m[4]*y+m[8]*z+m[12]*w, m[1]*x+m[5]*y+m[9]*z+m[13]*w, m[2]*x+m[6]*y+m[10]*z+m[14]*w]; }
+    function mulDir(matrix,direction) { const x=direction[0],y=direction[1],z=direction[2],w=0;return [matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12]*w,matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13]*w,matrix[2]*x+matrix[6]*y+matrix[10]*z+matrix[14]*w]; }
 
     //function mul4(m, v) { return [m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3], m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3], m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3], m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]]; }
-    const mul4 = (out, m, v) => {
-        const v0=v[0], v1=v[1], v2=v[2], v3=v[3];
-        out[0] = m[0]*v0 + m[4]*v1 + m[8]*v2 + m[12]*v3;
-        out[1] = m[1]*v0 + m[5]*v1 + m[9]*v2 + m[13]*v3;
-        out[2] = m[2]*v0 + m[6]*v1 + m[10]*v2 + m[14]*v3;
-        out[3] = m[3]*v0 + m[7]*v1 + m[11]*v2 + m[15]*v3;
+    const mul4 = (out,matrix,vector) => {
+        const v0=vector[0],v1=vector[1],v2=vector[2],v3=vector[3];
+        out[0]=matrix[0]*v0+matrix[4]*v1+matrix[8]*v2+matrix[12]*v3;
+        out[1]=matrix[1]*v0+matrix[5]*v1+matrix[9]*v2+matrix[13]*v3;
+        out[2]=matrix[2]*v0+matrix[6]*v1+matrix[10]*v2+matrix[14]*v3;
+        out[3]=matrix[3]*v0+matrix[7]*v1+matrix[11]*v2+matrix[15]*v3;
         return out;
     };
     
@@ -130,26 +130,26 @@
 
     // -- MODULE: Core-Runtime --
     // const D = document
-    // const C = D.getElementById('canvas');
-    const C = document.getElementById('C');
+    // const canvas = D.getElementById('canvas');
+    const canvas = document.getElementById('C');
     const chatInput = document.getElementById('chatInput');
     
     // State variables for the user/camera, rendering loop, and WebGL/WebXR contexts
-     let u = { x: 0, y: 1.6, z: 2, yaw: 0, pitch: .2 }; // User position and orientation
-     let prevUserX = u.x, prevUserZ = u.z; // previous frame planar position
-     let userVelX = 0, userVelZ = 0;             // planar velocity for cat pursuit
+     let player = { x: 0, y: 1.6, z: 2, yaw: 0, pitch: .2 }; // User position and orientation
+     // OPTIONAL: tracked planar player velocity for predictive enemy pursuit; currently unused.
+     //let prevUserX=player.x,prevUserZ=player.z,userVelX=0,userVelZ=0;
     let last = 0; // Timestamp of the last frame for calculating delta time
     let gl, xr = null, ref = null, xrM = M4(); // WebGL and WebXR objects
 
-    //gl = C.getContext('webgl2', { antialias: true, xrCompatible: true });
-    gl = C.getContext('webgl2', { xrCompatible: true });
+    //gl = canvas.getContext('webgl2', { antialias: true, xrCompatible: true });
+    gl = canvas.getContext('webgl2', { xrCompatible: true });
     //if (!gl) { alert('Need WebGL2'); }
 
-    function lerp(a,b,t){ return a + (b-a)*t; }
-    function lerpAngle(a,b,t){
-        let d = b - a;
-        if (d > PI) d -= 2*PI; else if (d < -PI) d += 2*PI;
-        return a + d * t;
+    function lerp(start,end,amount){ return start+(end-start)*amount; }
+    function lerpAngle(start,end,amount){
+        let difference=end-start;
+        if(difference>PI)difference-=2*PI;else if(difference<-PI)difference+=2*PI;
+        return start+difference*amount;
     }
     // -- /MODULE: Core-Runtime --
 
@@ -166,43 +166,43 @@
     let mmoSendTimer = 0, enemySendTimer = 0;
 
     // Peer interpolation delay (ms). Higher = smoother but more laggy. 120ms is a good balance.
-    function pushPeerSample(p, x, z, yaw, now){
-        if (!p.hist) p.hist = [];
-        p.speed = p.last ? HYPOT(x-p.x,z-p.z)*1000/(now-p.last||1) : 0;
-        p.hist.push({ t: now, x, z, yaw });
-        p.last = now;
+    function pushPeerSample(peer, x, z, yaw, now){
+        if (!peer.hist) peer.hist = [];
+        peer.speed = peer.last ? HYPOT(x-peer.x,z-peer.z)*1000/(now-peer.last||1) : 0;
+        peer.hist.push({ t: now, x, z, yaw });
+        peer.last = now;
         // trim old samples
         const cutoff = now - 2000;
-        while (p.hist.length && p.hist[0].t < cutoff) p.hist.shift();
+        while (peer.hist.length && peer.hist[0].t < cutoff) peer.hist.shift();
         // also keep a compact last-known for quick fallback
-        p.x = x; p.z = z; p.yaw = yaw;
+        peer.x = x; peer.z = z; peer.yaw = yaw;
     }
-    function samplePeer(p, targetT){
-        const h = p.hist; if (!h || h.length === 0) return null;
+    function samplePeer(peer, targetT){
+        const history=peer.hist;if(!history||history.length===0)return null;
         // if only one sample or target before first -> use first/last
-        if (h.length === 1) return h[0];
-        if (targetT <= h[0].t) return h[0];
-        const n = h.length;
-        if (targetT >= h[n-1].t) return h[n-1];
+        if(history.length===1)return history[0];
+        if(targetT<=history[0].t)return history[0];
+        const count=history.length;
+        if(targetT>=history[count-1].t)return history[count-1];
         // find bracketing samples (linear scan is fine for small buffers)
-        for (let i=0; i<n-1; i++){
-            const a = h[i], b = h[i+1];
-            if (a.t <= targetT && targetT <= b.t){
-                const dt = (b.t - a.t) || 1;
-                const t = (targetT - a.t) / dt;
+        for(let i=0;i<count-1;i++){
+            const before=history[i],after=history[i+1];
+            if(before.t<=targetT&&targetT<=after.t){
+                const duration=(after.t-before.t)||1;
+                const amount=(targetT-before.t)/duration;
                 return {
                     t: targetT,
-                    x: lerp(a.x, b.x, t),
-                    z: lerp(a.z, b.z, t),
-                    yaw: lerpAngle(a.yaw, b.yaw, t)
+                    x:lerp(before.x,after.x,amount),
+                    z:lerp(before.z,after.z,amount),
+                    yaw:lerpAngle(before.yaw,after.yaw,amount)
                 };
             }
         }
-        return h[n-1];
+        return history[count-1];
     }
 
-    function logMMO(s){ log('MMO: ' + s); }
-    function sendMMO(s){try{if(ws?.readyState===1)ws.send(s);}catch(_){}}
+    function logMMO(message){ log('MMO: '+message); }
+    function sendMMO(message){try{if(ws?.readyState===1)ws.send(message);}catch(_){}}
 
     function toggleMMO(){
         mmoEnabled = !mmoEnabled;
@@ -221,8 +221,8 @@
         logMMO('connecting…');
         try {
             ws = new WebSocket(MMO_URL);
-        } catch (e) {
-            logMMO('WebSocket error: ' + e.message);
+        } catch (error) {
+            logMMO('WebSocket error: ' + error.message);
             return;
         }
         // send a "cat!" on open to register
@@ -235,16 +235,16 @@
     // -- /MODULE: MMO-Connection --
 
     // -- MODULE: MMO-Messages --
-    function handleMMOMessage(msg){
-        if (typeof msg !== 'string') return;
-        const c = msg[0];
-        switch(c){
-            case '@': myId = msg.slice(1); logMMO('my id: ' + myId); return;
-            case '+': { const id = msg.slice(1); if (id && !peers.has(id)) peers.set(id, {x:0,z:0,yaw:0,last:0,hist:[],oh:[]}); return; }
-            case '-': { const id = msg.slice(1); peers.delete(id);remoteCats.delete(id);for(let i=remoteShots.length;i--;)if(remoteShots[i].o===id)remoteShots.splice(i,1);return; }
+    function handleMMOMessage(message){
+        if(typeof message!=='string')return;
+        const command=message[0];
+        switch(command){
+            case '@':myId=message.slice(1);logMMO('my id: '+myId);return;
+            case '+':{const id=message.slice(1);if(id&&!peers.has(id))peers.set(id,{x:0,z:0,yaw:0,last:0,hist:[],oh:[]});return;}
+            case '-':{const id=message.slice(1);peers.delete(id);remoteCats.delete(id);for(let i=remoteShots.length;i--;)if(remoteShots[i].o===id)remoteShots.splice(i,1);return;}
         }
         // Strip optional direct prefix @targetId|payload -> payload
-        let payload = msg;
+        let payload=message;
         if (payload[0] === '@'){
             const bar = payload.indexOf('|');
             if (bar > 0) payload = payload.slice(bar+1);
@@ -258,56 +258,107 @@
                     const x = parseFloat(parts[2]);
                     const z = parseFloat(parts[3]);
                     const yaw = parseFloat(parts[4]);
-                    const p = peers.get(id) || {x:0,z:0,yaw:0,last:0,hist:[],oh:[]};
+                    const peer = peers.get(id) || {x:0,z:0,yaw:0,last:0,hist:[],oh:[]};
                     const now = performance.now();
-                    const nx = isFinite(x)?x:p.x;
-                    const nz = isFinite(z)?z:p.z;
-                    const ny = isFinite(yaw)?yaw:p.yaw;
-                    pushPeerSample(p, nx, nz, ny, now);
-                    p.oc=+parts[5]||0;
+                    const nx = isFinite(x)?x:peer.x;
+                    const nz = isFinite(z)?z:peer.z;
+                    const ny = isFinite(yaw)?yaw:peer.yaw;
+                    pushPeerSample(peer, nx, nz, ny, now);
+                    peer.oc=+parts[5]||0;
                     //p.os=+parts[6]||.25; // ORBIT SIZE MMO field 
                     //p.ov=+parts[7]||2.5; // ORBIT SPEED MMO field
-                    p.op=+parts[6]||0;
-                    p.ot=now;
-                    p.d=+parts[7]||1;
+                    peer.op=+parts[6]||0;
+                    peer.ot=now;
+                    peer.d=+parts[7]||1;
                     //p.oa=+parts[10]||2.5; // ORBIT RADIUS MMO field
-                    peers.set(id, p);
+                    peers.set(id, peer);
                 }
             }
         }
         if (payload[0] === 'c' && payload[1] === '|'){
-            const p = payload.split('|'), id = p[1];
-            if (id !== myId) say((id || '?').slice(-4) + ': ' + p.slice(2).join('|').slice(0,64));
+            const parts = payload.split('|'), id = parts[1];
+            if (id !== myId) say((id || '?').slice(-4) + ': ' + parts.slice(2).join('|').slice(0,64));
         }
         if (payload[0] === 'e' && payload[1] === '|'){
-            const p=payload.split('|'),owner=p[1];
+            const parts=payload.split('|'),
+                owner=parts[1];
+
             if(owner&&owner!==myId){
-                const group=remoteCats.get(owner)||new Map(),seen=new Set(),now=performance.now();
-                for(const row of (p[2]||'').split(';'))if(row){
-                    const a=row.split(',').map(Number),id=a[0];seen.add(id);
-                    let c=group.get(id);
-                    if(!c||c.v!==a[1])c={i:id,v:a[1],x:a[2],z:a[3],yaw:a[4],hp:a[6],hit:0,h:0};
-                    else if(a[6]<c.hp)damageNumber(c.x,c.z,c.hp-a[6]);
-                    c.tx=a[2];c.tz=a[3];c.tyaw=a[4];c.tier=a[5];c.hp=a[6];c.max=a[7];c.dead=0;c.last=now;group.set(id,c);
+                const group=remoteCats.get(owner)||new Map(),
+                    seen=new Set(),
+                    now=performance.now();
+
+                for(const row of (parts[2]||'').split(';'))if(row){
+                    const fields=row.split(',').map(Number),
+                        id=fields[0];
+                    seen.add(id);
+
+                    let enemy=group.get(id);
+                    if(!enemy||enemy.v!==fields[1]){
+                        enemy={i:id,v:fields[1],x:fields[2],z:fields[3],yaw:fields[4],hp:fields[6],hit:0,h:0};
+                    }else if(fields[6]<enemy.hp){
+                        damageNumber(enemy.x,enemy.z,enemy.hp-fields[6]);
+                    }
+
+                    enemy.tx=fields[2];
+                    enemy.tz=fields[3];
+                    enemy.tyaw=fields[4];
+                    enemy.tier=fields[5];
+                    enemy.hp=fields[6];
+                    enemy.max=fields[7];
+                    enemy.mut=fields[8]??-1;
+                    enemy.scale=enemy.mut<0?1:1.5;
+                    enemy.dead=0;
+                    enemy.last=now;
+                    group.set(id,enemy);
                 }
-                for(const id of group.keys())if(!seen.has(id))group.delete(id);
+
+                for(const id of group.keys()){
+                    if(!seen.has(id))group.delete(id);
+                }
                 remoteCats.set(owner,group);
             }
         }
         if (payload[0] === 'k' && payload[1] === '|'){
-            const p=payload.split('|'),c=p[1]===myId&&cats[+p[2]];
-            if(c&&c.v===+p[3])placeCat(c);
+            const parts=payload.split('|'),enemy=parts[1]===myId&&cats[+parts[2]];
+            if(enemy&&enemy.v===+parts[3])placeCat(enemy);
         }
         if (payload[0] === 'd' && payload[1] === '|'){
-            const p=payload.split('|'),group=remoteCats.get(p[1]),c=group&&group.get(+p[2]);
-            if(p[1]!==myId){if(p[8]===myId){cat.caught++;playKillSound(+p[4],+p[5]);for(let i=1+(+p[6]>>1);i--;)dropLoot(+p[4]+i*.35,+p[5]);}if(+p[7])damageNumber(+p[4],+p[5],+p[7]);}
-            if(c&&c.v===+p[3]){c.v++;c.dead=1;}
+            const parts=payload.split('|'),
+                group=remoteCats.get(parts[1]),
+                enemy=group&&group.get(+parts[2]);
+
+            if(parts[1]!==myId){
+                if(parts[8]===myId){
+                    cat.caught++;
+                    playKillSound(+parts[4],+parts[5]);
+                    dropReward(+parts[4],+parts[5],+parts[6],+parts[9]);
+                }
+                if(+parts[7])damageNumber(+parts[4],+parts[5],+parts[7]);
+            }
+
+            if(enemy&&enemy.v===+parts[3]){
+                enemy.v++;
+                enemy.dead=1;
+            }
         }
         if(payload[0]==='s'&&payload[1]==='|'){
-            const p=payload.split('|');
-            if(p[1]!==myId){remoteShots.push({o:p[1],x:+p[2],y:.7,z:+p[3],vx:+p[4],vz:+p[5],d:+p[6]||1,i:+p[7],t:3});playShotSound(+p[2],+p[3]);}
+            const parts=payload.split('|');
+            if(parts[1]!==myId){
+                remoteShots.push({o:parts[1],x:+parts[2],y:.7,z:+parts[3],vx:+parts[4],vz:+parts[5],d:+parts[6]||1,i:+parts[7],t:3});
+                playShotSound(+parts[2],+parts[3]);
+            }
         }
-        if(payload[0]==='x'&&payload[1]==='|'){const p=payload.split('|'),a=p[1]===myId?shots:remoteShots;for(let i=a.length;i--;)if(a[i].i===+p[2]&&(p[1]===myId||a[i].o===p[1]))a.splice(i,1);}
+        if(payload[0]==='x'&&payload[1]==='|'){
+            const parts=payload.split('|'),
+                list=parts[1]===myId?shots:remoteShots;
+
+            for(let i=list.length;i--;){
+                if(list[i].i===+parts[2]&&(parts[1]===myId||list[i].o===parts[1])){
+                    list.splice(i,1);
+                }
+            }
+        }
     }
     document.onvisibilitychange=_=>mmoEnabled&&!xr&&(document.hidden?(ws&&(ws.onmessage=ws.onclose=0),disconnectMMO()):connectMMO());
     // -- /MODULE: MMO-Messages --
@@ -319,21 +370,21 @@
         if (mmoSendTimer >= .1){ // ~10 Hz
             mmoSendTimer = 0;
             // compact broadcast with our id
-            const msg = 'p|' + myId +
-                        '|' + u.x.toFixed(2) +
-                        '|' + u.z.toFixed(2) +
-                        '|' + u.yaw.toFixed(3)+
+            const message = 'p|' + myId +
+                        '|' + player.x.toFixed(2) +
+                        '|' + player.z.toFixed(2) +
+                        '|' + player.yaw.toFixed(3)+
                         '|'+orbCount+
                         // '|'+orbSize.toFixed(2)+ // ORBIT SIZE MMO field 
                         // '|'+orbSpeed.toFixed(2)+ // ORBIT SPEED MMO field 
                         '|'+skillTime.toFixed(2)+
                         '|'+damage;
-            sendMMO(msg);
+            sendMMO(message);
         }
         enemySendTimer+=dt;
         if(enemySendTimer>=.2){
             enemySendTimer=0;
-            sendMMO('e|'+myId+'|'+cats.map(c=>[c.i,c.v,c.x.toFixed(2),c.z.toFixed(2),c.yaw.toFixed(2),c.tier,c.hp,c.max]).join(';'));
+            sendMMO('e|'+myId+'|'+cats.map(enemy=>[enemy.i,enemy.v,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
         }
     }
     // -- /MODULE: MMO-Sync --
@@ -343,11 +394,11 @@
     // -- MODULE: Core-WebGL --
     // Resize the canvas to fill the window, accounting for device pixel ratio
     function resize() {
-    const w = innerWidth, h = innerHeight, dpr = devicePixelRatio || 1;
-    C.width = w * dpr;
-    C.height = h * dpr;
-    C.style.width = w + 'px';
-    C.style.height = h + 'px';
+    const width=innerWidth,height=innerHeight,dpr=devicePixelRatio||1;
+    canvas.width=width*dpr;
+    canvas.height=height*dpr;
+    canvas.style.width=width+'px';
+    canvas.style.height=height+'px';
     }
     addEventListener('resize', resize);
     resize(); // Initial resize
@@ -355,19 +406,19 @@
     // Helper function to compile and link a shader program
     function prog(vs, fs) {
         // Always prepend shared header (js13k-friendly, no conditional check)
-        const H = '#version 300 es\nprecision highp float;';
-        vs = H + /*'#define U uniform' )+*/ vs;
-        fs = H + fs;
-        const p = gl.createProgram();
-        const v = gl.createShader(gl.VERTEX_SHADER);
-        const f = gl.createShader(gl.FRAGMENT_SHADER);
-        gl.shaderSource(v, vs); gl.compileShader(v);
-        if (!gl.getShaderParameter(v, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(v);
-        gl.shaderSource(f, fs); gl.compileShader(f);
-        if (!gl.getShaderParameter(f, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(f);
-        gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p);
-        if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw gl.getProgramInfoLog(p);
-        return p;
+        const shaderHeader='#version 300 es\nprecision highp float;';
+        vs=shaderHeader+/*'#define U uniform' )+*/vs;
+        fs=shaderHeader+fs;
+        const program=gl.createProgram();
+        const vertexShader=gl.createShader(gl.VERTEX_SHADER);
+        const fragmentShader=gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(vertexShader,vs);gl.compileShader(vertexShader);
+        if(!gl.getShaderParameter(vertexShader,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(vertexShader);
+        gl.shaderSource(fragmentShader,fs);gl.compileShader(fragmentShader);
+        if(!gl.getShaderParameter(fragmentShader,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(fragmentShader);
+        gl.attachShader(program,vertexShader);gl.attachShader(program,fragmentShader);gl.linkProgram(program);
+        if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw gl.getProgramInfoLog(program);
+        return program;
     }
     // -- /MODULE: Core-WebGL --
     // -- /FEATURE: Core --
@@ -375,10 +426,10 @@
     // -- FEATURE: Input --
     // -- MODULE: Input-Core --
     // --- Unified Input Handling ---
-    // Check if the primary input is a coarse pointer (like a finger), indicating a mobile/touch device
-    const isMobile = matchMedia('(pointer:coarse)').matches;
+    // OPTIONAL: detects touch-style coarse pointers; CSS currently handles joystick visibility alone.
+    //const isMobile=matchMedia('(pointer:coarse)').matches;
     // Unified input state object for keyboard, joysticks, pointer-look, and pointer coordinates
-    const I = {
+    const input = {
         keys: {},
         joy: { L: { x: 0, y: 0, id: null }, R: { x: 0, y: 0, id: null } }, // 
         look: { id: null, x: 0, y: 0 },
@@ -388,7 +439,7 @@
     // -- VR: Input --
     // Point-to-move must be held briefly so a hand changing pose cannot move the player accidentally.
     // OPTIONAL: 150ms gesture debounce; remove with its timing and cleanup code for a smaller instant-response build.
-    const pointStarted = new Map();
+    const pointStarted=new Map(),selecting=new Set();
     /* TEMP XR stick diagnostics; uncomment with the loop call below when needed.
     let stickLogAt = 0;
     // Temporary raw WebXR monitor. Kept separate from movement so diagnostics cannot block input.
@@ -398,14 +449,14 @@
         stickLogAt = now + 700;
         try {
             const rows = [];
-            for (const src of session.inputSources) {
-                const g = src.gamepad;
-                if (!g) continue;
-                const a = Array.from(g.axes, v => v == null || v !== v ? 'n' : Math.round(v * 100) / 100);
-                rows.push((src.handedness[0] || '?') + '[' + a + ']');
+            for (const source of session.inputSources) {
+                const gamepad=source.gamepad;
+                if(!gamepad)continue;
+                const axes=Array.from(gamepad.axes,value=>value==null||value!==value?'n':Math.round(value*100)/100);
+                rows.push((source.handedness[0]||'?')+'['+axes+']');
             }
-            log((rows.length ? 'ST ' + rows.join(' ') : 'ST no gamepad src=' + session.inputSources.length) + ' p[' + Math.round(u.x*10)/10 + ',' + Math.round(u.z*10)/10 + ',' + Math.round(u.yaw*10)/10 + ']');
-        } catch (e) { log('ST ERR ' + e.message); }
+            log((rows.length ? 'ST ' + rows.join(' ') : 'ST no gamepad src=' + session.inputSources.length) + ' p[' + Math.round(player.x*10)/10 + ',' + Math.round(player.z*10)/10 + ',' + Math.round(player.yaw*10)/10 + ']');
+        } catch (error) { log('ST ERR ' + error.message); }
     } */
     // -- /VR: Input --
 
@@ -415,69 +466,70 @@
     
     // -- MODULE: Input-Keyboard-Pointer --
     // Keyboard event listeners for movement and HUD toggle
-    document.addEventListener('keydown', e => {
-        if (e.target === chatInput) return;
+    document.addEventListener('keydown', event => {
+        if (event.target === chatInput) return;
         initAudio();
-        const k = e.code;
-        I.keys[k] = true;
-        if (!e.repeat && k === 'Enter') { e.preventDefault(); setChat(true); return; }
-        // INVENTORY HUD disabled: if (!e.repeat && k === 'KeyF') { hudVisible=true;hudPage=2;return; }
-        if (!e.repeat && k === 'KeyC') { setChat(true);return; }
-        if (!e.repeat && k === 'KeyZ') { hudVisible=true;hudPage=3;return; }
-        if (!e.repeat && choosing && /^(Digit|Numpad)[1-3]$/.test(k)) {
-            e.preventDefault();playClickSound();upgrade(choices[+k.slice(-1)-1]);return;
+        const key=event.code;
+        input.keys[key]=true;
+        if(key.startsWith('Arrow'))event.preventDefault();
+        if(!event.repeat&&key==='Enter'){event.preventDefault();setChat(true);return;}
+        // INVENTORY HUD disabled: if (!event.repeat && key === 'KeyF') { hudVisible=true;hudPage=2;return; }
+        if(!event.repeat&&key==='KeyC'){setChat(true);return;}
+        if(!event.repeat&&key==='KeyZ'){hudVisible=true;hudPage=3;return;}
+        if(!event.repeat&&choosing&&/^(Digit|Numpad)[1-3]$/.test(key)){
+            event.preventDefault();playClickSound();upgrade(choices[+key.slice(-1)-1]);return;
         }
-        if (!e.repeat && (k === 'KeyH'||k === 'Escape'||k === 'KeyX')) {playClickSound(); hudVisible = !hudVisible;} // 'H' and escape key toggles HUD visibility
-        //if (k === 'KeyF') {playClickSound(); beastMode = !beastMode;} // 'F' key toggles beastMode
+        if(!event.repeat&&(key==='KeyH'||key==='Escape'||key==='KeyX')){playClickSound();hudVisible=!hudVisible;} // 'H' and escape key toggles HUD visibility
+        //if (key === 'KeyF') {playClickSound(); beastMode = !beastMode;} // 'F' key toggles beastMode
     });
-    document.addEventListener('keyup', e => I.keys[e.code] = false);
-    window.addEventListener('blur', () => I.keys = {});
+    document.addEventListener('keyup',event=>input.keys[event.code]=false);
+    window.addEventListener('blur',()=>input.keys={});
     
     // Pointer event listeners on the canvas for mouse-look and interaction
-    C.addEventListener('pointerdown', e => {
+    canvas.addEventListener('pointerdown', event => {
         initAudio(); // NEW: Initialize audio on first user interaction
         // Start mouse-look on left-click
-        if (e.button === 0 && I.look.id === null) {
-            I.look.id = e.pointerId;
-            I.look.x = e.clientX;
-            I.look.y = e.clientY;
-            xr ? C.requestPointerLock() : C.setPointerCapture(e.pointerId);
+        if(event.button===0&&input.look.id===null){
+            input.look.id=event.pointerId;
+            input.look.x=event.clientX;
+            input.look.y=event.clientY;
+            xr?canvas.requestPointerLock():canvas.setPointerCapture(event.pointerId);
         }
         // Always update pointer position for picking
-        I.pointer.x = e.clientX;
-        I.pointer.y = e.clientY;
+        input.pointer.x=event.clientX;
+        input.pointer.y=event.clientY;
     });
     
-    C.addEventListener('pointermove', e => {
+    canvas.addEventListener('pointermove', event => {
         // Update pointer position for hover effects
-        I.pointer.x = e.clientX;
-        I.pointer.y = e.clientY;
+        input.pointer.x=event.clientX;
+        input.pointer.y=event.clientY;
         
         // If we are in mouse-look mode, update camera orientation
-        if (e.pointerId === I.look.id) {
-            const dx = e.clientX - I.look.x;
-            const dy = e.clientY - I.look.y;
-            I.look.x = e.clientX;
-            I.look.y = e.clientY;
-            u.yaw += dx * .002 * (opts[0] ? -1 : 1);
-            u.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,u.pitch+dy*.002*(opts[1] ? 1 : -1)));
+        if(event.pointerId===input.look.id){
+            const dx=event.clientX-input.look.x;
+            const dy=event.clientY-input.look.y;
+            input.look.x=event.clientX;
+            input.look.y=event.clientY;
+            player.yaw += dx * .002 * (opts[0] ? -1 : 1);
+            player.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,player.pitch+dy*.002*(opts[1] ? 1 : -1)));
         }
     });
     
-    C.addEventListener('pointerup', e => {
+    canvas.addEventListener('pointerup', event => {
         // Stop mouse-look mode.
-        if (e.pointerId === I.look.id) {
-            I.look.id = null;
+        if(event.pointerId===input.look.id){
+            input.look.id=null;
         }
         // Update pointer position and trigger an interaction check
-        I.pointer.x = e.clientX;
-        I.pointer.y = e.clientY;
-        interactDesktopAt(e.clientX, e.clientY);
+        input.pointer.x=event.clientX;
+        input.pointer.y=event.clientY;
+        interactDesktopAt(event.clientX,event.clientY);
     });
     
-    C.addEventListener('pointercancel', e => {
-        if (e.pointerId === I.look.id) {
-            I.look.id = null;
+    canvas.addEventListener('pointercancel', event => {
+        if(event.pointerId===input.look.id){
+            input.look.id=null;
         }
     });
     // -- /MODULE: Input-Keyboard-Pointer --
@@ -489,42 +541,42 @@
             { side: 'L', el: document.getElementById('L') },
             { side: 'R', el: document.getElementById('R') }
         ];
-        const handleSel = s => document.querySelector('#' + s + ' .jh');
+        const handleSel = side => document.querySelector('#' + side + ' .jh');
 
-        for (const j of joys) {
-            const handle = handleSel(j.side);
-            j.el.addEventListener('pointerdown', e => { initAudio(); j.id = e.pointerId; j.el.setPointerCapture(e.pointerId); updateJoy(j, e, handle); });
-            j.el.addEventListener('pointermove', e => { if (e.pointerId === j.id) updateJoy(j, e, handle); });
-            j.el.addEventListener('pointerup', e => { if (e.pointerId === j.id) { resetJoy(j, handle); } });
-            j.el.addEventListener('pointercancel', e => { if (e.pointerId === j.id) { resetJoy(j, handle); } });
+        for (const joystick of joys) {
+            const handle = handleSel(joystick.side);
+            joystick.el.addEventListener('pointerdown', event => { initAudio(); joystick.id = event.pointerId; joystick.el.setPointerCapture(event.pointerId); updateJoy(joystick, event, handle); });
+            joystick.el.addEventListener('pointermove', event => { if (event.pointerId === joystick.id) updateJoy(joystick, event, handle); });
+            joystick.el.addEventListener('pointerup', event => { if (event.pointerId === joystick.id) { resetJoy(joystick, handle); } });
+            joystick.el.addEventListener('pointercancel', event => { if (event.pointerId === joystick.id) { resetJoy(joystick, handle); } });
         }
 
-    function updateJoy(j, e, handle) {
-            const r = j.el.getBoundingClientRect();
-            const cx = r.left + r.width / 2;
-            const cy = r.top + r.height / 2;
-            const R = r.width / 2 - 6; // Max radius for handle movement
-            const dx = e.clientX - cx;
-            const dy = e.clientY - cy;
-            const L = MIN(HYPOT(dx, dy), R);
-            const a = ATAN2(dy, dx);
+    function updateJoy(joystick, event, handle) {
+            const rect=joystick.el.getBoundingClientRect();
+            const centerX=rect.left+rect.width/2;
+            const centerY=rect.top+rect.height/2;
+            const maxRadius=rect.width/2-6; // Max radius for handle movement
+            const dx=event.clientX-centerX;
+            const dy=event.clientY-centerY;
+            const distance=MIN(HYPOT(dx,dy),maxRadius);
+            const angle=ATAN2(dy,dx);
 
             // Normalize joystick output from -1 to 1
-            const x = L > DZ * 30 ? (L / R) * COS(a) : 0;
-            const y = L > DZ * 30 ? (L / R) * SIN(a) : 0;
+            const x=distance>DZ*30?distance/maxRadius*COS(angle):0;
+            const y=distance>DZ*30?distance/maxRadius*SIN(angle):0;
 
-            I.joy[j.side].x = x;
-            I.joy[j.side].y = y;
+            input.joy[joystick.side].x = x;
+            input.joy[joystick.side].y = y;
 
             // Update handle's visual position
-            handle.style.transform = `translate(calc(-50% + ${x * R}px), calc(-50% + ${y * R}px))`;
+            handle.style.transform=`translate(calc(-50% + ${x*maxRadius}px), calc(-50% + ${y*maxRadius}px))`;
         }
 
-        function resetJoy(j, handle) {
-            I.joy[j.side].x = 0;
-            I.joy[j.side].y = 0;
+        function resetJoy(joystick, handle) {
+            input.joy[joystick.side].x = 0;
+            input.joy[joystick.side].y = 0;
             handle.style.transform = 'translate(-50%, -50%)';
-            j.id = null;
+            joystick.id = null;
         }
     }
     initJoysticks();
@@ -535,9 +587,9 @@
     // -- SOLUTION: Input-Ray-Screen --
     // Creates a world-space ray from screen coordinates (for desktop mouse picking)
     function rayFromScreen(px, py) {
-    const r = C.getBoundingClientRect();
-        const x = ((px - r.left) / r.width) * 2 - 1;
-        const y = 1 - ((py - r.top) / r.height) * 2;
+    const rect=canvas.getBoundingClientRect();
+        const x=((px-rect.left)/rect.width)*2-1;
+        const y=1-((py-rect.top)/rect.height)*2;
         //const near = [x, y, -1, 1], far = [x, y, 1, 1];
         // Use T_V4_A for the 'near' and T_V4_B for the 'far' vector4s
         T_V4_A[0] = x; T_V4_A[1] = y; T_V4_A[2] = -1; T_V4_A[3] = 1;
@@ -575,13 +627,13 @@
     // -- /SOLUTION: Input-Ray-Screen --
     // Handles a click/tap interaction in desktop mode
     function interactDesktopAt(px, py) {
-        const r = rayFromScreen(px, py);
-        if (!r) return;
+        const ray=rayFromScreen(px,py);
+        if(!ray)return;
         const WH = HUD_WH_world;
-        const h = HUD_pick(WH, r);
+        const hit=HUD_pick(WH,ray);
 
-        if (h && h.button) {
-            activate(h.button[5]); // A button was clicked
+        if(hit&&hit.button){
+            activate(hit.button[5]); // A button was clicked
             return;
         }
 
@@ -600,35 +652,35 @@
             if (src && src.targetRaySpace) {
                 const pose = frame.getPose(src.targetRaySpace, ref);
                 if (pose) {
-                    const m = MULTMAT4(M4(),xrM,pose.transform.matrix);
-                    const o = [m[12], m[13], m[14]];
-                    const d = [-m[8], -m[9], -m[10]]; // -Z is forward in WebXR.
-                    return { o, d };
+                    const matrix=MULTMAT4(M4(),xrM,pose.transform.matrix);
+                    const origin=[matrix[12],matrix[13],matrix[14]];
+                    const direction=[-matrix[8],-matrix[9],-matrix[10]]; // -Z is forward in WebXR.
+                    return {o:origin,d:direction};
                 }
             }
             // Fallback to any available controller
-            for (const s of xr.inputSources) {
-                if (s.targetRaySpace) {
-                    const pose = frame.getPose(s.targetRaySpace, ref);
+            for (const source of xr.inputSources) {
+                if (source.targetRaySpace) {
+                    const pose = frame.getPose(source.targetRaySpace, ref);
                     if (pose) {
-                        const m = MULTMAT4(M4(),xrM,pose.transform.matrix);
-                        const o = [m[12], m[13], m[14]];
-                        const d = [-m[8], -m[9], -m[10]];
-                        return { o, d };
+                        const matrix=MULTMAT4(M4(),xrM,pose.transform.matrix);
+                        const origin=[matrix[12],matrix[13],matrix[14]];
+                        const direction=[-matrix[8],-matrix[9],-matrix[10]];
+                        return {o:origin,d:direction};
                     }
                 }
             }
             // Fallback to gaze/head pose
             const pose = frame.getViewerPose(ref);
             if (pose) {
-                const m = MULTMAT4(M4(),xrM,pose.views[0].transform.matrix);
-                return { o: [m[12], m[13], m[14]], d: [-m[8], -m[9], -m[10]] };
+                const matrix=MULTMAT4(M4(),xrM,pose.views[0].transform.matrix);
+                return {o:[matrix[12],matrix[13],matrix[14]],d:[-matrix[8],-matrix[9],-matrix[10]]};
             }
         } else { // Desktop mode
-            const cy = COS(u.yaw), sy = SIN(u.yaw);
-            const cp = COS(u.pitch), sp = SIN(u.pitch);
+            const cy = COS(player.yaw), sy = SIN(player.yaw);
+            const cp = COS(player.pitch), sp = SIN(player.pitch);
             T_V3_RAY_D[0] = -sy * cp; T_V3_RAY_D[1] = -sp; T_V3_RAY_D[2] = -cy * cp;
-            T_V3_RAY_O[0] = u.x; T_V3_RAY_O[1] = u.y; T_V3_RAY_O[2] = u.z;
+            T_V3_RAY_O[0] = player.x; T_V3_RAY_O[1] = player.y; T_V3_RAY_O[2] = player.z;
             return { o: T_V3_RAY_O, d: T_V3_RAY_D };
         }
         return null;
@@ -647,11 +699,11 @@
 
     // -- VR: Input --
     // Helper to get a ray from a VR controller
-    function controllerRay(frame,src) {
-        const pose = src.targetRaySpace ? frame.getPose(src.targetRaySpace, ref) : null;
+    function controllerRay(frame,source) {
+        const pose=source.targetRaySpace?frame.getPose(source.targetRaySpace,ref):null;
         if (pose) {
-            const m = MULTMAT4(M4(),xrM,pose.transform.matrix);
-            return { o: [m[12], m[13], m[14]], d: [-m[8], -m[9], -m[10]] };
+            const matrix=MULTMAT4(M4(),xrM,pose.transform.matrix);
+            return {o:[matrix[12],matrix[13],matrix[14]],d:[-matrix[8],-matrix[9],-matrix[10]]};
         }
         return { o: [0, 0, 0], d: [0, 0, -1] }; // Fallback, ray from Head
     }
@@ -676,16 +728,16 @@
     const items = [];                  // pickups: t 0 XP, 1 health, 2 magnet
     const CITY_BLOCK = 18;
     let buildings = [],city = {},cityX=1e9,cityZ;
-    const cityHash = (x,z,s=0) => { const n=SIN(x*127.1+z*311.7+s*71.7)*43758.5453; return n-FLOOR(n); };
+    const cityHash = (x,z,salt=0) => { const hash=SIN(x*127.1+z*311.7+salt*71.7)*43758.5453;return hash-FLOOR(hash); };
     const buildingAt = (x,z) => city[ROUND(x/CITY_BLOCK)+','+ROUND(z/CITY_BLOCK)];
-    const insideBuilding = (x,z,r=0) => {const b=buildingAt(x,z);return b&&ABS(x-b.x)<b.w/2+r&&ABS(z-b.z)<b.d/2+r};
+    const insideBuilding = (x,z,radius=0) => {const building=buildingAt(x,z);return building&&ABS(x-building.x)<building.w/2+radius&&ABS(z-building.z)<building.d/2+radius};
     function updateCity(){
-        const cx=ROUND(u.x/CITY_BLOCK),cz=ROUND(u.z/CITY_BLOCK);if(cx===cityX&&cz===cityZ)return;
+        const cx=ROUND(player.x/CITY_BLOCK),cz=ROUND(player.z/CITY_BLOCK);if(cx===cityX&&cz===cityZ)return;
         cityX=cx;cityZ=cz;const next=[],nextCity={};
         for(let z=cz-15;z<=cz+15;z++)for(let x=cx-15;x<=cx+15;x++){
             if(ABS(x)<2&&ABS(z)<2||cityHash(x,z)<.28+HYPOT(x,z)/62)continue;
-            const w=8+cityHash(x,z,1)*4,d=8+cityHash(x,z,2)*4,h=6+cityHash(x,z,3)*26,b={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w,d,h};
-            b.r=MIN(w,d)*.43;next.push(b);nextCity[x+','+z]=b;
+            const width=8+cityHash(x,z,1)*4,depth=8+cityHash(x,z,2)*4,height=6+cityHash(x,z,3)*26,building={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w:width,d:depth,h:height};
+            building.r=MIN(width,depth)*.43;next.push(building);nextCity[x+','+z]=building;
         }
         if(next.length){buildings=next;city=nextCity;}
     }
@@ -709,16 +761,16 @@
         ['BLUE','#2979ff',[.04,.2,1]],
         ['VIOLET','#8e24aa',[.55,.04,.75]]
     ];
-    const powerTier=n=>MIN(6,(n-1)/3|0),powerValue=t=>t+1;
+    const powerTier=count=>MIN(6,(count-1)/3|0),powerValue=tier=>tier+1;
     let skillTime=0;
-    //let orbAngle=0; // Derived from skillTime now.
     let level=1;
     let xp=0;
     let choosing=0;
     let orbCount=0;
-    //let orbSize=.25; // ORBIT SIZE stat removed; rendering uses fixed size.
-    //let orbRadius=2.5; // ORBIT RADIUS stat removed; placement uses fixed radius.
-    //let orbSpeed=2.5; // ORBIT SPEED stat removed; phase uses fixed timing.
+    //let orbAngle=0;
+    //let orbSize=.25;
+    //let orbRadius=2.5;
+    //let orbSpeed=2.5;
     let catVersion=0;
     let boltCount=1;
     let boltRate=3;
@@ -732,30 +784,49 @@
     let hp=100;
     let maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
-    const orbitPhase=t=>2.5*(15-ABS(t%30-15));
-    function placeCat(c){
-        let a,r,ok;
-        // n is the number of attempts to find a valid spawn position for the cat. It tries up to 10 times.
-        for(let n=10;n--;){
-            a=rng()*PI*2;
-            r=50+rng()*25; // r is the distance from the player, between 50 and 75 units
-            c.x=u.x+COS(a)*r;
-            c.z=u.z+SIN(a)*r;
-            ok=1;
-            peers.forEach(p=>ok&=(p.x-c.x)**2+(p.z-c.z)**2>64);
-            ok&=!insideBuilding(c.x,c.z,.6);
-            if(ok)break;
+    const orbitPhase=time=>2.5*(15-ABS(time%30-15));
+    // One unbounded world ring drives safe-zone behavior, population, strength, and mutations.
+    const worldPower=(x,z)=>HYPOT(x,z)/100|0,catTarget=()=>7+worldPower(player.x,player.z)*3;
+    function setCatPower(enemy){
+        const danger=worldPower(enemy.x,enemy.z),time=skillTime/60,cap=MIN(6,FLOOR(danger/2)),roll=rng();
+        enemy.tier=cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):rng()*(cap+1)|0):0;
+        enemy.mut=-1;enemy.scale=1;
+        // Exponential time scaling is gated by distance, preserving one-HP origin enemies forever.
+        enemy.max=enemy.hp=CEIL((1+danger*1.8)*powerValue(enemy.tier)*EXP(time*.08*danger/(1+danger)));
+        const mutationChance=1-EXP(-(danger*.018+time*.006)*danger/(1+danger));
+        if(danger&&rng()<mutationChance){
+            enemy.mut=0;while(enemy.mut<6&&rng()<.32)enemy.mut++;
+            if(enemy.mut===enemy.tier)enemy.mut+=enemy.mut<6?1:-1;
+            enemy.scale=1.5;
+            enemy.max=enemy.hp=CEIL(enemy.max*(enemy.mut+2));
         }
-        c.vx=c.vz=c.yaw=c.anim=c.hit=c.h=0;
-        c.v=++catVersion;
-        const cap=powerTier(level),roll=rng();
-        c.tier=cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):rng()*(cap+1)|0):0;
-        c.max=c.hp=CEIL((1+(level>>1))*(1+c.tier*.65));
-        return c;
+    }
+    function placeCat(enemy){
+        let angle,radius,valid;
+        // Try up to ten positions before accepting the final candidate.
+        for(let attempts=10;attempts--;){
+            angle=rng()*PI*2;
+            radius=50+rng()*25; // distance from the player, between 50 and 75 units
+            enemy.x=player.x+COS(angle)*radius;
+            enemy.z=player.z+SIN(angle)*radius;
+            valid=1;
+            peers.forEach(peer=>valid&=(peer.x-enemy.x)**2+(peer.z-enemy.z)**2>64);
+            valid&=!insideBuilding(enemy.x,enemy.z,.6);
+            if(valid)break;
+        }
+        enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.hit=enemy.h=0;
+        enemy.v=++catVersion;
+        setCatPower(enemy);
+        return enemy;
     }
     function resetCats(){
         cats.length=shots.length=0;
-        for(let i=MIN(40,3+level*2);i--;)cats.push(placeCat({i:cats.length}));
+        for(let i=catTarget();i--;)cats.push(placeCat({i:cats.length}));
+    }
+    function syncCatPopulation(){
+        const target=catTarget();
+        while(cats.length<target)cats.push(placeCat({i:cats.length}));
+        cats.length=target;
     }
     function resetRun(){
         level=1;
@@ -771,7 +842,7 @@
         //orbSpeed=2.5;
         boltCount=1;
         damage=1;
-        boltRate=4;
+        boltRate=3;
         moveSpeed=3;
         regen=0;
         maxHp=100;
@@ -780,127 +851,135 @@
         damageNumbers.length=0;
         choices=[];
         hudPage=0;
-        u.x=0;
-        u.z=2;
+        player.x=0;
+        player.z=2;
         resetCats();
         log(mmoEnabled?'MMO run started':'Run ended');
     }
     function rollChoices(){
-        const tier=()=>{
-            let t=0,cap=MIN(6,1+(level/3|0));
-            while(t<cap&&rng()<.4)t++;
-            return t;
+        const rollTier=()=>{
+            let tier=0,cap=MIN(6,1+(level/3|0));
+            while(tier<cap&&rng()<.4)tier++;
+            return tier;
         };
         const pool=orbCount?
             [0,/* 1, ORBIT RADIUS/SIZE and 2, ORBIT SPEED removed */3,4,5,6,7,8]:
             [3,4,5,6,7,8];
-        choices=orbCount?[]:[[0,tier()]];
+        choices=orbCount?[]:[[0,rollTier()]];
         while(choices.length<3){
-            const a=pool[rng()*pool.length|0];
-            if(!choices.some(c=>c[0]===a))choices.push([a,tier()]);
+            const type=pool[rng()*pool.length|0];
+            if(!choices.some(choice=>choice[0]===type))choices.push([type,rollTier()]);
         }
         for(let i=3;i--;){
-            const c=choices[i];
-            UI_LEVEL[i][4]=POWER[c[1]][0]+'|'+cardText(c[0],powerValue(c[1]));
-            UI_LEVEL[i][6]=c[1];
+            const choice=choices[i];
+            UI_LEVEL[i][4]=POWER[choice[1]][0]+'|'+cardText(choice[0],powerValue(choice[1]));
+            UI_LEVEL[i][6]=choice[1];
         }
         choosing=1;
         hudVisible=false;
         playLevelSound();
     }
-    function upgrade(c){
-        const n=c[0],p=powerValue(c[1]);
-        if(n===0)orbCount+=p;
-        //else if(n===1){ // ORBIT RADIUS/SIZE upgrade removed
+    function upgrade(choice){
+        const type=choice[0],power=powerValue(choice[1]);
+        if(type===0)orbCount+=power;
+        //else if(type===1){ // ORBIT RADIUS/SIZE upgrade removed
         //    orbRadius*=1+p*.15;
         //    orbSize*=1+p*.03;
         //}
-        //else if(n===2)orbSpeed*=1+p*.15; // ORBIT SPEED upgrade removed
-        else if(n===3)boltCount+=p;
-        else if(n===4)moveSpeed*=1+p*.1;
-        else if(n===5)boltRate=MAX(.15,boltRate*(1-p*.1));
-        else if(n===6){
-            maxHp+=p*20;
-            hp=MIN(maxHp,hp+p*20);
+        //else if(type===2)orbSpeed*=1+power*.15; // ORBIT SPEED upgrade removed
+        else if(type===3)boltCount+=power;
+        else if(type===4)moveSpeed*=1+power*.1;
+        else if(type===5)boltRate=MAX(.15,boltRate*(1-power*.1));
+        else if(type===6){
+            maxHp+=power*20;
+            hp=MIN(maxHp,hp+power*20);
         }
-        else if(n===7)damage+=p;
-        else regen+=p/10;
+        else if(type===7)damage+=power;
+        else regen+=power/10;
         xp-=level++*3;
         choosing=0;
         hudPage=0;
-        while(cats.length<MIN(40,3+level*2))cats.push(placeCat({i:cats.length}));
         if(xp>=level*3)rollChoices();
     }
-    function dropXP(x,z,t=0){
-        items.push({x,y:.16,z,r:.4,t});
+    function dropXP(x,z,type=0){
+        items.push({x,y:.16,z,r:.4,t:type});
         // number of items in the world
         if(items.length>1000)items.shift();
     }
-    function dropLoot(x,z){const r=rng();dropXP(x,z,r<.02?2:r<.08?1:0);}
-    function damageNumber(x,z,n){damageNumbers.push({x,y:1.4,z,n:ROUND(n),t:1});}
-    function hurt(c,d,killer){
-        d=MIN(c.hp,MAX(1,d|0));c.hp-=d;damageNumber(c.x,c.z,d);
-        if(c.hp<1)defeat(c,d,killer);else playHitSound(c.x,c.z);
+    function dropLoot(x,z){const roll=rng();dropXP(x,z,roll<.02?2:roll<.08?1:0);}
+    function dropReward(x,z,tier,mutation){
+        const count=powerValue(tier)*(mutation>=0?mutation+2:1),width=MIN(7,count);
+        for(let i=count;i--;)dropLoot(x+(i%width-(width-1)/2)*.35,z+FLOOR(i/width)*.35);
     }
-    function defeat(c,d,killer){
-        const x=c.x,z=c.z,v=c.v,tier=c.tier;
-        if(!myId||killer===myId){cat.caught++;playKillSound(x,z);for(let i=1+(tier>>1);i--;)dropLoot(c.x+i*.35,c.z);}
-        if(myId)sendMMO(`d|${myId}|${c.i}|${v}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${d}|${killer}`);
-        placeCat(c);//log(`Cat defeated #${++cat.caught}`);
+    function damageNumber(x,z,amount){damageNumbers.push({x,y:1.4,z,n:ROUND(amount),t:1});}
+    function hurt(enemy,amount,killer){
+        amount=MIN(enemy.hp,MAX(1,amount|0));enemy.hp-=amount;damageNumber(enemy.x,enemy.z,amount);
+        if(enemy.hp<1)defeat(enemy,amount,killer);else playHitSound(enemy.x,enemy.z);
+    }
+    function defeat(enemy,amount,killer){
+        const x=enemy.x,z=enemy.z,version=enemy.v,tier=enemy.tier,mutation=enemy.mut;
+        if(!myId||killer===myId){cat.caught++;playKillSound(x,z);dropReward(x,z,tier,mutation);}
+        if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}`);
+        placeCat(enemy);//log(`Cat defeated #${++cat.caught}`);
     }
     function updateEnemies(dt){
         skillTime+=dt;
-        for(const c of cats){
-            let tx=u.x,tz=u.z,best=(tx-c.x)**2+(tz-c.z)**2,now=performance.now(),self=1;
-            peers.forEach(p=>{const q=(p.x-c.x)**2+(p.z-c.z)**2;if(now-p.last<15000&&q<best){best=q;tx=p.x;tz=p.z;self=0;}});
-            let dx=tx-c.x,dz=tz-c.z,d=HYPOT(dx,dz)||1,fx=dx/d*7,fz=dz/d*7;
-            const o=buildingAt(c.x,c.z);if(o){
-                let ox=c.x-o.x,oz=c.z-o.z,od=HYPOT(ox,oz)||1,r=o.r+2;
-                if(od<r){fx+=(ox*(r-od)-oz)/od*3;fz+=(oz*(r-od)+ox)/od*3;}
+        syncCatPopulation();
+        for(const enemy of cats){
+            let tx=player.x,tz=player.z,best=(tx-enemy.x)**2+(tz-enemy.z)**2,now=performance.now(),self=1;
+            peers.forEach(peer=>{const distance=(peer.x-enemy.x)**2+(peer.z-enemy.z)**2;if(now-peer.last<15000&&distance<best){best=distance;tx=peer.x;tz=peer.z;self=0;}});
+            // Recycle abandoned enemies and never allow a powerful enemy inside the starter zone.
+            if(best>120**2){placeCat(enemy);continue;}
+            if(!worldPower(enemy.x,enemy.z)&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.scale=1;enemy.max=enemy.hp=1;}
+            let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3;
+            const building=buildingAt(enemy.x,enemy.z);if(building){
+                let ox=enemy.x-building.x,oz=enemy.z-building.z,od=HYPOT(ox,oz)||1,radius=building.r+2;
+                if(od<radius){fx+=(ox*(radius-od)-oz)/od*3;fz+=(oz*(radius-od)+ox)/od*3;}
             }
-            c.vx+=fx*dt;c.vz+=fz*dt;
-            let s=HYPOT(c.vx,c.vz)||1,m=2.5+c.tier*.12;
-            if(s>m){c.vx*=m/s;c.vz*=m/s;s=m;}
-            const px=c.x,pz=c.z;
-            c.x+=c.vx*dt;c.z+=c.vz*dt;
-            const cityHit=resolveCityCollision(c,.45,px,pz);
-            if(cityHit&1)c.vx=0;if(cityHit&2)c.vz=0;
-            c.vx*=1-dt;c.vz*=1-dt;
-            c.anim+=s*dt*3.5;c.yaw=ATAN2(c.vx,c.vz);
-            c.hit-=dt;c.h-=dt;
-            if(self&&d<1.1+c.tier*.04&&c.hit<0){
-                //u.x+=dx/d*(2+c.tier*.2); // knockback
-                //u.z+=dz/d*(2+c.tier*.2); // knockback
-                //u.y+=dz/d*(2+c.tier*.2);
-                hp-=10+c.tier*4;
+            enemy.vx+=fx*dt;enemy.vz+=fz*dt;
+            // HP drives movement speed logarithmically, including mutation HP.
+            let speed=HYPOT(enemy.vx,enemy.vz)||1;
+            if(speed>maxSpeed){enemy.vx*=maxSpeed/speed;enemy.vz*=maxSpeed/speed;speed=maxSpeed;}
+            const px=enemy.x,pz=enemy.z;
+            enemy.x+=enemy.vx*dt;enemy.z+=enemy.vz*dt;
+            const cityHit=resolveCityCollision(enemy,.45,px,pz);
+            if(cityHit&1)enemy.vx=0;if(cityHit&2)enemy.vz=0;
+            enemy.vx*=1-dt;enemy.vz*=1-dt;
+            enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
+            enemy.hit-=dt;enemy.h-=dt;
+            if(self&&distance<.6+enemy.scale*.6&&enemy.hit<0){
+                //player.x+=dx/d*(2+c.tier*.2); // knockback
+                //player.z+=dz/d*(2+c.tier*.2); // knockback
+                //player.y+=dz/d*(2+c.tier*.2);
+                hp-=enemy.max;
                 playHurtSound();
-                placeCat(c);
+                placeCat(enemy);
                 if(hp<1){resetRun();return;} // DEAD
                 continue;
             }
-            if(c.h<0)for(let i=orbCount;i--;){
-                const a=orbitPhase(skillTime)+i*PI*2/orbCount,ox=u.x+COS(a)*2.5,oz=u.z+SIN(a)*2.5;
-                if((c.x-ox)**2+(c.z-oz)**2<.75**2){
-                    hurt(c,damage,myId);c.h=.5;break;
+            if(enemy.h<0)for(let i=orbCount;i--;){
+                const angle=orbitPhase(skillTime)+i*PI*2/orbCount,ox=player.x+COS(angle)*2.5,oz=player.z+SIN(angle)*2.5;
+                if((enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){
+                    hurt(enemy,damage,myId);enemy.h=.5;break;
                 }
             }
-            peers.forEach((p,id)=>{
-                if(now-p.last<15000&&(p.oh[c.i]||0)<now)for(let i=p.oc;i--;){
-                    const a=orbitPhase(p.op+(now-p.ot)/1e3)+i*PI*2/p.oc,ox=p.x+COS(a)*2.5,oz=p.z+SIN(a)*2.5;
-                    if((c.x-ox)**2+(c.z-oz)**2<.75**2){hurt(c,p.d,id);p.oh[c.i]=now+500;break;}
+            peers.forEach((peer,id)=>{
+                if(now-peer.last<15000&&(peer.oh[enemy.i]||0)<now)for(let i=peer.oc;i--;){
+                    const angle=orbitPhase(peer.op+(now-peer.ot)/1e3)+i*PI*2/peer.oc,ox=peer.x+COS(angle)*2.5,oz=peer.z+SIN(angle)*2.5;
+                    if((enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){hurt(enemy,peer.d,id);peer.oh[enemy.i]=now+500;break;}
                 }
             });
         }
     }
     function updateRemoteCats(dt){
         const now=performance.now();
-        remoteCats.forEach((group,owner)=>group.forEach(c=>{
-            if(now-c.last>15000||c.dead)return;
-            const k=MIN(1,dt*8);c.x=lerp(c.x,c.tx,k);c.z=lerp(c.z,c.tz,k);c.yaw=lerpAngle(c.yaw||c.tyaw,c.tyaw,k);c.hit-=dt;
-            let dx=u.x-c.x,dz=u.z-c.z,d=HYPOT(dx,dz)||1;
-            if(d<1.1+c.tier*.04&&c.hit<0){
-                u.x+=dx/d*(2+c.tier*.2);u.z+=dz/d*(2+c.tier*.2);hp-=10+c.tier*4;c.hit=1;playHurtSound();
-                sendMMO(`k|${owner}|${c.i}|${c.v}`);
+        remoteCats.forEach((group,owner)=>group.forEach(enemy=>{
+            if(now-enemy.last>15000||enemy.dead)return;
+            const interpolation=MIN(1,dt*8);enemy.x=lerp(enemy.x,enemy.tx,interpolation);enemy.z=lerp(enemy.z,enemy.tz,interpolation);enemy.yaw=lerpAngle(enemy.yaw||enemy.tyaw,enemy.tyaw,interpolation);enemy.hit-=dt;
+            let dx=player.x-enemy.x,dz=player.z-enemy.z,distance=HYPOT(dx,dz)||1;
+            if(distance<.6+enemy.scale*.6&&enemy.hit<0){
+                player.x+=dx/distance*(2+enemy.tier*.2);player.z+=dz/distance*(2+enemy.tier*.2);hp-=enemy.max;enemy.hit=1;playHurtSound();
+                sendMMO(`k|${owner}|${enemy.i}|${enemy.v}`);
                 if(hp<1)resetRun();
             }
         }));
@@ -908,11 +987,34 @@
     // -- MODULE: Gameplay-Projectile-Simulation --
     // Shared local/remote simulation is both clearer and smaller in the measured PPMd ZIP.
     function updateProjectiles(list,dt,remote){
-        for(let i=list.length;i--;){const s=list[i],r=.2;s.x+=s.vx*dt;s.z+=s.vz*dt;s.t-=dt;
-            if(insideBuilding(s.x,s.z,r)){list.splice(i,1);continue;}
-            for(const c of cats)if((c.x-s.x)**2+(c.z-s.z)**2<(.5+r)**2){hurt(c,s.d,remote?s.o:myId);if(remote||myId)sendMMO(`x|${remote?s.o:myId}|${s.i}`);s.t=0;break;}
-            if(!remote&&s.t>0)remoteHit:for(const [owner,group] of remoteCats)for(const c of group.values())if(!c.dead&&(c.x-s.x)**2+(c.z-s.z)**2<(.5+r)**2){playHitSound(c.x,c.z);s.t=0;break remoteHit;}
-            if(s.t<=0)list.splice(i,1);
+        for(let i=list.length;i--;){
+            const projectile=list[i],radius=.2;
+            projectile.x+=projectile.vx*dt;
+            projectile.z+=projectile.vz*dt;
+            projectile.t-=dt;
+
+            if(insideBuilding(projectile.x,projectile.z,radius)){
+                list.splice(i,1);
+                continue;
+            }
+
+            for(const enemy of cats)if((enemy.x-projectile.x)**2+(enemy.z-projectile.z)**2<(.5*enemy.scale+radius)**2){
+                hurt(enemy,projectile.d,remote?projectile.o:myId);
+                if(remote||myId)sendMMO(`x|${remote?projectile.o:myId}|${projectile.i}`);
+                projectile.t=0;
+                break;
+            }
+
+            if(!remote&&projectile.t>0)remoteHit:
+                for(const [owner,group] of remoteCats)
+                    for(const enemy of group.values())
+                        if(!enemy.dead&&(enemy.x-projectile.x)**2+(enemy.z-projectile.z)**2<(.5+radius)**2){
+                            playHitSound(enemy.x,enemy.z);
+                            projectile.t=0;
+                            break remoteHit;
+                        }
+
+            if(projectile.t<=0)list.splice(i,1);
         }
     }
     // -- /MODULE: Gameplay-Projectile-Simulation --
@@ -921,52 +1023,92 @@
         if(boltCount&&boltTime<0){
             boltTime=boltRate;
             let target=cats[0],best=1e9;
-            for(const c of cats){const d=(c.x-u.x)**2+(c.z-u.z)**2;if(d<best){best=d;target=c;}}
-            remoteCats.forEach(group=>group.forEach(c=>{const d=(c.x-u.x)**2+(c.z-u.z)**2;if(!c.dead&&performance.now()-c.last<15000&&d<best){best=d;target=c;}}));
-            const aim=ATAN2(target.x-u.x,target.z-u.z);
+            for(const enemy of cats){
+                const distance=(enemy.x-player.x)**2+(enemy.z-player.z)**2;
+                if(distance<best){
+                    best=distance;
+                    target=enemy;
+                }
+            }
+            remoteCats.forEach(group=>group.forEach(enemy=>{
+                const distance=(enemy.x-player.x)**2+(enemy.z-player.z)**2;
+                if(!enemy.dead&&performance.now()-enemy.last<15000&&distance<best){
+                    best=distance;
+                    target=enemy;
+                }
+            }));
+            const aim=ATAN2(target.x-player.x,target.z-player.z);
             for(let i=boltCount;i--;){
-                const a=aim+(i-(boltCount-1)/2)*.18;
-                const s={x:u.x,y:.7,z:u.z,vx:SIN(a)*10,vz:COS(a)*10,d:damage,i:++shotId,t:3};shots.push(s);
-                if(myId)sendMMO(`s|${myId}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.vx.toFixed(2)}|${s.vz.toFixed(2)}|${s.d}|${s.i}`);
+                const angle=aim+(i-(boltCount-1)/2)*.18;
+                const projectile={x:player.x,y:.7,z:player.z,vx:SIN(angle)*10,vz:COS(angle)*10,d:damage,i:++shotId,t:3};
+                shots.push(projectile);
+                if(myId)sendMMO(`s|${myId}|${projectile.x.toFixed(2)}|${projectile.z.toFixed(2)}|${projectile.vx.toFixed(2)}|${projectile.vz.toFixed(2)}|${projectile.d}|${projectile.i}`);
             }
             playShotSound();
         }
-        updateProjectiles(shots,dt,0);updateProjectiles(remoteShots,dt,1);
-        for(let i=damageNumbers.length;i--;){const n=damageNumbers[i];n.y+=dt*.5;if((n.t-=dt)<0)damageNumbers.splice(i,1);}
+        updateProjectiles(shots,dt,0);
+        updateProjectiles(remoteShots,dt,1);
+        for(let i=damageNumbers.length;i--;){
+            const number=damageNumbers[i];
+            number.y+=dt*.5;
+            if((number.t-=dt)<0)damageNumbers.splice(i,1);
+        }
     }
     // -- /MODULE: Gameplay-Combat --
 
     function tryPickupItems(dt){
         // Closest point on capsule segment (vertical)
-    const baseY = u.y - 1.6, topY = baseY + 1.6;
-        for (const itm of items){
-            if (!(itm.r>0)) continue;
-            if(itm.m){const dx=u.x-itm.x,dz=u.z-itm.z,d=HYPOT(dx,dz)||1,s=MIN(d,18*dt);itm.x+=dx/d*s;itm.z+=dz/d*s;}
-            const ny = MAX(baseY, MIN(topY, itm.y));
-            const dx = itm.x - u.x, dy = itm.y - ny, dz = itm.z - u.z;
-            if (HYPOT(dx,dy,dz) < itm.r + .5){
-                itm.r = 0; // mark consumed
-                if(itm.t===1){hp=MIN(maxHp,hp+10);playSound(330,.25,.08,'sine',660);}
-                else if(itm.t===2){for(const i of items)if(!i.t&&i.r>0)i.m=1;playSound(180,.5,.09,'sawtooth',900);}
-                else{xp++;playXPSound();if(xp>=level*3&&!choosing)rollChoices();}
+        const baseY=player.y-1.6,
+            topY=baseY+1.6;
+
+        for (const item of items){
+            if(!item.r)continue;
+
+            if(item.m){
+                const dx=player.x-item.x,
+                    dz=player.z-item.z,
+                    distance=HYPOT(dx,dz)||1,
+                    step=MIN(distance,18*dt);
+                item.x+=dx/distance*step;
+                item.z+=dz/distance*step;
+            }
+
+            const nearestY=MAX(baseY,MIN(topY,item.y));
+            const dx=item.x-player.x,
+                dy=item.y-nearestY,
+                dz=item.z-player.z;
+
+            if(HYPOT(dx,dy,dz)<item.r+.5){
+                item.r=0; // mark consumed
+                if(item.t===1){
+                    hp=MIN(maxHp,hp+10);
+                    playSound(330,.25,.08,'sine',660);
+                }else if(item.t===2){
+                    for(const pickup of items)if(!pickup.t&&pickup.r>0)pickup.m=1;
+                    playSound(180,.5,.09,'sawtooth',900);
+                }else{
+                    xp++;
+                    playXPSound();
+                    if(xp>=level*3&&!choosing)rollChoices();
+                }
             }
         }
     }
 
     function resolveCollisions(prevX, prevZ){
-        resolveCityCollision(u,.5,prevX,prevZ);
+        resolveCityCollision(player,.5,prevX,prevZ);
         // Ground collision (keep eye at least capsule height above 0)
-    if (u.y - 1.6 < 0) u.y = 1.6;
+    if (player.y - 1.6 < 0) player.y = 1.6;
     }
 
     // Circle against a building footprint. Returns 1 for an X wall hit and 2 for Z.
     function resolveCityCollision(entity,radius,prevX,prevZ){
-        const b=buildingAt(entity.x,entity.z);if(!b)return 0;
-        const hx=b.w/2+radius,hz=b.d/2+radius,dx=entity.x-b.x,dz=entity.z-b.z;
+        const building=buildingAt(entity.x,entity.z);if(!building)return 0;
+        const hx=building.w/2+radius,hz=building.d/2+radius,dx=entity.x-building.x,dz=entity.z-building.z;
         if(ABS(dx)>=hx||ABS(dz)>=hz)return 0;
         const px=hx-ABS(dx),pz=hz-ABS(dz);
-        if(px<pz){const side=dx||(prevX-b.x);entity.x=b.x+(side>=0?hx:-hx);return 1;}
-        const side=dz||(prevZ-b.z);entity.z=b.z+(side>=0?hz:-hz);return 2;
+        if(px<pz){const side=dx||(prevX-building.x);entity.x=building.x+(side>=0?hx:-hx);return 1;}
+        const side=dz||(prevZ-building.z);entity.z=building.z+(side>=0?hz:-hz);return 2;
     }
     // -- /MODULE: Gameplay-World --
 
@@ -979,70 +1121,72 @@
     // Consolidates input from keyboard, joysticks, and VR controllers into a single movement vector
     // -- VR: Input --
     // OPTIONAL: remove this whole function and hand-tracking session feature for controller-only VR.
-    function handPointMove(frame, src) {
-        if (!frame || !src.hand) return null;
+    function handPointMove(frame, source) {
+        if (!frame || !source.hand) return null;
         const base = ref;
         const pose = name => {
-            const joint = src.hand.get(name);
+            const joint = source.hand.get(name);
             return joint && frame.getJointPose(joint, base);
         };
-        const wrist = pose('wrist'), index = pose('index-finger-tip'), indexBase = pose('index-finger-phalanx-proximal');
-        if (!wrist || !index || !indexBase) return null;
-        const p = x => x.transform.position;
-        const dist = (a,b) => HYPOT(a.x-b.x,a.y-b.y,a.z-b.z);
-        const extended = (tip, base) => tip && base && dist(p(tip),p(wrist)) > dist(p(base),p(wrist))*1.45;
-        const curl = (tip, base) => tip && base && dist(p(tip),p(wrist)) < dist(p(base),p(wrist))*1.05;
+        const wrist=pose('wrist'),index=pose('index-finger-tip'),indexBase=pose('index-finger-phalanx-proximal'),thumb=pose('thumb-tip'),thumbBase=pose('thumb-phalanx-proximal');
+        if(!wrist)return null;
+        const position = pose => pose.transform.position;
+        const distanceBetween=(pointA,pointB)=>HYPOT(pointA.x-pointB.x,pointA.y-pointB.y,pointA.z-pointB.z);
+        const extended=(tip,base)=>tip&&base&&distanceBetween(position(tip),position(wrist))>distanceBetween(position(base),position(wrist))*1.45;
+        const curl=(tip,base)=>tip&&base&&distanceBetween(position(tip),position(wrist))<distanceBetween(position(base),position(wrist))*1.05;
         let curled = 0;
         for (const finger of ['middle','ring','pinky']) {
             if (curl(pose(finger+'-finger-tip'), pose(finger+'-finger-phalanx-proximal'))) curled++;
         }
-        if (!extended(index,indexBase) || curled < 3) { pointStarted.delete(src); return null; }
-        const now = performance.now(), started = pointStarted.get(src);
+        // FINGERTIP STEERING: index has priority; thumb is the fallback.
+        const finger=extended(index,indexBase)?[index,indexBase]:extended(thumb,thumbBase)?[thumb,thumbBase]:0;
+        if(!finger||curled<3){pointStarted.delete(source);return null;}
+        const now=performance.now(),started=pointStarted.get(source);
         // OPTIONAL: gesture debug feedback only.
-        if (started === undefined) { pointStarted.set(src,now);log('POINT '+src.handedness);return null; }
+        if(started===undefined){pointStarted.set(source,now);log('POINT '+source.handedness);return null;}
         if (now-started < 150) return null;
-        const ray = rayFrom('VR',frame,src), h = ray && HYPOT(ray.d[0],ray.d[2]);
-        if (!ray || h < .35) return null;
-        const dx=ray.d[0]/h,dz=ray.d[2]/h,cy=COS(u.yaw),sy=SIN(u.yaw);
-        return {x:dx*cy-dz*sy,y:-dx*sy-dz*cy};
+        // FINGERTIP STEERING: use the proximal-to-tip vector and reject mostly vertical pointing.
+        const tip=position(finger[0]),basePosition=position(finger[1]),dx=tip.x-basePosition.x,dy=tip.y-basePosition.y,dz=tip.z-basePosition.z,horizontal=HYPOT(dx,dz);
+        if(horizontal<HYPOT(dx,dy,dz)*.35)return null;
+        return {x:dx/horizontal,y:-dz/horizontal};
     }
     // -- /VR: Input --
 
     function getMove(session, frame) {
         let vx = 0, vy = 0, vt = 0;
         // -- SOLUTION: Gameplay-Movement-Keyboard --
-        // Keyboard input (WASD for move, QE for turn)
-    const kx = (+!!I.keys['KeyD']) - (+!!I.keys['KeyA']);
-    const ky = (+!!I.keys['KeyW']) - (+!!I.keys['KeyS']);
-    const kt = (+!!I.keys['KeyQ']) - (+!!I.keys['KeyE']);
+        // Keyboard input (WASD for move, QE or arrows for move/turn)
+    const kx = (+!!input.keys['KeyD']) - (+!!input.keys['KeyA']);
+    const ky = +!!(input.keys['KeyW']||input.keys['ArrowUp']) - +!!(input.keys['KeyS']||input.keys['ArrowDown']);
+    const kt = +!!(input.keys['KeyQ']||input.keys['ArrowLeft']) - +!!(input.keys['KeyE']||input.keys['ArrowRight']);
         // -- /SOLUTION: Gameplay-Movement-Keyboard --
     
         // -- SOLUTION: Gameplay-Movement-Joystick --
     // Virtual joystick input
-    const jx = I.joy.L.x;
-    const jy = -I.joy.L.y;
-    const jt = -I.joy.R.x;
+    const jx = input.joy.L.x;
+    const jy = -input.joy.L.y;
+    const jt = -input.joy.R.x;
         // -- /SOLUTION: Gameplay-Movement-Joystick --
 
         // -- SOLUTION: Gameplay-Movement-VR --
         // -- VR: Input --
         // VR gamepad input
         if (session) {
-            for (const src of session.inputSources) {
-                const left=src.handedness===(opts[5]?'right':'left'),handMove = handPointMove(frame,src);
+            for (const source of session.inputSources) {
+                const left=source.handedness===(opts[5]?'right':'left'),handMove=handPointMove(frame,source);
                 if (handMove) {
                     if (left) vt=-handMove.x;
                     else { vx=handMove.x;vy=handMove.y; }
                     continue;
                 }
-                const a = src.gamepad?.axes;
-                if (!a || a.length < 2) continue;
-                const dz = v => ABS(v) > DZ ? v : 0; // Apply deadzone
+                const axes=source.gamepad?.axes;
+                if(!axes||axes.length<2)continue;
+                const deadzone=value=>ABS(value)>DZ?value:0;
                 // OPTIONAL COMPATIBILITY: Meta Quest uses 2/3; fallback also supports compact 0/1-axis gamepads.
-                const n=a.length>=4?2:0,x=dz(a[n]||0),y=dz(a[n+1]||0);
+                const axisOffset=axes.length>=4?2:0,x=deadzone(axes[axisOffset]||0),y=deadzone(axes[axisOffset+1]||0);
                 
                 if (left) { vx = x; vy = -y; }
-                else if (src.handedness) { vt = -x; }
+                else if(source.handedness){vt=-x;}
                 // OPTIONAL COMPATIBILITY: Meta Quest normally reports left/right handedness.
                 else if (!vx && !vy) { vx = x; vy = -y; } // Fallback for undefined handedness
             }
@@ -1056,29 +1200,27 @@
 
     // -- SOLUTION: Gameplay-Movement-Step --
     // Updates the user's position and orientation based on movement input and delta time
-    function step(dt, mv) {
+    function step(dt, movement) {
         // New movement logic
         const speed = moveSpeed;
         // Apply movement
-    u.yaw += mv.t * 2/*TURNS*/ * dt; // Apply turning
+    player.yaw += movement.t * 2/*TURNS*/ * dt; // Apply turning
         
         // Calculate forward and right vectors based on current yaw
-    const cy = COS(u.yaw);
-    const sy = SIN(u.yaw);
+    const cy = COS(player.yaw);
+    const sy = SIN(player.yaw);
         T_V3_A[0] = -sy; T_V3_A[1] = 0; T_V3_A[2] = -cy; // 'f' vector
         T_V3_B[0] = cy;  T_V3_B[1] = 0; T_V3_B[2] = -sy;  // 'r' vector
         //const sp = MOVES * dt;
         const sp = speed * dt;
         // collision resolution
-    const prevX = u.x, prevZ = u.z;
+    const prevX = player.x, prevZ = player.z;
 
         // Apply movement along forward and right vectors
-        u.x += (T_V3_B[0] * mv.x + T_V3_A[0] * mv.y) * sp;
-        u.z += (T_V3_B[2] * mv.x + T_V3_A[2] * mv.y) * sp;
-    // Update velocity using previous stored position
-    userVelX = (u.x - prevUserX) / dt;
-    userVelZ = (u.z - prevUserZ) / dt;
-    prevUserX = u.x; prevUserZ = u.z;
+        player.x += (T_V3_B[0] * movement.x + T_V3_A[0] * movement.y) * sp;
+        player.z += (T_V3_B[2] * movement.x + T_V3_A[2] * movement.y) * sp;
+    // OPTIONAL: update the unused predictive-pursuit velocity declared near player state.
+    //userVelX=(player.x-prevUserX)/dt;userVelZ=(player.z-prevUserZ)/dt;prevUserX=player.x;prevUserZ=player.z;
         // Resolve collisions with obstacles
         resolveCollisions(prevX, prevZ);
         tryPickupItems(dt);
@@ -1101,45 +1243,142 @@
     
     // -- FEATURE: Scene --
     // -- MODULE: Scene-Audio --
-    let audioCtx,soundOut,localOut,lastKillSound=0,lastHitSound=0,opts=[0,0,1,1,1,0];
+    let audioContext,
+        spatialOutput,
+        localOutput,
+        lastKillSound=0,
+        lastHitSound=0,
+        opts=[0,0,1,1,1,0];
 
     function initAudio(){
-        if(!audioCtx){
-            const c=audioCtx=new (window.AudioContext||window.webkitAudioContext)(),f=c.createBiquadFilter(),r=c.createConvolver(),b=c.createBuffer(2,c.sampleRate*1.4,c.sampleRate),w=c.createGain(),s=c.createGain(),m=c.createDynamicsCompressor();
-            for(let i=2;i--;){const a=b.getChannelData(i);for(let j=a.length;j--;)a[j]=(Math.random()*2-1)*(1-j/a.length)**2;}
-            r.buffer=b;f.frequency.value=6000;w.gain.value=.18;
-            f.connect(m).connect(c.destination);s.connect(f);s.connect(r).connect(w).connect(f);soundOut=s;localOut=f;
+        if(!audioContext){
+            const context=audioContext=new (window.AudioContext||window.webkitAudioContext)(),
+                filter=context.createBiquadFilter(),
+                reverb=context.createConvolver(),
+                impulse=context.createBuffer(2,context.sampleRate*1.4,context.sampleRate),
+                reverbGain=context.createGain(),
+                spatialBus=context.createGain(),
+                compressor=context.createDynamicsCompressor();
+
+            // Fill both impulse-response channels with fading noise for compact synthetic reverb.
+            for(let channel=2;channel--;){
+                const samples=impulse.getChannelData(channel);
+                for(let sample=samples.length;sample--;)
+                    samples[sample]=(Math.random()*2-1)*(1-sample/samples.length)**2;
+            }
+
+            reverb.buffer=impulse;
+            filter.frequency.value=6000;
+            reverbGain.gain.value=.18;
+
+            // Local sounds go straight to the filter. Spatial sounds split into dry and reverberated paths.
+            filter.connect(compressor).connect(context.destination);
+            spatialBus.connect(filter);
+            spatialBus.connect(reverb).connect(reverbGain).connect(filter);
+            spatialOutput=spatialBus;
+            localOutput=filter;
         }
-        audioCtx.resume();
+        audioContext.resume();
     }
-    function playSound(f,d,v,type='sine',end=f,delay=0,attack=.005,x,y,z){
-        if(!audioCtx||!opts[3]) return;
-        const t=audioCtx.currentTime+delay,o=audioCtx.createOscillator(),g=audioCtx.createGain();
-        o.type=type;o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(end,t+d);
-        g.gain.setValueAtTime(.001,t);g.gain.linearRampToValueAtTime(v,t+attack);g.gain.exponentialRampToValueAtTime(.001,t+d);
-        o.connect(g);
-        if(x===undefined)g.connect(localOut);
-        else{const p=audioCtx.createPanner();p.panningModel='HRTF';p.refDistance=3;p.rolloffFactor=.35;p.maxDistance=60;p.positionX.value=x;p.positionY.value=y;p.positionZ.value=z;g.connect(p).connect(soundOut);}
-        o.start(t);o.stop(t+d);
+    // Build one synthesized tone. The final x/y/z arguments make it spatial;
+    // leaving x undefined sends it directly to the non-spatial local output.
+    function playSound(
+        frequency,
+        duration,
+        volume,
+        waveType='sine',
+        endFrequency=frequency,
+        delay=0,
+        attack=.005,
+        x,
+        y,
+        z
+    ){
+        if(!audioContext||!opts[3])return;
+
+        const startTime=audioContext.currentTime+delay,
+            oscillator=audioContext.createOscillator(),
+            gain=audioContext.createGain();
+
+        oscillator.type=waveType;
+        oscillator.frequency.setValueAtTime(frequency,startTime);
+        oscillator.frequency.exponentialRampToValueAtTime(endFrequency,startTime+duration);
+
+        gain.gain.setValueAtTime(.001,startTime);
+        gain.gain.linearRampToValueAtTime(volume,startTime+attack);
+        gain.gain.exponentialRampToValueAtTime(.001,startTime+duration);
+        oscillator.connect(gain);
+
+        if(x===undefined)gain.connect(localOutput);
+        else{
+            const panner=audioContext.createPanner();
+            panner.panningModel='HRTF';
+            panner.refDistance=3;
+            panner.rolloffFactor=.35;
+            panner.maxDistance=60;
+            panner.positionX.value=x;
+            panner.positionY.value=y;
+            panner.positionZ.value=z;
+            gain.connect(panner).connect(spatialOutput);
+        }
+
+        oscillator.start(startTime);
+        oscillator.stop(startTime+duration);
     }
-    function playClickSound(){playSound(520,.05,.08,'square',260);}
-    function playShotSound(x=u.x,z=u.z){if(opts[4]){playSound(880,.1,.07,'square',180,0,.005,x,.7,z);playSound(1760,.05,.025,'sine',440,0,.005,x,.7,z);}}
+    function playClickSound(){
+        playSound(520,.05,.08,'square',260);
+    }
+    function playShotSound(x=player.x,z=player.z){
+        if(opts[4]){
+            playSound(880,.1,.07,'square',180,0,.005,x,.7,z);
+            playSound(1760,.05,.025,'sine',440,0,.005,x,.7,z);
+        }
+    }
     function playKillSound(x,z){
-        if(!audioCtx||audioCtx.currentTime-lastKillSound<.035)return;lastKillSound=audioCtx.currentTime;
-        playSound(260,.14,.08,'triangle',90,0,.005,x,.6,z);playSound(900,.035,.025,'square',180,0,.002,x,.6,z);
+        if(!audioContext||audioContext.currentTime-lastKillSound<.035)return;
+        lastKillSound=audioContext.currentTime;
+        playSound(260,.14,.08,'triangle',90,0,.005,x,.6,z);
+        playSound(900,.035,.025,'square',180,0,.002,x,.6,z);
     }
     function playHitSound(x,z){
-        if(!audioCtx||audioCtx.currentTime-lastHitSound<.025)return;lastHitSound=audioCtx.currentTime;
+        if(!audioContext||audioContext.currentTime-lastHitSound<.025)return;
+        lastHitSound=audioContext.currentTime;
         playSound(300,.08,.035,'triangle',130,0,.003,x,.6,z);
     }
-    function playHurtSound(){playSound(100,.3,.18,'sawtooth',38);}
-    function playXPSound(){const f=600*2**((xp%6)/12);playSound(f,.1,.06,'square',f*2);playSound(f*1.5,.22,.035,'triangle',f*3,.05);}
-    function playLevelSound(){playSound(330,.18,.05,'sawtooth',320);playSound(494,.18,.05,'sawtooth',480,.22);playSound(660,1,.07,'sawtooth',640,.44,.03);}
-    function updateAudioListener(m){
-        if(!audioCtx)return;
-        const l=audioCtx.listener,x=m[12],y=m[13],z=m[14],fx=-m[8],fy=-m[9],fz=-m[10],ux=m[4],uy=m[5],uz=m[6];
-        if(l.positionX){l.positionX.value=x;l.positionY.value=y;l.positionZ.value=z;l.forwardX.value=fx;l.forwardY.value=fy;l.forwardZ.value=fz;l.upX.value=ux;l.upY.value=uy;l.upZ.value=uz;}
-        else{l.setPosition(x,y,z);l.setOrientation(fx,fy,fz,ux,uy,uz);}
+    function playHurtSound(){
+        playSound(100,.3,.18,'sawtooth',38);
+    }
+    function playXPSound(){
+        const frequency=600*2**((xp%6)/12);
+        playSound(frequency,.1,.06,'square',frequency*2);
+        playSound(frequency*1.5,.22,.035,'triangle',frequency*3,.05);
+    }
+    function playLevelSound(){
+        playSound(330,.18,.05,'sawtooth',320);
+        playSound(494,.18,.05,'sawtooth',480,.22);
+        playSound(660,1,.07,'sawtooth',640,.44,.03);
+    }
+    function updateAudioListener(matrix){
+        if(!audioContext)return;
+        const listener=audioContext.listener,
+            x=matrix[12],y=matrix[13],z=matrix[14],
+            forwardX=-matrix[8],forwardY=-matrix[9],forwardZ=-matrix[10],
+            upX=matrix[4],upY=matrix[5],upZ=matrix[6];
+
+        if(listener.positionX){
+            listener.positionX.value=x;
+            listener.positionY.value=y;
+            listener.positionZ.value=z;
+            listener.forwardX.value=forwardX;
+            listener.forwardY.value=forwardY;
+            listener.forwardZ.value=forwardZ;
+            listener.upX.value=upX;
+            listener.upY.value=upY;
+            listener.upZ.value=upZ;
+        }else{
+            listener.setPosition(x,y,z);
+            listener.setOrientation(forwardX,forwardY,forwardZ,upX,upY,upZ);
+        }
     }
     // -- /MODULE: Scene-Audio --
 
@@ -1157,8 +1396,8 @@
     // Upgrade card borders and titles separately use their POWER tier color below.
     const HP_COLOR='#2a2',HP_BACK='#252',XP_COLOR='#aa2',XP_BACK='#552';
 
-    function log(s) { LOG.push(s); LOG.length > 200 && LOG.shift(); logScroll = 0; }
-    function say(s) { log(s); CHAT.push(s); CHAT.length > 4 && CHAT.shift(); }
+    function log(message) { LOG.push(message); LOG.length > 200 && LOG.shift(); logScroll = 0; }
+    function say(message) { log(message); CHAT.push(message); CHAT.length > 4 && CHAT.shift(); }
 
     let uiEnterLabel = 'ENTER VR';
     // u0,v0,u1,v1,label,action
@@ -1171,9 +1410,9 @@
         [.66,.62,.80,.72,'UP',4],[.82,.62,.96,.72,'DOWN',5]
     ], KEY_NAV=[
         [.66,.375,.80,.46,'UP',4],[.82,.375,.96,.46,'DOWN',5]
-    ], UI_KEYS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((c,i)=>{
+    ], UI_KEYS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((character,i)=>{
         const x=.03+i%9*.07,y=.48+(i/9|0)*.14;
-        return [x,y,x+.06,y+.11,c,c];
+        return [x,y,x+.06,y+.11,character,character];
     }).concat([
         [.68,.48,.96,.59,'SPACE',' '],
         [.68,.62,.96,.73,'BACK',8],
@@ -1194,16 +1433,16 @@
         //[.675,.28,.975,.56,'FASTER',22], // ORBIT SPEED placeholder removed
         [.675,.28,.975,.56,'',22]
     ];
-    function cardText(n,p){
-        if(n===0)return `+${p} ORB${p>1?'S':''}`;
-        //if(n===1)return `+${p*15}% ORBIT SIZE`; // ORBIT RADIUS/SIZE card removed
-        //if(n===2)return `+${p*15}% ORB SPEED`; // ORBIT SPEED card removed
-        if(n===3)return `+${p} BOLT${p>1?'S':''}`;
-        if(n===4)return `+${p*10}% MOVE`;
-        if(n===5)return `-${p*10}% COOLDOWN`;
-        if(n===6)return `+${p*20} MAX HEALTH`;
-        if(n===7)return `+${p} DAMAGE`;
-        return `+${p/10} HP/SEC`;
+    function cardText(type,power){
+        if(type===0)return `+${power} ORB${power>1?'S':''}`;
+        //if(type===1)return `+${power*15}% ORBIT SIZE`; // ORBIT RADIUS/SIZE card removed
+        //if(type===2)return `+${power*15}% ORB SPEED`; // ORBIT SPEED card removed
+        if(type===3)return `+${power} BOLT${power>1?'S':''}`;
+        if(type===4)return `+${power*10}% MOVE`;
+        if(type===5)return `-${power*10}% COOLDOWN`;
+        if(type===6)return `+${power*20} MAX HEALTH`;
+        if(type===7)return `+${power} DAMAGE`;
+        return `+${power/10} HP/SEC`;
     }
 
     // INVENTORY HUD disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
@@ -1211,40 +1450,40 @@
     // -- /PART: State-Layout --
 
     // -- PART: Chat-Actions --
-    function setChat(v) {
-        hudPage = v ? 1 : 0; chatText = ''; chatInput.value = ''; logScroll=0;
-        if (v && !xr) { hudVisible = true; document.exitPointerLock?.(); chatInput.focus(); }
+    function setChat(open) {
+        hudPage = open ? 1 : 0; chatText = ''; chatInput.value = ''; logScroll=0;
+        if (open && !xr) { hudVisible = true; document.exitPointerLock?.(); chatInput.focus(); }
         else chatInput.blur();
     }
     function sendChat() {
-        const s = chatText.trim().replace(/\|/g,'').slice(0,64);
-        if (!s) return setChat(false);
+        const message = chatText.trim().replace(/\|/g,'').slice(0,64);
+        if (!message) return setChat(false);
         if (!ws || ws.readyState !== 1 || !myId) return log('CHAT: MMO OFFLINE');
-        ws.send('c|' + myId + '|' + s); say('YOU: ' + s); setChat(false);
+        ws.send('c|' + myId + '|' + message); say('YOU: ' + message); setChat(false);
     }
-    function activate(a) {
+    function activate(action) {
         playClickSound();
-        if(a>19)return upgrade(choices[a-20]);
-        if (typeof a === 'string') chatText = (chatText + a).slice(0,64);
-        else if (!a) hudPage=0;
-        else if (a === 1) toggleXRFromUI();
-        else if (a === 2) toggleMMO();
-        else if (a === 3) setChat(true);
-        else if (a === 4) logScroll=MIN(MAX(0,LOG.length-1),logScroll+1);
-        else if (a === 5) logScroll=MAX(0,logScroll-1);
-        else if (a === 6) { setChat(false);hudVisible=false; }
-        else if (a === 7) hudVisible=true;
-        else if (a === 8) chatText=chatText.slice(0,-1);
-        else if (a === 10) sendChat();
-        else if (a === 11) setChat(false);
-        else if (a === 13) hudPage=3;
-        else if (a>13) opts[a-14]^=1;
+        if(action>19)return upgrade(choices[action-20]);
+        if (typeof action === 'string') chatText = (chatText + action).slice(0,64);
+        else if (!action) hudPage=0;
+        else if (action === 1) toggleXRFromUI();
+        else if (action === 2) toggleMMO();
+        else if (action === 3) setChat(true);
+        else if (action === 4) logScroll=MIN(MAX(0,LOG.length-1),logScroll+1);
+        else if (action === 5) logScroll=MAX(0,logScroll-1);
+        else if (action === 6) { setChat(false);hudVisible=false; }
+        else if (action === 7) hudVisible=true;
+        else if (action === 8) chatText=chatText.slice(0,-1);
+        else if (action === 10) sendChat();
+        else if (action === 11) setChat(false);
+        else if (action === 13) hudPage=3;
+        else if (action>13) opts[action-14]^=1;
     }
     chatInput.oninput = _ => chatText = chatInput.value.slice(0,64);
-    chatInput.onkeydown = e => {
-        e.stopPropagation();
-        if (e.key === 'Enter') { e.preventDefault(); sendChat(); }
-        else if (e.key === 'Escape') setChat(false);
+    chatInput.onkeydown = event => {
+        event.stopPropagation();
+        if(event.key==='Enter'){event.preventDefault();sendChat();}
+        else if(event.key==='Escape')setChat(false);
     };
     // -- /PART: Chat-Actions --
 
@@ -1259,37 +1498,37 @@
     function HUD_pick(WH, ray) {
         const ui=currentUI();
         const inv = INV(WH);
-        const o = mulPoint(inv, ray.o); // Transform ray to HUD's local space
-        const d = mulDir(inv, ray.d);
-        const t = -o[2] / d[2]; // Intersect with the Z=0 plane
-        if (t <= 0) return null;
+        const origin=mulPoint(inv,ray.o); // Transform ray to HUD's local space
+        const direction=mulDir(inv,ray.d);
+        const distance=-origin[2]/direction[2]; // Intersect with the Z=0 plane
+        if(distance<=0)return null;
 
-        const x = o[0] + d[0] * t;
-        const y = o[1] + d[1] * t;
+        const x=origin[0]+direction[0]*distance;
+        const y=origin[1]+direction[1]*distance;
 
         // Check if the hit is within the quad's bounds
         if (x < -.26 || x > .26 || y < -.15 || y > .15) return null;
         
         // Convert local coordinates to UV coordinates
-        const u = (x + .26) / (.26 * 2);
-        const v = (.15 - y) / (.15 * 2);
+        const normalizedX=(x+.26)/(.26*2);
+        const normalizedY=(.15-y)/(.15*2);
 
         // Check against each button's UV bounds
-        for (const b of ui) if (u >= b[0] && u <= b[2] && v >= b[1] && v <= b[3]) return { button:b,t };
-        return { t }; // Hit the panel but not a button
+        for(const button of ui)if(normalizedX>=button[0]&&normalizedX<=button[2]&&normalizedY>=button[1]&&normalizedY<=button[3])return {button,t:distance};
+        return {t:distance}; // Hit the panel but not a button
     }
     // -- /PART: Transform-Picking --
 
     // -- PART: Canvas-Drawing --
     // --- HUD Drawing ---
-    function drawBars(y){
-        const x=hudVisible&&!choosing?20:140,w=360;
+    function drawBars(barY){
+        const barX=hudVisible&&!choosing?20:140,width=360;
         // Bar entries: current value, maximum value, label, filled color, empty color.
-        for(const b of [[hp,maxHp,'HP',HP_COLOR,HP_BACK],[xp,level*3,'XP',XP_COLOR,XP_BACK]]){
-            hudCtx.fillStyle=b[4];hudCtx.fillRect(x,y,w,14);
-            hudCtx.fillStyle=b[3];hudCtx.fillRect(x,y,w*MIN(1,b[0]/b[1]),14);
+        for(const bar of [[hp,maxHp,'HP',HP_COLOR,HP_BACK],[xp,level*3,'XP',XP_COLOR,XP_BACK]]){
+            hudCtx.fillStyle=bar[4];hudCtx.fillRect(barX,barY,width,14);
+            hudCtx.fillStyle=bar[3];hudCtx.fillRect(barX,barY,width*MIN(1,bar[0]/bar[1]),14);
             hudCtx.fillStyle=UI_TEXT;hudCtx.font='11px system-ui';hudCtx.textAlign='left';hudCtx.textBaseline='middle';
-            hudCtx.fillText(`${b[2]} ${ROUND(b[0])}/${b[1]}`,x+8,y+7);y+=18;
+            hudCtx.fillText(`${bar[2]} ${ROUND(bar[0])}/${bar[1]}`,barX+8,barY+7);barY+=18;
         }
         hudCtx.textBaseline='alphabetic';
     }
@@ -1301,31 +1540,31 @@
 
         // Draw the compact menu tab while the main HUD is closed.
         if (!hudVisible || choosing) {
-            const b = UI_TAB[0];
-            const x = b[0] * 640;
-            const y = b[1] * 320;
-            const w = (b[2] - b[0]) * 640;
-            const h = (b[3] - b[1]) * 320;
+            const button = UI_TAB[0];
+            const buttonX=button[0]*640;
+            const buttonY=button[1]*320;
+            const width=(button[2]-button[0])*640;
+            const height=(button[3]-button[1])*320;
 
             // Closed HUD MENU button background and hover colors.
-            hudCtx.fillStyle = hoverBtn === b ? UI_HOVER : UI_BUTTON;
-            hudCtx.fillRect(x, y, w, h);
+            hudCtx.fillStyle = hoverBtn === button ? UI_HOVER : UI_BUTTON;
+            hudCtx.fillRect(buttonX,buttonY,width,height);
             hudCtx.fillStyle = UI_TEXT;
             hudCtx.font = '16px system-ui';
             hudCtx.textAlign = 'center';
             hudCtx.textBaseline = 'middle';
-            hudCtx.fillText('MENU', x + w / 2, y + h / 2);
+            hudCtx.fillText('MENU',buttonX+width/2,buttonY+height/2);
             drawBars(44);
 
             if(choosing){
-                for(const b of ui){
-                    const x=b[0]*640,y=b[1]*320,w=(b[2]-b[0])*640,h=(b[3]-b[1])*320,q=b[4].split('|');
+                for(const button of ui){
+                    const buttonX=button[0]*640,buttonY=button[1]*320,width=(button[2]-button[0])*640,height=(button[3]-button[1])*320,labels=button[4].split('|');
                     // Level-up card background, hover, border, title, and description colors.
-                    hudCtx.fillStyle=hoverBtn===b?UI_HOVER:UI_BUTTON;hudCtx.fillRect(x,y,w,h);
-                    hudCtx.strokeStyle=POWER[b[6]][1];hudCtx.lineWidth=5;hudCtx.strokeRect(x+2,y+2,w-4,h-4);
-                    hudCtx.fillStyle=POWER[b[6]][1];hudCtx.font='bold 19px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';
-                    hudCtx.fillText(q[0],x+w/2,y+h*.35);
-                    hudCtx.fillStyle=UI_TEXT;hudCtx.font='13px system-ui';hudCtx.fillText(q[1],x+w/2,y+h*.68);
+                    hudCtx.fillStyle=hoverBtn===button?UI_HOVER:UI_BUTTON;hudCtx.fillRect(buttonX,buttonY,width,height);
+                    hudCtx.strokeStyle=POWER[button[6]][1];hudCtx.lineWidth=5;hudCtx.strokeRect(buttonX+2,buttonY+2,width-4,height-4);
+                    hudCtx.fillStyle=POWER[button[6]][1];hudCtx.font='bold 19px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';
+                    hudCtx.fillText(labels[0],buttonX+width/2,buttonY+height*.35);
+                    hudCtx.fillStyle=UI_TEXT;hudCtx.font='13px system-ui';hudCtx.fillText(labels[1],buttonX+width/2,buttonY+height*.68);
                 }
             }
 
@@ -1338,8 +1577,8 @@
                 hudCtx.font = '14px monospace';
                 hudCtx.textAlign = 'left';
                 hudCtx.textBaseline = 'alphabetic';
-                lines.forEach((s, i) =>
-                    hudCtx.fillText(s.slice(0, 68), 28, 104 + i * 18)
+                lines.forEach((message, i) =>
+                    hudCtx.fillText(message.slice(0, 68), 28, 104 + i * 18)
                 );
             }
         } else {
@@ -1370,16 +1609,16 @@
 
             if (hudPage === 1) {
                 // Chat history and text entry field.
-                const n = xr ? 4 : 11;
+                const lineCount=xr?4:11;
                 const iy = xr ? 120 : 270;
                 const lines = LOG.slice(
-                    MAX(0, LOG.length - n - logScroll),
+                    MAX(0, LOG.length - lineCount - logScroll),
                     LOG.length - logScroll
                 );
 
-                lines.forEach((s, i) =>
+                lines.forEach((message, i) =>
                     hudCtx.fillText(
-                        s.slice(0, xr ? 62 : 48),
+                        message.slice(0, xr ? 62 : 48),
                         20,
                         48 + i * (xr ? 18 : 19)
                     )
@@ -1407,8 +1646,8 @@
                 // Main status page.
                 let peerCount = 0,
                     now = performance.now();
-                peers.forEach(p =>
-                    now - (p.last || 0) < 15000 && peerCount++
+                peers.forEach(peer =>
+                    now - (peer.last || 0) < 15000 && peerCount++
                 );
 
                 hudCtx.fillText(
@@ -1425,35 +1664,35 @@
                     MAX(0, LOG.length - 9 - logScroll),
                     LOG.length - logScroll
                 );
-                lines.forEach((s, i) =>
-                    hudCtx.fillText(s.slice(0, 48), 20, 158 + i * 17)
+                lines.forEach((message, i) =>
+                    hudCtx.fillText(message.slice(0, 48), 20, 158 + i * 17)
                 );
             }
 
             // Draw every button belonging to the active page.
-            for (const b of ui) {
-                const x = b[0] * 640;
-                const y = b[1] * 320;
-                const w = (b[2] - b[0]) * 640;
-                const h = (b[3] - b[1]) * 320;
-                const a = b[5];
+            for (const button of ui) {
+                const buttonX=button[0]*640;
+                const buttonY=button[1]*320;
+                const width=(button[2]-button[0])*640;
+                const height=(button[3]-button[1])*320;
+                const action = button[5];
 
                 // Open HUD button background and hover colors are controlled here.
-                hudCtx.fillStyle = hoverBtn === b ? UI_HOVER : UI_BUTTON;
-                hudCtx.fillRect(x, y, w, h);
+                hudCtx.fillStyle = hoverBtn === button ? UI_HOVER : UI_BUTTON;
+                hudCtx.fillRect(buttonX,buttonY,width,height);
                 hudCtx.fillStyle = UI_TEXT;
                 hudCtx.font = (
-                    (hudPage === 1 && xr) || b[2] - b[0] < .2 ? '13' : '16'
+                    (hudPage === 1 && xr) || button[2] - button[0] < .2 ? '13' : '16'
                 ) + 'px system-ui';
                 hudCtx.textAlign = 'center';
                 hudCtx.textBaseline = 'middle';
                 hudCtx.fillText(
-                    a === 1 ? uiEnterLabel :
-                    a === 2 ? 'MMO ' + (mmoEnabled ? 'ON' : 'OFF') :
-                    a>13 ? b[4]+' '+(opts[a-14]?'ON':'OFF') :
-                    b[4],
-                    x + w / 2,
-                    y + h / 2
+                    action === 1 ? uiEnterLabel :
+                    action === 2 ? 'MMO ' + (mmoEnabled ? 'ON' : 'OFF') :
+                    action>13 ? button[4]+' '+(opts[action-14]?'ON':'OFF') :
+                    button[4],
+                    buttonX+width/2,
+                    buttonY+height/2
                 );
             }
         }
@@ -1518,7 +1757,7 @@
     // Shared sphere geometry and renderer.
 
     function buildSphere(lat=10, lon=12){
-        const v=[];
+        const vertices=[];
         for(let i=0;i<lat;i++){
             const t1=PI*i/lat, t2=PI*(i+1)/lat;
             for(let j=0;j<lon;j++){
@@ -1527,12 +1766,12 @@
                     sph(t1,p1),sph(t2,p1),sph(t2,p2),
                     sph(t1,p1),sph(t2,p2),sph(t1,p2)
                 ];
-                for(const q of quad) v.push(q[0],q[1],q[2]);
+                for(const point of quad) vertices.push(point[0],point[1],point[2]);
             }
         }
-        return new Float32Array(v);
+        return new Float32Array(vertices);
     }
-    function sph(t,p){ return [SIN(t)*COS(p), COS(t), SIN(t)*SIN(p)]; }
+    function sph(theta,phi){ return [SIN(theta)*COS(phi),COS(theta),SIN(theta)*SIN(phi)]; }
 
     const sphereVao = gl.createVertexArray();
     const sphereBuf = gl.createBuffer();
@@ -1547,14 +1786,14 @@
     const uS_P = gl.getUniformLocation(PC,'P');
     const uS_Color = gl.getUniformLocation(PC,'col');
 
-    function drawSphere(V,P,x,y,z,r,col){
+    function drawSphere(V,P,x,y,z,radius,color){
         gl.useProgram(PC);
         gl.bindVertexArray(sphereVao);
-        const Msp = translateScale(x,y,z,r,r,r);
+        const Msp = translateScale(x,y,z,radius,radius,radius);
         gl.uniformMatrix4fv(uS_M,false,Msp);
         gl.uniformMatrix4fv(uS_V,false,V);
         gl.uniformMatrix4fv(uS_P,false,P);
-        gl.uniform4f(uS_Color,col[0],col[1],col[2],col[3]??1);
+        gl.uniform4f(uS_Color,color[0],color[1],color[2],color[3]??1);
         gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
     }
 
@@ -1581,12 +1820,12 @@
     function drawCity(V,P){
         gl.useProgram(PC);gl.uniformMatrix4fv(uS_V,false,V);gl.uniformMatrix4fv(uS_P,false,P);
         //gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,0,0,0,1);gl.bindVertexArray(groundVao);gl.drawArrays(gl.TRIANGLES,0,6);
-        for(const b of buildings){
+        for(const building of buildings){
             // Draw each building as a white cube scaled to its width, height, and depth.
-            gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2,b.h/2,b.d/2));
+            gl.uniformMatrix4fv(uS_M,false,translateScale(building.x,building.h/2,building.z,building.w/2,building.h/2,building.d/2));
             gl.uniform4f(uS_Color,.05,.05,.05,1);gl.bindVertexArray(buildingVao);gl.drawArrays(gl.TRIANGLES,0,36);
             // Draw a slightly larger black outline around each building to create a crisp contour effect.
-            gl.uniformMatrix4fv(uS_M,false,translateScale(b.x,b.h/2,b.z,b.w/2+.01,b.h/2+.01,b.d/2+.01)); // 0.01 biger
+            gl.uniformMatrix4fv(uS_M,false,translateScale(building.x,building.h/2,building.z,building.w/2+.01,building.h/2+.01,building.d/2+.01)); // 0.01 biger
             gl.uniform4f(uS_Color,1,1,1,1);gl.bindVertexArray(edgeVao);gl.drawArrays(gl.LINES,0,24);
         }
     }
@@ -1625,18 +1864,19 @@
     // supplies the headset's real eye views.
     // -- MODULE: Scene-Cat-Renderer --
     const PEER_COL = [.7,.7,.8], BLACK=[0,0,0], WHITE=[1,1,1];
-    function drawCat(Vmat, Pmat, x, y, z, yaw, anim, amp, col, scale=1){
+    function drawCat(Vmat, Pmat, x, y, z, yaw, anim, amp, col, shell=1, scale=1){
         const cy = COS(yaw-20), sy = SIN(yaw-20);
-        function place(lx, ly, lz, r){
-            const wx = x + lx*cy + lz*sy;
-            const wz = z + lz*cy - lx*sy;
-            drawSphere(Vmat, Pmat, wx, y + ly, wz, r*scale, col);
+        function place(lx, ly, lz, radius){
+            const wx = x + (lx*cy + lz*sy)*scale;
+            const wz = z + (lz*cy - lx*sy)*scale;
+            // Scale around the paw line so large mutants grow upward instead of floating.
+            drawSphere(Vmat, Pmat, wx, .12+(y+ly-.12)*scale, wz, radius*shell*scale, col);
         }
         place(.10,0,0,.25); place(-.05,0,0,.25); place(-.20,0,0,.24);
         place(.38,.18,0,.20);
         place(.38,.33,.12,.08);place(.38,.4,.16,.04);
         place(.38,.33,-.12,.08);place(.38,.4,-.16,.04);
-        const CYC = v=>SIN(v)*amp, cy0 = CYC(anim), cy1 = CYC(anim+PI), baseY = -.30;
+        const CYC=phase=>SIN(phase)*amp,cy0=CYC(anim),cy1=CYC(anim+PI),baseY=-.30;
         place(.15, baseY + cy0, .14, .09);
         place(.15, baseY + cy1,-.14, .09);
         place(-.25, baseY + cy1, .15, .09);
@@ -1653,13 +1893,13 @@
         const masks=[63,6,91,79,102,109,125,7,127,111],pos=[[0,2],[1,1],[1,-1],[0,-2],[-1,-1],[-1,1],[0,0]];
         gl.useProgram(PC);gl.bindVertexArray(sphereVao);gl.uniformMatrix4fv(uS_V,false,V);gl.uniformMatrix4fv(uS_P,false,P);
         gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-        for(const n of damageNumbers){
-            const text=''+n.n;
-            for(let j=0;j<text.length;j++)for(let s=0;s<7;s++)if(masks[+text[j]]>>s&1){
-                const v=s===1||s===2||s===4||s===5,x=(j-(text.length-1)/2)*.35+pos[s][0]*.15,y=pos[s][1]*.15,
-                    wx=n.x+W[0]*x+W[4]*y,wy=n.y+W[1]*x+W[5]*y,wz=n.z+W[2]*x+W[6]*y,
-                    M=new F32([W[0]*(v?.035:.13),W[1]*(v?.035:.13),W[2]*(v?.035:.13),0,W[4]*(v?.13:.035),W[5]*(v?.13:.035),W[6]*(v?.13:.035),0,W[8]*.02,W[9]*.02,W[10]*.02,0,wx,wy,wz,1]);
-                gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,1,1,1,MIN(1,n.t*2));gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
+        for(const number of damageNumbers){
+            const text=''+number.n;
+            for(let j=0;j<text.length;j++)for(let segment=0;segment<7;segment++)if(masks[+text[j]]>>segment&1){
+                const vertical=segment===1||segment===2||segment===4||segment===5,x=(j-(text.length-1)/2)*.35+pos[segment][0]*.15,y=pos[segment][1]*.15,
+                    wx=number.x+W[0]*x+W[4]*y,wy=number.y+W[1]*x+W[5]*y,wz=number.z+W[2]*x+W[6]*y,
+                    M=new F32([W[0]*(vertical?.035:.13),W[1]*(vertical?.035:.13),W[2]*(vertical?.035:.13),0,W[4]*(vertical?.13:.035),W[5]*(vertical?.13:.035),W[6]*(vertical?.13:.035),0,W[8]*.02,W[9]*.02,W[10]*.02,0,wx,wy,wz,1]);
+                gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,1,1,1,MIN(1,number.t*2));gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
             }
         }
         gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
@@ -1668,76 +1908,76 @@
 
     // -- MODULE: Scene-Camera --
     function buildViewProj() {
-      const cy = COS(u.yaw),
-          sy = SIN(u.yaw);
-      const cp = COS(u.pitch),
-          sp = SIN(u.pitch);
-      const eye = [u.x, u.y, u.z];
-      const center = [u.x - sy * cp, u.y - sp, u.z - cy * cp];
+      const cy = COS(player.yaw),
+          sy = SIN(player.yaw);
+      const cp = COS(player.pitch),
+          sp = SIN(player.pitch);
+      const eye = [player.x, player.y, player.z];
+      const center = [player.x - sy * cp, player.y - sp, player.z - cy * cp];
         LOOKAT(V, eye, center, [0, 1, 0]);
         // Build the perspective projection matrix for the camera. NEAR and FAR clipping planes
-        // PERSP(P, 60, C.width / C.height, .1, 1000.);
-        PERSP(P, 60, C.width / C.height, .2, 3000.);
+        // PERSP(P, 60, canvas.width / canvas.height, .1, 1000.);
+        PERSP(P, 60, canvas.width / canvas.height, .2, 3000.);
         PV = MULTMAT4(M4(), P, V);
         invPV = INV(PV);
     }
     // -- /MODULE: Scene-Camera --
 
     // -- MODULE: Scene-World-Renderer --
-    function drawWorld(V, P, W, t, dt, vr) {
+    function drawWorld(V, P, W) {
         drawCity(V,P);
-        const now=performance.now(),tt=t*.001,br=.144,live=c=>!c.dead&&now-c.last<15000;
+        const now=performance.now(),tt=now*.001,br=.144,live=enemy=>!enemy.dead&&now-enemy.last<15000;
         // -- MODULE: Scene-XP-Mesh --
         // Mesh and ghost loops intentionally remain separate: a shared pass helper is larger.
-        for(const i of items)if(i.r>0){const a=tt*7+i.x*2+i.z,r=.14+SIN(a)*.025;i.t===2?(drawSphere(V,P,i.x-.08,i.y,i.z,r,POWER[0][2]),drawSphere(V,P,i.x+.08,i.y,i.z,r,POWER[5][2])):drawSphere(V,P,i.x,i.y,i.z,r,i.t===1?POWER[3][2]:WHITE);}
+        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,radius=.14+SIN(angle)*.025;item.t===2?(drawSphere(V,P,item.x-.08,item.y,item.z,radius,POWER[0][2]),drawSphere(V,P,item.x+.08,item.y,item.z,radius,POWER[5][2])):drawSphere(V,P,item.x,item.y,item.z,radius,item.t===1?POWER[3][2]:WHITE);}
         // -- /MODULE: Scene-XP-Mesh --
         gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
         // -- MODULE: Scene-XP-Ghost --
-        for(const i of items)if(i.r>0){const a=tt*7+i.x*2+i.z,c=i.t===1?[.05,.8,.12,.2]:i.t===2?[.5,.1,1,.25]:[1,1,1,.08+ABS(SIN(a))*.18];drawSphere(V,P,i.x+COS(a)*.06,i.y+.025,i.z+SIN(a)*.06,.2,c);}
+        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,color=item.t===1?[.05,.8,.12,.2]:item.t===2?[.5,.1,1,.25]:[1,1,1,.08+ABS(SIN(angle))*.18];drawSphere(V,P,item.x+COS(angle)*.06,item.y+.025,item.z+SIN(angle)*.06,.2,color);}
         // -- /MODULE: Scene-XP-Ghost --
         // -- MODULE: Scene-Projectile-Trail --
         // Intentional duplication: these similar loops produce a smaller PPMd ZIP than a shared helper.
-        for(const s of shots)for(let j=3;j--;){const k=j+1;drawSphere(V,P,s.x-s.vx*.065*k,s.y,s.z-s.vz*.065*k,br*(1-j*.12),[1,1,1,.2/k]);}
-        for(const s of remoteShots)for(let j=3;j--;){const k=j+1;drawSphere(V,P,s.x-s.vx*.065*k,s.y,s.z-s.vz*.065*k,br*(1-j*.12),[1,1,1,.2/k]);}
+        for(const projectile of shots)for(let j=3;j--;){const trailStep=j+1;drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[1,1,1,.2/trailStep]);}
+        for(const projectile of remoteShots)for(let j=3;j--;){const trailStep=j+1;drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[1,1,1,.2/trailStep]);}
         // -- /MODULE: Scene-Projectile-Trail --
         // -- MODULE: Scene-Enemy --
         // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
-        for(const c of cats){const s=SIN(tt*10+(c.i||0))*.2,x=c.x-SIN(c.yaw)*.2+COS(c.yaw)*s,z=c.z-COS(c.yaw)*.2-SIN(c.yaw)*s;drawCat(V,P,x,.6,z,c.yaw,c.anim||tt*8,.08,[...POWER[c.tier][2],.2]);}
-        remoteCats.forEach(group=>group.forEach(c=>{if(live(c)){const s=SIN(tt*10+(c.i||0))*.2,x=c.x-SIN(c.yaw)*.2+COS(c.yaw)*s,z=c.z-COS(c.yaw)*.2-SIN(c.yaw)*s;drawCat(V,P,x,.6,z,c.yaw,c.anim||tt*8,.08,[...POWER[c.tier][2],.2]);}}));
+        for(const enemy of cats){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
+        remoteCats.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
         gl.disable(gl.BLEND);
-        for(const c of cats)drawCat(V,P,c.x,.6,c.z,c.yaw,c.anim,.08+c.tier*.01,POWER[c.tier][2],1.16);
-        remoteCats.forEach(group=>group.forEach(c=>live(c)&&drawCat(V,P,c.x,.6,c.z,c.yaw,now*.008,.1,POWER[c.tier][2],1.16)));
+        for(const enemy of cats)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier][2],enemy.mut<0?1.16:1,enemy.scale);
+        remoteCats.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier][2],enemy.mut<0?1.16:1,enemy.scale)));
         gl.depthMask(true);
-        for(const c of cats)drawCat(V,P,c.x,.6,c.z,c.yaw,c.anim,.08+c.tier*.01,BLACK);
-        remoteCats.forEach(group=>group.forEach(c=>live(c)&&drawCat(V,P,c.x,.6,c.z,c.yaw,now*.008,.1,BLACK)));
+        for(const enemy of cats)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
+        remoteCats.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
         // -- /MODULE: Scene-Enemy --
         // -- MODULE: Scene-Projectile-Mesh --
         gl.depthMask(false);
-        for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,br*1.14,WHITE);
-        for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,.164,WHITE);
+        for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br*1.14,WHITE);
+        for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,.164,WHITE);
         gl.depthMask(true);
-        for(const s of shots)drawSphere(V,P,s.x,s.y,s.z,br,BLACK);
-        for(const s of remoteShots)drawSphere(V,P,s.x,s.y,s.z,br,BLACK);
+        for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
+        for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
         // -- /MODULE: Scene-Projectile-Mesh --
         // -- MODULE: Scene-Orb-Mesh --
         // Local and peer loops intentionally repeat: PPMd compresses them smaller than a shared renderer.
         gl.depthMask(false);
-        for(let i=orbCount;i--;){const a=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*2.5,.7,u.z+SIN(a)*2.5,.27,WHITE);}
+        for(let i=orbCount;i--;){const angle=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,player.x+COS(angle)*2.5,.7,player.z+SIN(angle)*2.5,.27,WHITE);}
         gl.depthMask(true);
-        for(let i=orbCount;i--;){const a=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*2.5,.7,u.z+SIN(a)*2.5,.25,BLACK);}
+        for(let i=orbCount;i--;){const angle=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,player.x+COS(angle)*2.5,.7,player.z+SIN(angle)*2.5,.25,BLACK);}
         // -- /MODULE: Scene-Orb-Mesh --
         if (peers && peers.size) {
             const now = performance.now(), target = now - 120;
-            peers.forEach((p, id) => {
-                if (id === myId || now - (p.last || 0) >= 15000) return;
-                const q = samplePeer(p, target) || p;
-                drawCat(V, P, q.x, .6, q.z, (q.yaw || 0) + PI, now*.005*MIN(3,p.speed||0), .1, PEER_COL);
+            peers.forEach((peer, id) => {
+                if (id === myId || now - (peer.last || 0) >= 15000) return;
+                const sample = samplePeer(peer, target) || peer;
+                drawCat(V, P, sample.x, .6, sample.z, (sample.yaw || 0) + PI, now*.005*MIN(3,peer.speed||0), .1, PEER_COL);
                 // -- MODULE: Scene-Peer-Orb --
-                const ph=orbitPhase(p.op+(now-p.ot)/1e3);
+                const peerPhase=orbitPhase(peer.op+(now-peer.ot)/1e3);
                 gl.depthMask(false);
-                for(let i=p.oc;i--;){const a=ph+i*PI*2/p.oc;drawSphere(V,P,q.x+COS(a)*2.5,.7,q.z+SIN(a)*2.5,.27,WHITE);}
+                for(let i=peer.oc;i--;){const angle=peerPhase+i*PI*2/peer.oc;drawSphere(V,P,sample.x+COS(angle)*2.5,.7,sample.z+SIN(angle)*2.5,.27,WHITE);}
                 gl.depthMask(true);
-                for(let i=p.oc;i--;){const a=ph+i*PI*2/p.oc;drawSphere(V,P,q.x+COS(a)*2.5,.7,q.z+SIN(a)*2.5,.25,BLACK);}
+                for(let i=peer.oc;i--;){const angle=peerPhase+i*PI*2/peer.oc;drawSphere(V,P,sample.x+COS(angle)*2.5,.7,sample.z+SIN(angle)*2.5,.25,BLACK);}
                 // -- /MODULE: Scene-Peer-Orb --
             });
         }
@@ -1753,26 +1993,22 @@
     function drawXRInput(session, frame, V, P, hudWH) {
         for (const src of session.inputSources || []) {
             const col = [1, 1, .5];
-            const grip = src.gripSpace ? frame.getPose(src.gripSpace, ref) : null;
-            if (grip) {
-                const M = new DOMMatrix(MULTMAT4(M4(),xrM,grip.transform.matrix)).multiply(new DOMMatrix([.1,0,0,0,0,.1,0,0,0,0,.1,0,0,0,0,1])).rotate(90,0,0).translate(0,-.5,0).toFloat32Array();
-                gl.useProgram(PDisc); gl.bindVertexArray(vaoH);
-                gl.uniformMatrix4fv(uMDisc, false, M); gl.uniformMatrix4fv(uVDisc, false, V); gl.uniformMatrix4fv(uPDisc, false, P);
-                gl.uniform4f(uColDisc, col[0], col[1], col[2], .95);
-                gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-                gl.drawArrays(gl.TRIANGLES, 0, 6); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
-            }
             const target = src.targetRaySpace ? frame.getPose(src.targetRaySpace, ref) : null;
             if (target) {
-                const ray = controllerRay(frame, src);
-                const trigger = src.gamepad && src.gamepad.buttons && src.gamepad.buttons[0] ? src.gamepad.buttons[0].value || 0 : 0;
-                const w = .004 + .01 * trigger, hit = HUD_pick(hudWH, ray);
-                const M = new DOMMatrix([w,0,0,0,0,w,0,0,0,0,-(hit ? MIN(3, hit.t) : 3),0,0,0,0,1]);
-                const beam = new DOMMatrix(MULTMAT4(M4(),xrM,target.transform.matrix)).multiply(M).toFloat32Array();
+                const matrix=MULTMAT4(M4(),xrM,target.transform.matrix),scale=.1-.02*(src.gamepad?.buttons[1]?.value||0);
+                const ring=new DOMMatrix(matrix).scale(scale,scale*1.73,1).toFloat32Array();
+                gl.useProgram(PDisc); gl.bindVertexArray(vaoH);
+                gl.uniformMatrix4fv(uMDisc,false,ring);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);
+                gl.uniform4f(uColDisc,col[0],col[1],col[2],.95);
+                gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+                gl.drawArrays(gl.TRIANGLES,0,6);
+                const hit=HUD_pick(hudWH,controllerRay(frame,src));
+                const width=.004+.01*(src.gamepad?.buttons[0]?.value||+selecting.has(src));
+                const M=new DOMMatrix([width,0,0,0,0,width,0,0,0,0,-(hit?MIN(3,hit.t):3),0,0,0,0,1]);
+                const beam=new DOMMatrix(matrix).multiply(M).toFloat32Array();
                 gl.useProgram(PC); gl.bindVertexArray(vaoBeam);
                 gl.uniformMatrix4fv(uMBeam, false, beam); gl.uniformMatrix4fv(uVBeam, false, V); gl.uniformMatrix4fv(uPBeam, false, P);
                 gl.uniform4f(uColBeam, col[0], col[1], col[2], .8);
-                gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
                 gl.drawArrays(gl.TRIANGLES, 0, 6); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
             }
         }
@@ -1784,16 +2020,11 @@
     // -- VR: Session --
     // --- WebXR ---
 
-    // Checks for WebXR support
-    // OPTIONAL STATUS: this only reports availability; the Enter VR action also catches failures.
-    function initXR() {
-        if (!('xr' in navigator)) {
-            log('WebXR not available');
-            return;
-        }
-        //navigator.xr.isSessionSupported('immersive-vr').then(s => log(s ? 'VR ready: Click Enter VR button' : 'VR error: reload and try again'));
-        navigator.xr.isSessionSupported('immersive-vr').then(s => log(s ? 'VR ready: Click Enter VR' : 'VR not supported')).catch(e => log('VR check failed: '+e.message));
-    }
+    // OPTIONAL: preflights WebXR support for a startup status message; Enter VR already handles failure.
+    /*function initXR(){
+        if(!('xr'in navigator)){log('WebXR not available');return}
+        navigator.xr.isSessionSupported('immersive-vr').then(supported=>log(supported?'VR ready: Click Enter VR':'VR not supported')).catch(error=>log('VR check failed: '+error.message));
+    }*/
     // if vr not avalable we split screen in to stereo view some day
 
     // Toggles an immersive VR session
@@ -1819,12 +2050,14 @@
             catch (_) { ref = await xr.requestReferenceSpace('local'); log('XR floor unavailable; using local space'); }
 
             // WebXR select events cover controller triggers and hand pinches, including hand sources with no gamepad.
-            xr.addEventListener('select', e => {
-                const hit = HUD_pick(HUD_WH_world, rayFrom('VR',e.frame,e.inputSource));
+            xr.addEventListener('select', event => {
+                const hit = HUD_pick(HUD_WH_world, rayFrom('VR',event.frame,event.inputSource));
                 if (hit && hit.button) activate(hit.button[5]);
             });
+            xr.addEventListener('selectstart',event=>selecting.add(event.inputSource));
+            xr.addEventListener('selectend',event=>selecting.delete(event.inputSource));
             // OPTIONAL DEBOUNCE CLEANUP: remove with pointStarted and its 150ms timing logic.
-            xr.addEventListener('inputsourceschange', e => e.removed.forEach(s=>pointStarted.delete(s)));
+            xr.addEventListener('inputsourceschange',event=>event.removed.forEach(source=>{pointStarted.delete(source);selecting.delete(source)}));
             
 
             xr.addEventListener('end', () => {
@@ -1837,10 +2070,11 @@
                 ref = null;
                 // OPTIONAL DEBOUNCE CLEANUP: remove with pointStarted.
                 pointStarted.clear();
+                selecting.clear();
                 uiEnterLabel = 'Enter VR';
                 // OPTIONAL CLEANUP: the next desktop frame binds and sizes the framebuffer again.
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-                gl.viewport(0,0,C.width,C.height);
+                gl.viewport(0,0,canvas.width,canvas.height);
                 requestAnimationFrame(loop); // Resume desktop loop
             });
 
@@ -1848,8 +2082,8 @@
             xr.requestAnimationFrame(loop); // Start the shared render loop
             resetCats();
 
-        } catch (e) {
-            log('XR failed: ' + e.message);
+        } catch (error) {
+            log('XR failed: ' + error.message);
             // OPTIONAL ROBUSTNESS: safely recovers if XR setup fails after creating a session.
             // If setup failed after the session was created, close it and restart desktop rendering.
             if (xr) {
@@ -1866,18 +2100,18 @@
     
     // -- FEATURE: Application --
     // -- MODULE: Application-Loop --
-    function loop(t, frame) {
+    function loop(time, frame) {
         const session = frame && frame.session;
         if (session ? session !== xr : xr) return;
         session ? session.requestAnimationFrame(loop) : requestAnimationFrame(loop);
-        const dt = MIN(last ? (t - last) / 1000 : 0, .05);
-        last = t;
+        const dt=MIN(last?(time-last)/1000:0,.05);
+        last=time;
         updateWorld(dt, session, frame);
         let hudWH;
         gl.clearColor(0, 0, 0, 1);
         if (session) {
-            const cy=COS(u.yaw),sy=SIN(u.yaw);
-            xrM.set([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, u.x,0,u.z,1]);
+            const cy=COS(player.yaw),sy=SIN(player.yaw);
+            xrM.set([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, player.x,0,player.z,1]);
             const pose = frame.getViewerPose(ref);
             if (!pose) return;
             const headW = MULTMAT4(M4(),xrM,pose.transform.matrix);
@@ -1896,7 +2130,7 @@
             for (const view of pose.views) {
                 const vp = layer.getViewport(view), eyeW=MULTMAT4(M4(),xrM,view.transform.matrix),Veye=INV(eyeW),Peye=view.projectionMatrix;
                 gl.viewport(vp.x, vp.y, vp.width, vp.height);
-                drawWorld(Veye, Peye, eyeW, t, dt, true);
+                drawWorld(Veye, Peye, eyeW);
                 drawHud(hudWH, Veye, Peye);
                 drawXRInput(session, frame, Veye, Peye, hudWH);
             }
@@ -1908,15 +2142,15 @@
             hudWH = new DOMMatrix(W).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
             HUD_WH_world = hudWH;
             hoverBtn = null;
-            if (I.look.id === null) {
-                const hit = HUD_pick(hudWH, rayFromScreen(I.pointer.x, I.pointer.y));
+            if (input.look.id === null) {
+                const hit = HUD_pick(hudWH, rayFromScreen(input.pointer.x, input.pointer.y));
                 if (hit && hit.button) hoverBtn = hit.button;
             }
             updHUD(dt);
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            gl.viewport(0, 0, C.width, C.height);
+            gl.viewport(0, 0, canvas.width, canvas.height);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-            drawWorld(V, P, W, t, dt, false);
+            drawWorld(V, P, W);
             drawHud(hudWH, V, P);
         }
     }
@@ -1924,11 +2158,11 @@
     // -- MODULE: Application-Startup --
     // --- Application Entry Point ---
     (function main() {
-        initXR();
+        //initXR(); // OPTIONAL WebXR startup status preflight.
         requestAnimationFrame(loop);
-        log('Survive, collect XP, choose upgrades');
-        log('MENU H/X   F INV   C CHAT   Z SETTINGS');
-        log('MOVE: WASD/QE or touch sticks');
+        log('Survive, collect XP, get upgrades');
+        log('MENU H/X  C CHAT  Z SETTINGS');
+        log('MOVE: WASD/QE or touch');
     })();
     // -- /MODULE: Application-Startup --
     

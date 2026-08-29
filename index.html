@@ -249,7 +249,7 @@
             const bar = payload.indexOf('|');
             if (bar > 0) payload = payload.slice(bar+1);
         }
-        // Expected: p|id|x|z|yaw|orbs|orbSize|orbSpeed|orbPhase|damage|orbRadius
+        // Expected: p|id|x|z|yaw|orbs|orbPhase|damage
         if (payload[0] === 'p' && payload[1] === '|'){
             const parts = payload.split('|');
             if (parts.length >= 5){
@@ -264,7 +264,13 @@
                     const nz = isFinite(z)?z:p.z;
                     const ny = isFinite(yaw)?yaw:p.yaw;
                     pushPeerSample(p, nx, nz, ny, now);
-                    p.oc=+parts[5]||0;p.os=+parts[6]||.35;p.ov=+parts[7]||2;p.op=+parts[8]||0;p.ot=now;p.d=+parts[9]||1;p.oa=+parts[10]||2.3;
+                    p.oc=+parts[5]||0;
+                    //p.os=+parts[6]||.25; // ORBIT SIZE MMO field 
+                    //p.ov=+parts[7]||2.5; // ORBIT SPEED MMO field
+                    p.op=+parts[6]||0;
+                    p.ot=now;
+                    p.d=+parts[7]||1;
+                    //p.oa=+parts[10]||2.5; // ORBIT RADIUS MMO field
                     peers.set(id, p);
                 }
             }
@@ -313,7 +319,15 @@
         if (mmoSendTimer >= .1){ // ~10 Hz
             mmoSendTimer = 0;
             // compact broadcast with our id
-            const msg = 'p|' + myId + '|' + u.x.toFixed(2) + '|' + u.z.toFixed(2) + '|' + u.yaw.toFixed(3)+'|'+orbCount+'|'+orbSize.toFixed(2)+'|'+(skillTime%30<15?orbSpeed:-orbSpeed).toFixed(2)+'|'+orbAngle.toFixed(2)+'|'+damage+'|'+orbRadius.toFixed(2);
+            const msg = 'p|' + myId +
+                        '|' + u.x.toFixed(2) +
+                        '|' + u.z.toFixed(2) +
+                        '|' + u.yaw.toFixed(3)+
+                        '|'+orbCount+
+                        // '|'+orbSize.toFixed(2)+ // ORBIT SIZE MMO field 
+                        // '|'+orbSpeed.toFixed(2)+ // ORBIT SPEED MMO field 
+                        '|'+skillTime.toFixed(2)+
+                        '|'+damage;
             sendMMO(msg);
         }
         enemySendTimer+=dt;
@@ -445,8 +459,8 @@
             const dy = e.clientY - I.look.y;
             I.look.x = e.clientX;
             I.look.y = e.clientY;
-            u.yaw += dx * .002 * (invertX ? -1 : 1);
-            u.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,u.pitch+dy*.002*(invertY ? 1 : -1)));
+            u.yaw += dx * .002 * (opts[0] ? -1 : 1);
+            u.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,u.pitch+dy*.002*(opts[1] ? 1 : -1)));
         }
     });
     
@@ -687,15 +701,38 @@
     // One shared power language for enemies, levels, loot, and upgrade rarity.
     // Index order is always weakest (red) to strongest (violet).
     const POWER=[
-        ['RED','#e53935',[.9,.04,.03]],['ORANGE','#fb8c00',[1,.25,.01]],
-        ['YELLOW','#fdd835',[1,.7,.02]],['GREEN','#43a047',[.05,.65,.12]],
-        ['CYAN','#00acc1',[.02,.65,.8]],['BLUE','#2979ff',[.04,.2,1]],
+        ['RED','#e53935',[.9,.04,.03]],
+        ['ORANGE','#fb8c00',[1,.25,.01]],
+        ['YELLOW','#fdd835',[1,.7,.02]],
+        ['GREEN','#43a047',[.05,.65,.12]],
+        ['CYAN','#00acc1',[.02,.65,.8]],
+        ['BLUE','#2979ff',[.04,.2,1]],
         ['VIOLET','#8e24aa',[.55,.04,.75]]
     ];
     const powerTier=n=>MIN(6,(n-1)/3|0),powerValue=t=>t+1;
-    let skillTime=0,orbAngle=0,level=1,xp=0,choosing=0,orbCount=0,orbSize=.25,orbRadius=2.3,orbSpeed=2,catVersion=0,
-        boltCount=1,boltRate=3,boltTime=0,shotId=0,damage=1,moveSpeed=3,regen=0,choices=[],seed=Date.now()|0,hp=100,maxHp=100;
+    let skillTime=0;
+    //let orbAngle=0; // Derived from skillTime now.
+    let level=1;
+    let xp=0;
+    let choosing=0;
+    let orbCount=0;
+    //let orbSize=.25; // ORBIT SIZE stat removed; rendering uses fixed size.
+    //let orbRadius=2.5; // ORBIT RADIUS stat removed; placement uses fixed radius.
+    //let orbSpeed=2.5; // ORBIT SPEED stat removed; phase uses fixed timing.
+    let catVersion=0;
+    let boltCount=1;
+    let boltRate=3;
+    let boltTime=0;
+    let shotId=0;
+    let damage=1;
+    let moveSpeed=3;
+    let regen=0;
+    let choices=[];
+    let seed=Date.now()|0;
+    let hp=100;
+    let maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
+    const orbitPhase=t=>2.5*(15-ABS(t%30-15));
     function placeCat(c){
         let a,r,ok;
         // n is the number of attempts to find a valid spawn position for the cat. It tries up to 10 times.
@@ -721,21 +758,76 @@
         for(let i=MIN(40,3+level*2);i--;)cats.push(placeCat({i:cats.length}));
     }
     function resetRun(){
-        level=1;xp=choosing=orbCount=cat.caught=skillTime=orbAngle=boltTime=0;
-        orbSize=.25;orbRadius=2.3;orbSpeed=2;boltCount=damage=1;boltRate=4;moveSpeed=3;regen=0;maxHp=hp=100;
-        items.length=damageNumbers.length=0;choices=[];hudPage=0;u.x=0;u.z=2;resetCats();log(mmoEnabled?'MMO run started':'Run ended');
+        level=1;
+        xp=0;
+        choosing=0;
+        orbCount=0;
+        cat.caught=0;
+        skillTime=0;
+        boltTime=0;
+        //orbAngle=0;
+        //orbSize=.25;
+        //orbRadius=2.5;
+        //orbSpeed=2.5;
+        boltCount=1;
+        damage=1;
+        boltRate=4;
+        moveSpeed=3;
+        regen=0;
+        maxHp=100;
+        hp=100;
+        items.length=0;
+        damageNumbers.length=0;
+        choices=[];
+        hudPage=0;
+        u.x=0;
+        u.z=2;
+        resetCats();
+        log(mmoEnabled?'MMO run started':'Run ended');
     }
     function rollChoices(){
-        const tier=()=>{let t=0,cap=MIN(6,1+(level/3|0));while(t<cap&&rng()<.4)t++;return t;},pool=orbCount?[0,1,2,3,4,5,6,7,8]:[3,4,5,6,7,8];
+        const tier=()=>{
+            let t=0,cap=MIN(6,1+(level/3|0));
+            while(t<cap&&rng()<.4)t++;
+            return t;
+        };
+        const pool=orbCount?
+            [0,/* 1, ORBIT RADIUS/SIZE and 2, ORBIT SPEED removed */3,4,5,6,7,8]:
+            [3,4,5,6,7,8];
         choices=orbCount?[]:[[0,tier()]];
-        while(choices.length<3){const a=pool[rng()*pool.length|0];if(!choices.some(c=>c[0]===a))choices.push([a,tier()]);}
-        for(let i=3;i--;){const c=choices[i];UI_LEVEL[i][4]=POWER[c[1]][0]+'|'+cardText(c[0],powerValue(c[1]));UI_LEVEL[i][6]=c[1];}
-        choosing=1;hudVisible=false;playLevelSound();
+        while(choices.length<3){
+            const a=pool[rng()*pool.length|0];
+            if(!choices.some(c=>c[0]===a))choices.push([a,tier()]);
+        }
+        for(let i=3;i--;){
+            const c=choices[i];
+            UI_LEVEL[i][4]=POWER[c[1]][0]+'|'+cardText(c[0],powerValue(c[1]));
+            UI_LEVEL[i][6]=c[1];
+        }
+        choosing=1;
+        hudVisible=false;
+        playLevelSound();
     }
     function upgrade(c){
         const n=c[0],p=powerValue(c[1]);
-        n===0?orbCount+=p:n===1?(orbRadius*=1+p*.15,orbSize*=1+p*.03):n===2?orbSpeed*=1+p*.15:n===3?boltCount+=p:n===4?moveSpeed*=1+p*.1:n===5?boltRate=MAX(.15,boltRate*(1-p*.1)):n===6?(maxHp+=p*20,hp=MIN(maxHp,hp+p*20)):n===7?damage+=p:regen+=p/10;
-        xp-=level++*3;choosing=0;hudPage=0;
+        if(n===0)orbCount+=p;
+        //else if(n===1){ // ORBIT RADIUS/SIZE upgrade removed
+        //    orbRadius*=1+p*.15;
+        //    orbSize*=1+p*.03;
+        //}
+        //else if(n===2)orbSpeed*=1+p*.15; // ORBIT SPEED upgrade removed
+        else if(n===3)boltCount+=p;
+        else if(n===4)moveSpeed*=1+p*.1;
+        else if(n===5)boltRate=MAX(.15,boltRate*(1-p*.1));
+        else if(n===6){
+            maxHp+=p*20;
+            hp=MIN(maxHp,hp+p*20);
+        }
+        else if(n===7)damage+=p;
+        else regen+=p/10;
+        xp-=level++*3;
+        choosing=0;
+        hudPage=0;
         while(cats.length<MIN(40,3+level*2))cats.push(placeCat({i:cats.length}));
         if(xp>=level*3)rollChoices();
     }
@@ -757,7 +849,7 @@
         placeCat(c);//log(`Cat defeated #${++cat.caught}`);
     }
     function updateEnemies(dt){
-        skillTime+=dt;orbAngle+=dt*orbSpeed*(skillTime%30<15?1:-1);
+        skillTime+=dt;
         for(const c of cats){
             let tx=u.x,tz=u.z,best=(tx-c.x)**2+(tz-c.z)**2,now=performance.now(),self=1;
             peers.forEach(p=>{const q=(p.x-c.x)**2+(p.z-c.z)**2;if(now-p.last<15000&&q<best){best=q;tx=p.x;tz=p.z;self=0;}});
@@ -777,8 +869,8 @@
             c.anim+=s*dt*3.5;c.yaw=ATAN2(c.vx,c.vz);
             c.hit-=dt;c.h-=dt;
             if(self&&d<1.1+c.tier*.04&&c.hit<0){
-                //u.x+=dx/d*(2+c.tier*.2);
-                //u.z+=dz/d*(2+c.tier*.2);
+                //u.x+=dx/d*(2+c.tier*.2); // knockback
+                //u.z+=dz/d*(2+c.tier*.2); // knockback
                 //u.y+=dz/d*(2+c.tier*.2);
                 hp-=10+c.tier*4;
                 playHurtSound();
@@ -787,15 +879,15 @@
                 continue;
             }
             if(c.h<0)for(let i=orbCount;i--;){
-                const a=orbAngle+i*PI*2/orbCount,ox=u.x+COS(a)*orbRadius,oz=u.z+SIN(a)*orbRadius;
-                if((c.x-ox)**2+(c.z-oz)**2<(.5+orbSize)**2){
+                const a=orbitPhase(skillTime)+i*PI*2/orbCount,ox=u.x+COS(a)*2.5,oz=u.z+SIN(a)*2.5;
+                if((c.x-ox)**2+(c.z-oz)**2<.75**2){
                     hurt(c,damage,myId);c.h=.5;break;
                 }
             }
             peers.forEach((p,id)=>{
                 if(now-p.last<15000&&(p.oh[c.i]||0)<now)for(let i=p.oc;i--;){
-                    const a=p.op+(now-p.ot)/1e3*p.ov+i*PI*2/p.oc,ox=p.x+COS(a)*p.oa,oz=p.z+SIN(a)*p.oa;
-                    if((c.x-ox)**2+(c.z-oz)**2<(.5+p.os)**2){hurt(c,p.d,id);p.oh[c.i]=now+500;break;}
+                    const a=orbitPhase(p.op+(now-p.ot)/1e3)+i*PI*2/p.oc,ox=p.x+COS(a)*2.5,oz=p.z+SIN(a)*2.5;
+                    if((c.x-ox)**2+(c.z-oz)**2<.75**2){hurt(c,p.d,id);p.oh[c.i]=now+500;break;}
                 }
             });
         }
@@ -937,9 +1029,9 @@
         // VR gamepad input
         if (session) {
             for (const src of session.inputSources) {
-                const handMove = handPointMove(frame,src);
+                const left=src.handedness===(opts[5]?'right':'left'),handMove = handPointMove(frame,src);
                 if (handMove) {
-                    if (src.handedness === 'left') vt=-handMove.x;
+                    if (left) vt=-handMove.x;
                     else { vx=handMove.x;vy=handMove.y; }
                     continue;
                 }
@@ -949,8 +1041,8 @@
                 // OPTIONAL COMPATIBILITY: Meta Quest uses 2/3; fallback also supports compact 0/1-axis gamepads.
                 const n=a.length>=4?2:0,x=dz(a[n]||0),y=dz(a[n+1]||0);
                 
-                if (src.handedness === 'left') { vx = x; vy = -y; }
-                else if (src.handedness === 'right') { vt = -x; }
+                if (left) { vx = x; vy = -y; }
+                else if (src.handedness) { vt = -x; }
                 // OPTIONAL COMPATIBILITY: Meta Quest normally reports left/right handedness.
                 else if (!vx && !vy) { vx = x; vy = -y; } // Fallback for undefined handedness
             }
@@ -1009,7 +1101,7 @@
     
     // -- FEATURE: Scene --
     // -- MODULE: Scene-Audio --
-    let audioCtx,soundOut,localOut,lastKillSound=0,lastHitSound=0;
+    let audioCtx,soundOut,localOut,lastKillSound=0,lastHitSound=0,opts=[0,0,1,1,1,0];
 
     function initAudio(){
         if(!audioCtx){
@@ -1021,7 +1113,7 @@
         audioCtx.resume();
     }
     function playSound(f,d,v,type='sine',end=f,delay=0,attack=.005,x,y,z){
-        if(!audioCtx) return;
+        if(!audioCtx||!opts[3]) return;
         const t=audioCtx.currentTime+delay,o=audioCtx.createOscillator(),g=audioCtx.createGain();
         o.type=type;o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(end,t+d);
         g.gain.setValueAtTime(.001,t);g.gain.linearRampToValueAtTime(v,t+attack);g.gain.exponentialRampToValueAtTime(.001,t+d);
@@ -1031,7 +1123,7 @@
         o.start(t);o.stop(t+d);
     }
     function playClickSound(){playSound(520,.05,.08,'square',260);}
-    function playShotSound(x=u.x,z=u.z){playSound(880,.1,.07,'square',180,0,.005,x,.7,z);playSound(1760,.05,.025,'sine',440,0,.005,x,.7,z);}
+    function playShotSound(x=u.x,z=u.z){if(opts[4]){playSound(880,.1,.07,'square',180,0,.005,x,.7,z);playSound(1760,.05,.025,'sine',440,0,.005,x,.7,z);}}
     function playKillSound(x,z){
         if(!audioCtx||audioCtx.currentTime-lastKillSound<.035)return;lastKillSound=audioCtx.currentTime;
         playSound(260,.14,.08,'triangle',90,0,.005,x,.6,z);playSound(900,.035,.025,'square',180,0,.002,x,.6,z);
@@ -1054,7 +1146,7 @@
     // -- MODULE: Scene-HUD --
     // -- PART: State-Layout --
     const LOG = [], CHAT = [];
-    let logScroll = 0, hudVisible = true, hudPage = 0, chatText = '', invertX = false, invertY = false, closedChat = true;
+    let logScroll = 0, hudVisible = true, hudPage = 0, chatText = '';
     let HUD_WH_world = M4(), hoverBtn = null;
 
     // --- HUD COLOR PALETTE ---
@@ -1090,14 +1182,29 @@
     ]).concat(KEY_NAV), UI_CHAT=CHAT_NAV.concat(UI_KEYS.slice(28,30)), UI_BACK=[
         [.66,.85,.96,.95,'BACK',17]
     ], UI_SETTINGS=[
-        [.06,.17,.48,.29,'RESET',0],[.52,.17,.94,.29,'',1],
-        [.06,.35,.48,.47,'',2],[.52,.35,.94,.47,'',14],
-        [.06,.53,.48,.65,'',16],[.52,.53,.94,.65,'',15],
-        [.06,.82,.94,.94,'BACK',17]
+        [.06,.15,.48,.26,'',2],[.52,.15,.94,.26,'',1],
+        [.06,.31,.48,.42,'AUDIO',17],[.52,.31,.94,.42,'SWAP HANDS',19],
+        [.06,.47,.48,.58,'SHOTS',18],[.52,.47,.94,.58,'INVERT X',14],
+        [.06,.63,.48,.74,'CLOSED CHAT',16],[.52,.63,.94,.74,'INVERT Y',15],
+        [.06,.82,.94,.94,'BACK',0]
     ], UI_LEVEL=[
-        [.025,.28,.325,.56,'+ ORB',20],[.35,.28,.65,.56,'EXPAND',21],[.675,.28,.975,.56,'FASTER',22]
+        [.025,.28,.325,.56,'+ ORB',20],
+        //[.35,.28,.65,.56,'EXPAND',21], // ORBIT RADIUS/SIZE placeholder removed
+        [.35,.28,.65,.56,'',21],
+        //[.675,.28,.975,.56,'FASTER',22], // ORBIT SPEED placeholder removed
+        [.675,.28,.975,.56,'',22]
     ];
-    function cardText(n,p){return n===0?`+${p} ORB${p>1?'S':''}`:n===1?`+${p*15}% ORBIT SIZE`:n===2?`+${p*15}% ORB SPEED`:n===3?`+${p} BOLT${p>1?'S':''}`:n===4?`+${p*10}% MOVE`:n===5?`-${p*10}% COOLDOWN`:n===6?`+${p*20} MAX HEALTH`:n===7?`+${p} DAMAGE`:`+${p/10} HP/SEC`;}
+    function cardText(n,p){
+        if(n===0)return `+${p} ORB${p>1?'S':''}`;
+        //if(n===1)return `+${p*15}% ORBIT SIZE`; // ORBIT RADIUS/SIZE card removed
+        //if(n===2)return `+${p*15}% ORB SPEED`; // ORBIT SPEED card removed
+        if(n===3)return `+${p} BOLT${p>1?'S':''}`;
+        if(n===4)return `+${p*10}% MOVE`;
+        if(n===5)return `-${p*10}% COOLDOWN`;
+        if(n===6)return `+${p*20} MAX HEALTH`;
+        if(n===7)return `+${p} DAMAGE`;
+        return `+${p/10} HP/SEC`;
+    }
 
     // INVENTORY HUD disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
     function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
@@ -1117,11 +1224,9 @@
     }
     function activate(a) {
         playClickSound();
-        if(a>19){
-            upgrade(choices[a-20]);
-        }
+        if(a>19)return upgrade(choices[a-20]);
         if (typeof a === 'string') chatText = (chatText + a).slice(0,64);
-        else if (a === 0) { u.x=0;u.z=2;u.yaw=0;u.pitch=.2;hp=maxHp;resetCats(); }
+        else if (!a) hudPage=0;
         else if (a === 1) toggleXRFromUI();
         else if (a === 2) toggleMMO();
         else if (a === 3) setChat(true);
@@ -1132,12 +1237,8 @@
         else if (a === 8) chatText=chatText.slice(0,-1);
         else if (a === 10) sendChat();
         else if (a === 11) setChat(false);
-        // else if (a === 12) hudPage=2; // INVENTORY HUD disabled
         else if (a === 13) hudPage=3;
-        else if (a === 14) invertX=!invertX;
-        else if (a === 15) invertY=!invertY;
-        else if (a === 16) closedChat=!closedChat;
-        else if (a === 17) hudPage=0;
+        else if (a>13) opts[a-14]^=1;
     }
     chatInput.oninput = _ => chatText = chatInput.value.slice(0,64);
     chatInput.onkeydown = e => {
@@ -1229,7 +1330,7 @@
             }
 
             // Keep the latest chat messages visible over the closed HUD.
-            if (!choosing && closedChat && CHAT.length) {
+            if (!choosing && opts[2] && CHAT.length) {
                 const lines = CHAT.slice(-3);
                 hudCtx.fillStyle = UI_PANEL;
                 hudCtx.fillRect(20, 84, 600, 22 + lines.length * 18);
@@ -1349,9 +1450,7 @@
                 hudCtx.fillText(
                     a === 1 ? uiEnterLabel :
                     a === 2 ? 'MMO ' + (mmoEnabled ? 'ON' : 'OFF') :
-                    a === 14 ? 'INVERT X ' + (invertX ? 'ON' : 'OFF') :
-                    a === 15 ? 'INVERT Y ' + (invertY ? 'ON' : 'OFF') :
-                    a === 16 ? 'CLOSED CHAT ' + (closedChat ? 'ON' : 'OFF') :
+                    a>13 ? b[4]+' '+(opts[a-14]?'ON':'OFF') :
                     b[4],
                     x + w / 2,
                     y + h / 2
@@ -1623,9 +1722,9 @@
         // -- MODULE: Scene-Orb-Mesh --
         // Local and peer loops intentionally repeat: PPMd compresses them smaller than a shared renderer.
         gl.depthMask(false);
-        for(let i=orbCount;i--;){const a=orbAngle+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*orbRadius,.7,u.z+SIN(a)*orbRadius,orbSize*1.08,WHITE);}
+        for(let i=orbCount;i--;){const a=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*2.5,.7,u.z+SIN(a)*2.5,.27,WHITE);}
         gl.depthMask(true);
-        for(let i=orbCount;i--;){const a=orbAngle+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*orbRadius,.7,u.z+SIN(a)*orbRadius,orbSize,BLACK);}
+        for(let i=orbCount;i--;){const a=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,u.x+COS(a)*2.5,.7,u.z+SIN(a)*2.5,.25,BLACK);}
         // -- /MODULE: Scene-Orb-Mesh --
         if (peers && peers.size) {
             const now = performance.now(), target = now - 120;
@@ -1634,11 +1733,11 @@
                 const q = samplePeer(p, target) || p;
                 drawCat(V, P, q.x, .6, q.z, (q.yaw || 0) + PI, now*.005*MIN(3,p.speed||0), .1, PEER_COL);
                 // -- MODULE: Scene-Peer-Orb --
-                const ph=p.op+(now-p.ot)/1e3*p.ov;
+                const ph=orbitPhase(p.op+(now-p.ot)/1e3);
                 gl.depthMask(false);
-                for(let i=p.oc;i--;){const a=ph+i*PI*2/p.oc;drawSphere(V,P,q.x+COS(a)*p.oa,.7,q.z+SIN(a)*p.oa,p.os*1.08,WHITE);}
+                for(let i=p.oc;i--;){const a=ph+i*PI*2/p.oc;drawSphere(V,P,q.x+COS(a)*2.5,.7,q.z+SIN(a)*2.5,.27,WHITE);}
                 gl.depthMask(true);
-                for(let i=p.oc;i--;){const a=ph+i*PI*2/p.oc;drawSphere(V,P,q.x+COS(a)*p.oa,.7,q.z+SIN(a)*p.oa,p.os,BLACK);}
+                for(let i=p.oc;i--;){const a=ph+i*PI*2/p.oc;drawSphere(V,P,q.x+COS(a)*2.5,.7,q.z+SIN(a)*2.5,.25,BLACK);}
                 // -- /MODULE: Scene-Peer-Orb --
             });
         }

@@ -155,13 +155,13 @@
 
     // -- FEATURE: MMO --
     // -- MODULE: MMO-Connection --
-    // Minimal MMO support using JS13k relay. Toggle via HUD. Other players are drawn as whitish cats.
+    // Minimal MMO support using JS13k relay. Toggle via HUD. Other players use the shared character mesh.
     const MMO_URL = 'wss://relay.js13kgames.com/wild-catch'; // append subpaths to shard into rooms if desired
     let mmoEnabled = false;
     let ws = null;
     let myId = null;
     const peers = new Map(); // id -> interpolated player and skill state
-    const remoteCats = new Map(); // owner id -> Map(enemy id -> predicted enemy)
+    const remoteEnemies = new Map(); // owner id -> Map(enemy id -> predicted enemy)
     const remoteShots = [];
     let mmoSendTimer = 0, enemySendTimer = 0;
 
@@ -211,7 +211,7 @@
 
     function disconnectMMO(){
         try { if (ws) ws.close(); } catch(_){}
-        ws = null; myId = null; peers.clear();remoteCats.clear();remoteShots.length=0;
+        ws = null; myId = null; peers.clear();remoteEnemies.clear();remoteShots.length=0;
         mmoSendTimer=enemySendTimer=0;
         logMMO('disabled');
     }
@@ -228,7 +228,7 @@
         // send a "cat!" on open to register
         // could be extended to send a name/color/etc
         ws.onopen = _ => { try { ws.send('cat!'); } catch(_){} logMMO('connected'); };
-        ws.onclose = _ => { logMMO('closed'); ws=null;myId=null;peers.clear();remoteCats.clear();remoteShots.length=0;if(mmoEnabled)setTimeout(connectMMO,1000); };
+        ws.onclose = _ => { logMMO('closed'); ws=null;myId=null;peers.clear();remoteEnemies.clear();remoteShots.length=0;if(mmoEnabled)setTimeout(connectMMO,1000); };
         ws.onerror = _ => { /* errors surface via close */ };
         ws.onmessage = ev => handleMMOMessage(ev.data);
     }
@@ -241,7 +241,7 @@
         switch(command){
             case '@':myId=message.slice(1);logMMO('my id: '+myId);return;
             case '+':{const id=message.slice(1);if(id&&!peers.has(id))peers.set(id,{x:0,z:0,yaw:0,last:0,hist:[],oh:[]});return;}
-            case '-':{const id=message.slice(1);peers.delete(id);remoteCats.delete(id);for(let i=remoteShots.length;i--;)if(remoteShots[i].o===id)remoteShots.splice(i,1);return;}
+            case '-':{const id=message.slice(1);peers.delete(id);remoteEnemies.delete(id);for(let i=remoteShots.length;i--;)if(remoteShots[i].o===id)remoteShots.splice(i,1);return;}
         }
         // Strip optional direct prefix @targetId|payload -> payload
         let payload=message;
@@ -284,7 +284,7 @@
                 owner=parts[1];
 
             if(owner&&owner!==myId){
-                const group=remoteCats.get(owner)||new Map(),
+                const group=remoteEnemies.get(owner)||new Map(),
                     seen=new Set(),
                     now=performance.now();
 
@@ -316,21 +316,21 @@
                 for(const id of group.keys()){
                     if(!seen.has(id))group.delete(id);
                 }
-                remoteCats.set(owner,group);
+                remoteEnemies.set(owner,group);
             }
         }
         if (payload[0] === 'k' && payload[1] === '|'){
-            const parts=payload.split('|'),enemy=parts[1]===myId&&cats[+parts[2]];
-            if(enemy&&enemy.v===+parts[3])placeCat(enemy);
+            const parts=payload.split('|'),enemy=parts[1]===myId&&enemies[+parts[2]];
+            if(enemy&&enemy.v===+parts[3])spawnEnemy(enemy);
         }
         if (payload[0] === 'd' && payload[1] === '|'){
             const parts=payload.split('|'),
-                group=remoteCats.get(parts[1]),
+                group=remoteEnemies.get(parts[1]),
                 enemy=group&&group.get(+parts[2]);
 
             if(parts[1]!==myId){
                 if(parts[8]===myId){
-                    cat.caught++;
+                    runStats.defeated++;
                     playKillSound(+parts[4],+parts[5]);
                     dropReward(+parts[4],+parts[5],+parts[6],+parts[9]);
                 }
@@ -384,7 +384,7 @@
         enemySendTimer+=dt;
         if(enemySendTimer>=.2){
             enemySendTimer=0;
-            sendMMO('e|'+myId+'|'+cats.map(enemy=>[enemy.i,enemy.v,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
+            sendMMO('e|'+myId+'|'+enemies.map(enemy=>[enemy.i,enemy.v,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
         }
     }
     // -- /MODULE: MMO-Sync --
@@ -745,9 +745,9 @@
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
 
     // -- MODULE: Gameplay-Combat --
-    const cat={caught:0};
-    // Cats seek, skills hit automatically, and XP drops fuel upgrades.
-    const cats=[];
+    const runStats={defeated:0};
+    // Enemies seek, skills hit automatically, and XP drops fuel upgrades.
+    const enemies=[];
     const shots=[];
     const damageNumbers=[];
     // One shared power language for enemies, levels, loot, and upgrade rarity.
@@ -771,7 +771,7 @@
     //let orbSize=.25;
     //let orbRadius=2.5;
     //let orbSpeed=2.5;
-    let catVersion=0;
+    let enemyVersion=0;
     let boltCount=1;
     let boltRate=3;
     let boltTime=0;
@@ -786,8 +786,8 @@
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
     const orbitPhase=time=>2.5*(15-ABS(time%30-15));
     // One unbounded world ring drives safe-zone behavior, population, strength, and mutations.
-    const worldPower=(x,z)=>HYPOT(x,z)/100|0,catTarget=()=>7+worldPower(player.x,player.z)*3;
-    function setCatPower(enemy){
+    const worldPower=(x,z)=>HYPOT(x,z)/100|0,enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3;
+    function setEnemyPower(enemy){
         const danger=worldPower(enemy.x,enemy.z),time=skillTime/60,cap=MIN(6,FLOOR(danger/2)),roll=rng();
         enemy.tier=cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):rng()*(cap+1)|0):0;
         enemy.mut=-1;enemy.scale=1;
@@ -801,7 +801,7 @@
             enemy.max=enemy.hp=CEIL(enemy.max*(enemy.mut+2));
         }
     }
-    function placeCat(enemy){
+    function spawnEnemy(enemy){
         let angle,radius,valid;
         // Try up to ten positions before accepting the final candidate.
         for(let attempts=10;attempts--;){
@@ -815,25 +815,25 @@
             if(valid)break;
         }
         enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.hit=enemy.h=0;
-        enemy.v=++catVersion;
-        setCatPower(enemy);
+        enemy.v=++enemyVersion;
+        setEnemyPower(enemy);
         return enemy;
     }
-    function resetCats(){
-        cats.length=shots.length=0;
-        for(let i=catTarget();i--;)cats.push(placeCat({i:cats.length}));
+    function resetEnemies(){
+        enemies.length=shots.length=0;
+        for(let i=enemyPopulationTarget();i--;)enemies.push(spawnEnemy({i:enemies.length}));
     }
-    function syncCatPopulation(){
-        const target=catTarget();
-        while(cats.length<target)cats.push(placeCat({i:cats.length}));
-        cats.length=target;
+    function syncEnemyPopulation(){
+        const target=enemyPopulationTarget();
+        while(enemies.length<target)enemies.push(spawnEnemy({i:enemies.length}));
+        enemies.length=target;
     }
     function resetRun(){
         level=1;
         xp=0;
         choosing=0;
         orbCount=0;
-        cat.caught=0;
+        runStats.defeated=0;
         skillTime=0;
         boltTime=0;
         //orbAngle=0;
@@ -853,7 +853,7 @@
         hudPage=0;
         player.x=0;
         player.z=2;
-        resetCats();
+        resetEnemies();
         log(mmoEnabled?'MMO run started':'Run ended');
     }
     function rollChoices(){
@@ -918,18 +918,18 @@
     }
     function defeat(enemy,amount,killer){
         const x=enemy.x,z=enemy.z,version=enemy.v,tier=enemy.tier,mutation=enemy.mut;
-        if(!myId||killer===myId){cat.caught++;playKillSound(x,z);dropReward(x,z,tier,mutation);}
+        if(!myId||killer===myId){runStats.defeated++;playKillSound(x,z);dropReward(x,z,tier,mutation);}
         if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}`);
-        placeCat(enemy);//log(`Cat defeated #${++cat.caught}`);
+        spawnEnemy(enemy);
     }
     function updateEnemies(dt){
         skillTime+=dt;
-        syncCatPopulation();
-        for(const enemy of cats){
+        syncEnemyPopulation();
+        for(const enemy of enemies){
             let tx=player.x,tz=player.z,best=(tx-enemy.x)**2+(tz-enemy.z)**2,now=performance.now(),self=1;
             peers.forEach(peer=>{const distance=(peer.x-enemy.x)**2+(peer.z-enemy.z)**2;if(now-peer.last<15000&&distance<best){best=distance;tx=peer.x;tz=peer.z;self=0;}});
             // Recycle abandoned enemies and never allow a powerful enemy inside the starter zone.
-            if(best>120**2){placeCat(enemy);continue;}
+            if(best>120**2){spawnEnemy(enemy);continue;}
             if(!worldPower(enemy.x,enemy.z)&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.scale=1;enemy.max=enemy.hp=1;}
             let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3;
             const building=buildingAt(enemy.x,enemy.z);if(building){
@@ -953,7 +953,7 @@
                 //player.y+=dz/d*(2+c.tier*.2);
                 hp-=enemy.max;
                 playHurtSound();
-                placeCat(enemy);
+                spawnEnemy(enemy);
                 if(hp<1){resetRun();return;} // DEAD
                 continue;
             }
@@ -971,9 +971,9 @@
             });
         }
     }
-    function updateRemoteCats(dt){
+    function updateRemoteEnemies(dt){
         const now=performance.now();
-        remoteCats.forEach((group,owner)=>group.forEach(enemy=>{
+        remoteEnemies.forEach((group,owner)=>group.forEach(enemy=>{
             if(now-enemy.last>15000||enemy.dead)return;
             const interpolation=MIN(1,dt*8);enemy.x=lerp(enemy.x,enemy.tx,interpolation);enemy.z=lerp(enemy.z,enemy.tz,interpolation);enemy.yaw=lerpAngle(enemy.yaw||enemy.tyaw,enemy.tyaw,interpolation);enemy.hit-=dt;
             let dx=player.x-enemy.x,dz=player.z-enemy.z,distance=HYPOT(dx,dz)||1;
@@ -998,7 +998,7 @@
                 continue;
             }
 
-            for(const enemy of cats)if((enemy.x-projectile.x)**2+(enemy.z-projectile.z)**2<(.5*enemy.scale+radius)**2){
+            for(const enemy of enemies)if((enemy.x-projectile.x)**2+(enemy.z-projectile.z)**2<(.5*enemy.scale+radius)**2){
                 hurt(enemy,projectile.d,remote?projectile.o:myId);
                 if(remote||myId)sendMMO(`x|${remote?projectile.o:myId}|${projectile.i}`);
                 projectile.t=0;
@@ -1006,7 +1006,7 @@
             }
 
             if(!remote&&projectile.t>0)remoteHit:
-                for(const [owner,group] of remoteCats)
+                for(const [owner,group] of remoteEnemies)
                     for(const enemy of group.values())
                         if(!enemy.dead&&(enemy.x-projectile.x)**2+(enemy.z-projectile.z)**2<(.5+radius)**2){
                             playHitSound(enemy.x,enemy.z);
@@ -1022,15 +1022,15 @@
         boltTime-=dt;
         if(boltCount&&boltTime<0){
             boltTime=boltRate;
-            let target=cats[0],best=1e9;
-            for(const enemy of cats){
+            let target=enemies[0],best=1e9;
+            for(const enemy of enemies){
                 const distance=(enemy.x-player.x)**2+(enemy.z-player.z)**2;
                 if(distance<best){
                     best=distance;
                     target=enemy;
                 }
             }
-            remoteCats.forEach(group=>group.forEach(enemy=>{
+            remoteEnemies.forEach(group=>group.forEach(enemy=>{
                 const distance=(enemy.x-player.x)**2+(enemy.z-player.z)**2;
                 if(!enemy.dead&&performance.now()-enemy.last<15000&&distance<best){
                     best=distance;
@@ -1234,7 +1234,7 @@
         step(dt, getMove(session,frame));
         updateCity();
         updateEnemies(dt);
-        updateRemoteCats(dt);
+        updateRemoteEnemies(dt);
         updateShots(dt);
         mmoTick(dt);
     }
@@ -1651,7 +1651,7 @@
                 );
 
                 hudCtx.fillText(
-                    `LEVEL ${level}   CATS ${cat.caught}   ${timer}m`,20,102
+                    `LEVEL ${level}   DEFEATED ${runStats.defeated}   ${timer}m`,20,102
                 );
                 hudCtx.fillStyle = mmoEnabled ? UI_TEXT : UI_MUTED;
                 hudCtx.fillText(
@@ -1816,7 +1816,7 @@
     gl.bindVertexArray(buildingVao);gl.bindBuffer(gl.ARRAY_BUFFER,buildingBuf);gl.bufferData(gl.ARRAY_BUFFER,cubeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
     const edgeVao=gl.createVertexArray(),edgeBuf=gl.createBuffer();
     gl.bindVertexArray(edgeVao);gl.bindBuffer(gl.ARRAY_BUFFER,edgeBuf);gl.bufferData(gl.ARRAY_BUFFER,edgeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
-    updateCity();resetCats();
+    updateCity();resetEnemies();
     function drawCity(V,P){
         gl.useProgram(PC);gl.uniformMatrix4fv(uS_V,false,V);gl.uniformMatrix4fv(uS_P,false,P);
         //gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,0,0,0,1);gl.bindVertexArray(groundVao);gl.drawArrays(gl.TRIANGLES,0,6);
@@ -1862,14 +1862,14 @@
     
     // Shared scene renderer. Desktop supplies one synthetic head view; WebXR
     // supplies the headset's real eye views.
-    // -- MODULE: Scene-Cat-Renderer --
+    // -- MODULE: Scene-Character-Renderer --
     const PEER_COL = [.7,.7,.8], BLACK=[0,0,0], WHITE=[1,1,1];
     function drawCat(Vmat, Pmat, x, y, z, yaw, anim, amp, col, shell=1, scale=1){
         const cy = COS(yaw-20), sy = SIN(yaw-20);
         function place(lx, ly, lz, radius){
             const wx = x + (lx*cy + lz*sy)*scale;
             const wz = z + (lz*cy - lx*sy)*scale;
-            // Scale around the paw line so large mutants grow upward instead of floating.
+            // Scale around the ground-contact line so large mutants grow upward instead of floating.
             drawSphere(Vmat, Pmat, wx, .12+(y+ly-.12)*scale, wz, radius*shell*scale, col);
         }
         place(.10,0,0,.25); place(-.05,0,0,.25); place(-.20,0,0,.24);
@@ -1885,7 +1885,7 @@
         place(-.55,.25, 0,.12);
         place(-.70,.30, cy1*.6,.11);
     }
-    // -- /MODULE: Scene-Cat-Renderer --
+    // -- /MODULE: Scene-Character-Renderer --
 
     // -- MODULE: Scene-Damage-Numbers --
     function drawDamageNumbers(V,P,W){
@@ -1942,14 +1942,14 @@
         // -- /MODULE: Scene-Projectile-Trail --
         // -- MODULE: Scene-Enemy --
         // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
-        for(const enemy of cats){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
-        remoteCats.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
+        for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
+        remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
         gl.disable(gl.BLEND);
-        for(const enemy of cats)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier][2],enemy.mut<0?1.16:1,enemy.scale);
-        remoteCats.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier][2],enemy.mut<0?1.16:1,enemy.scale)));
+        for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier][2],enemy.mut<0?1.16:1,enemy.scale);
+        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier][2],enemy.mut<0?1.16:1,enemy.scale)));
         gl.depthMask(true);
-        for(const enemy of cats)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
-        remoteCats.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
+        for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
+        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
         // -- /MODULE: Scene-Enemy --
         // -- MODULE: Scene-Projectile-Mesh --
         gl.depthMask(false);
@@ -2080,7 +2080,7 @@
 
             last = 0;
             xr.requestAnimationFrame(loop); // Start the shared render loop
-            resetCats();
+            resetEnemies();
 
         } catch (error) {
             log('XR failed: ' + error.message);

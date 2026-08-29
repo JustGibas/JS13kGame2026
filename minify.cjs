@@ -11,11 +11,11 @@ const { version: terserVersion } = require("terser/package.json");
 const { minify: minifyHTML } = require("html-minifier-terser");
 const {
   LIMIT: ZIP_LIMIT,
-  SUBMISSION_METHOD,
+  MEASUREMENT_METHOD,
   find7Zip,
   readPackedSize,
   run7Zip
-} = require("./compression-config.cjs");
+} = require("./compress.cjs");
 
 const bytes = value => Buffer.byteLength(value || "", "utf8");
 const size = value => value < 1024 ? `${value} B` : `${(value / 1024).toFixed(2)} KB`;
@@ -102,7 +102,7 @@ async function printSizeReport(sourceScripts, packedHTML, options) {
     console.log(`  ${label.padEnd(12)} ${size(value).padStart(10)}  ${percent.toFixed(1).padStart(5)}%`);
   }
   const zipDelta = packedPpmd.archiveBytes - ZIP_LIMIT;
-  console.log(`  ${"PPMd ZIP".padEnd(12)} ${size(packedPpmd.archiveBytes).padStart(10)}  ${zipDelta <= 0 ? `${-zipDelta} B free` : `${zipDelta} B over`}  (${SUBMISSION_METHOD})`);
+  console.log(`  ${"PPMd ZIP".padEnd(12)} ${size(packedPpmd.archiveBytes).padStart(10)}  ${zipDelta <= 0 ? `${-zipDelta} B free` : `${zipDelta} B over`}  (measurement: ${MEASUREMENT_METHOD})`);
 
   const regions = sourceScripts.flatMap(source => findTaggedRegions(source, "FEATURE"));
   if (!regions.length) {

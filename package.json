@@ -5,8 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "node minify.cjs",
-    "compress": "node minify.cjs --no-report && node compress.cjs",
-    "compress:compare": "node minify.cjs --no-report && node compress.cjs --benchmark"
+    "compress": "node minify.cjs --no-report && node compress.cjs"
   },
   "keywords": [],
   "author": "",
@@ -14,6 +13,7 @@
   "description": "",
   "devDependencies": {
     "html-minifier-terser": "^7.2.0",
+    "roadroller": "^2.1.0",
     "terser": "^5.50.0"
   }
 }

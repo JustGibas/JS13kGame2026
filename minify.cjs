@@ -85,6 +85,69 @@ function findTaggedRegions(source, type) {
   return regions.sort((a, b) => a.start - b.start);
 }
 
+async function measureRegions(regions, ppmd, options) {
+  await Promise.all(regions.map(async region => {
+    region.rawBytes = bytes(region.source);
+    try {
+      const code = (await terser(region.source, options)).code;
+      region.estimatedBytes = bytes(code);
+      region.minifiedCode = code;
+    } catch (error) {
+      region.estimatedBytes = null;
+      region.error = error.message;
+    }
+  }));
+
+  for (const region of regions) {
+    if (region.estimatedBytes > 0) region.ppmdBytes = (await ppmd.measure(region.minifiedCode)).packedBytes;
+    else if (region.estimatedBytes === 0) region.ppmdBytes = 0;
+    delete region.minifiedCode;
+  }
+}
+
+function disambiguateRegionLabels(regions) {
+  const counts = new Map();
+  for (const region of regions) {
+    const key = region.name.toLowerCase();
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  const seen = new Map();
+  for (const region of regions) {
+    const key = region.name.toLowerCase();
+    const occurrence = (seen.get(key) || 0) + 1;
+    seen.set(key, occurrence);
+    region.label = counts.get(key) > 1 ? `${region.name} #${occurrence}` : region.name;
+  }
+}
+
+async function printRegionReport(regions, ppmd, options, {
+  title,
+  column,
+  footer,
+  disambiguate = false,
+  zeroBar = "— (comments only)"
+}) {
+  if (disambiguate) disambiguateRegionLabels(regions);
+  await measureRegions(regions, ppmd, options);
+
+  const measuredTotal = regions.reduce((sum, region) => sum + (region.ppmdBytes || 0), 0);
+  regions.sort((a, b) => (b.ppmdBytes ?? b.rawBytes) - (a.ppmdBytes ?? a.rawBytes));
+  const max = Math.max(...regions.map(region => region.ppmdBytes || 0), 1);
+
+  console.log(`\n${title}`);
+  console.log(`  ${column.padEnd(22)} ${"Minified".padStart(10)} ${"PPMd".padStart(9)} ${"Raw".padStart(9)}  Share  Relative`);
+  for (const region of regions) {
+    const estimated = region.estimatedBytes;
+    const share = region.ppmdBytes == null || !measuredTotal ? "  n/a" : `${(100 * region.ppmdBytes / measuredTotal).toFixed(1)}%`.padStart(5);
+    const bar = region.ppmdBytes == null ? "estimate failed" : region.ppmdBytes === 0 ? zeroBar : "█".repeat(Math.max(1, Math.round(20 * region.ppmdBytes / max)));
+    const label = region.label || region.name;
+    console.log(`  ${label.slice(0, 22).padEnd(22)} ${estimated == null ? "n/a".padStart(10) : size(estimated).padStart(10)} ${region.ppmdBytes == null ? "n/a".padStart(9) : size(region.ppmdBytes).padStart(9)} ${size(region.rawBytes).padStart(9)}  ${share}  ${bar}`);
+    if (region.error) console.log(`    ${region.error}`);
+  }
+  console.log(`  ${footer}`);
+}
+
 async function printSizeReport(sourceScripts, packedHTML, options) {
   const ppmd = await createPpmdMeasurer();
   try {
@@ -116,86 +179,23 @@ async function printSizeReport(sourceScripts, packedHTML, options) {
     mangle: { ...options.mangle, toplevel: false, properties: false },
     compress: { ...options.compress, toplevel: false, unused: false }
   };
-  await Promise.all(regions.map(async region => {
-    region.rawBytes = bytes(region.source);
-    try {
-      const code = (await terser(region.source, estimateOptions)).code;
-      region.estimatedBytes = bytes(code);
-      region.minifiedCode = code;
-    } catch (error) {
-      region.estimatedBytes = null;
-      region.error = error.message;
-    }
-  }));
-  for (const region of regions) {
-    if (region.estimatedBytes > 0) region.ppmdBytes = (await ppmd.measure(region.minifiedCode)).packedBytes;
-    else if (region.estimatedBytes === 0) region.ppmdBytes = 0;
-    delete region.minifiedCode;
-  }
-
-  const counts = new Map();
-  for (const region of regions) {
-    const key = region.name.toLowerCase();
-    counts.set(key, (counts.get(key) || 0) + 1);
-  }
-  const seen = new Map();
-  for (const region of regions) {
-    const key = region.name.toLowerCase();
-    const occurrence = (seen.get(key) || 0) + 1;
-    seen.set(key, occurrence);
-    region.label = counts.get(key) > 1 ? `${region.name} #${occurrence}` : region.name;
-  }
-
-  const measuredTotal = regions.reduce((sum, region) => sum + (region.ppmdBytes || 0), 0);
-  regions.sort((a, b) => (b.ppmdBytes ?? b.rawBytes) - (a.ppmdBytes ?? a.rawBytes));
-  const max = Math.max(...regions.map(region => region.ppmdBytes || 0), 1);
-
-  console.log("\nFeature size estimates (largest first)");
-  console.log("  Feature                 Minified      PPMd       Raw   Share  Relative");
-  for (const region of regions) {
-    const estimated = region.estimatedBytes;
-    const share = region.ppmdBytes == null || !measuredTotal ? "  n/a" : `${(100 * region.ppmdBytes / measuredTotal).toFixed(1)}%`.padStart(5);
-    const bar = region.ppmdBytes == null ? "estimate failed" : region.ppmdBytes === 0 ? "—" : "█".repeat(Math.max(1, Math.round(20 * region.ppmdBytes / max)));
-    console.log(`  ${region.label.slice(0, 22).padEnd(22)} ${estimated == null ? "n/a".padStart(10) : size(estimated).padStart(10)} ${region.ppmdBytes == null ? "n/a".padStart(9) : size(region.ppmdBytes).padStart(9)} ${size(region.rawBytes).padStart(9)}  ${share}  ${bar}`);
-    if (region.error) console.log(`    ${region.error}`);
-  }
-  console.log("  Estimates minify each feature independently; cross-feature optimization means they may not sum to packed JS.");
+  await printRegionReport(regions, ppmd, estimateOptions, {
+    title: "Feature size estimates (largest first)",
+    column: "Feature",
+    footer: "Estimates minify each feature independently; cross-feature optimization means they may not sum to packed JS.",
+    disambiguate: true,
+    zeroBar: "—"
+  });
 
   // Measure MODULE tags inside every feature for an actionable second-level breakdown.
   const modules = regions
     .flatMap(region => findTaggedRegions(region.source, "MODULE"));
   if (!modules.length) return;
-
-  await Promise.all(modules.map(async region => {
-    region.rawBytes = bytes(region.source);
-    try {
-      const code = (await terser(region.source, estimateOptions)).code;
-      region.estimatedBytes = bytes(code);
-      region.minifiedCode = code;
-    } catch (error) {
-      region.estimatedBytes = null;
-      region.error = error.message;
-    }
-  }));
-  for (const region of modules) {
-    if (region.estimatedBytes > 0) region.ppmdBytes = (await ppmd.measure(region.minifiedCode)).packedBytes;
-    else if (region.estimatedBytes === 0) region.ppmdBytes = 0;
-    delete region.minifiedCode;
-  }
-  const moduleTotal = modules.reduce((sum, region) => sum + (region.ppmdBytes || 0), 0);
-  modules.sort((a, b) => (b.ppmdBytes ?? b.rawBytes) - (a.ppmdBytes ?? a.rawBytes));
-  const moduleMax = Math.max(...modules.map(region => region.ppmdBytes || 0), 1);
-
-  console.log("\nModule size estimates (largest first)");
-  console.log("  Module                  Minified      PPMd       Raw   Share  Relative");
-  for (const region of modules) {
-    const estimated = region.estimatedBytes;
-    const share = region.ppmdBytes == null || !moduleTotal ? "  n/a" : `${(100 * region.ppmdBytes / moduleTotal).toFixed(1)}%`.padStart(5);
-    const bar = region.ppmdBytes == null ? "estimate failed" : region.ppmdBytes === 0 ? "— (comments only)" : "█".repeat(Math.max(1, Math.round(20 * region.ppmdBytes / moduleMax)));
-    console.log(`  ${region.name.slice(0, 22).padEnd(22)} ${estimated == null ? "n/a".padStart(10) : size(estimated).padStart(10)} ${region.ppmdBytes == null ? "n/a".padStart(9) : size(region.ppmdBytes).padStart(9)} ${size(region.rawBytes).padStart(9)}  ${share}  ${bar}`);
-    if (region.error) console.log(`    ${region.error}`);
-  }
-  console.log("  Module estimates exclude feature code outside MODULE tags.");
+  await printRegionReport(modules, ppmd, estimateOptions, {
+    title: "Module size estimates (largest first)",
+    column: "Module",
+    footer: "Module estimates exclude feature code outside MODULE tags."
+  });
 
   // Scene-HUD has several distinct responsibilities. Its PART anchors make the
   // module report actionable without changing the code fed to the real build.
@@ -203,37 +203,11 @@ async function printSizeReport(sourceScripts, packedHTML, options) {
     .filter(region => region.name.toLowerCase() === "scene-hud")
     .flatMap(region => findTaggedRegions(region.source, "PART"));
   if (!hudParts.length) return;
-
-  await Promise.all(hudParts.map(async region => {
-    region.rawBytes = bytes(region.source);
-    try {
-      const code = (await terser(region.source, estimateOptions)).code;
-      region.estimatedBytes = bytes(code);
-      region.minifiedCode = code;
-    } catch (error) {
-      region.estimatedBytes = null;
-      region.error = error.message;
-    }
-  }));
-  for (const region of hudParts) {
-    if (region.estimatedBytes > 0) region.ppmdBytes = (await ppmd.measure(region.minifiedCode)).packedBytes;
-    else if (region.estimatedBytes === 0) region.ppmdBytes = 0;
-    delete region.minifiedCode;
-  }
-  const hudPartTotal = hudParts.reduce((sum, region) => sum + (region.ppmdBytes || 0), 0);
-  hudParts.sort((a, b) => (b.ppmdBytes ?? b.rawBytes) - (a.ppmdBytes ?? a.rawBytes));
-  const hudPartMax = Math.max(...hudParts.map(region => region.ppmdBytes || 0), 1);
-
-  console.log("\nScene-HUD part estimates (largest first)");
-  console.log("  Part                    Minified      PPMd       Raw   Share  Relative");
-  for (const region of hudParts) {
-    const estimated = region.estimatedBytes;
-    const share = region.ppmdBytes == null || !hudPartTotal ? "  n/a" : `${(100 * region.ppmdBytes / hudPartTotal).toFixed(1)}%`.padStart(5);
-    const bar = region.ppmdBytes == null ? "estimate failed" : region.ppmdBytes === 0 ? "— (comments only)" : "█".repeat(Math.max(1, Math.round(20 * region.ppmdBytes / hudPartMax)));
-    console.log(`  ${region.name.slice(0, 22).padEnd(22)} ${estimated == null ? "n/a".padStart(10) : size(estimated).padStart(10)} ${region.ppmdBytes == null ? "n/a".padStart(9) : size(region.ppmdBytes).padStart(9)} ${size(region.rawBytes).padStart(9)}  ${share}  ${bar}`);
-    if (region.error) console.log(`    ${region.error}`);
-  }
-  console.log("  Part estimates exclude Scene-HUD code outside PART tags.");
+  await printRegionReport(hudParts, ppmd, estimateOptions, {
+    title: "Scene-HUD part estimates (largest first)",
+    column: "Part",
+    footer: "Part estimates exclude Scene-HUD code outside PART tags."
+  });
   } finally {
     await ppmd.cleanup();
   }

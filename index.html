@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <!-- <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"> -->
     <!-- <meta name="viewport" content="width=device-width, user-scalable=no"> -->
-    <title>Wild Catch</title>
+    <title>Void City Survivors</title>
     <!--meta name="author" content="Justinas Gibas" /-->
     <!--<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="55%" x="50%" dominant-baseline="middle" text-anchor="middle" font-size="80">🐈‍⬛</text></svg>'>-->
     <style>
@@ -156,7 +156,7 @@
     // -- FEATURE: MMO --
     // -- MODULE: MMO-Connection --
     // Minimal MMO support using JS13k relay. Toggle via HUD. Other players use the shared character mesh.
-    const MMO_URL = 'wss://relay.js13kgames.com/wild-catch'; // append subpaths to shard into rooms if desired
+    const MMO_URL = 'wss://relay.js13kgames.com/void-city-survivors'; // append subpaths to shard into rooms if desired
     let mmoEnabled = false;
     let ws = null;
     let myId = null;
@@ -939,10 +939,10 @@
             // Recycle abandoned enemies and never allow a powerful enemy inside the starter zone.
             if(best>120**2){spawnEnemy(enemy);continue;}
             if(!worldPower(enemy.x,enemy.z)&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.scale=1;enemy.max=enemy.hp=1;}
-            let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3;
+            let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3,turn=enemy.i&1?1:-1;
             const building=buildingAt(enemy.x,enemy.z);if(building){
                 let ox=enemy.x-building.x,oz=enemy.z-building.z,od=HYPOT(ox,oz)||1,radius=building.r+2;
-                if(od<radius){fx+=(ox*(radius-od)-oz)/od*3;fz+=(oz*(radius-od)+ox)/od*3;}
+                if(od<radius){fx+=(ox*(radius-od)-oz*turn)/od*3;fz+=(oz*(radius-od)+ox*turn)/od*3;}
             }
             enemy.vx+=fx*dt;enemy.vz+=fz*dt;
             // HP drives movement speed logarithmically, including mutation HP.
@@ -951,9 +951,9 @@
             const px=enemy.x,pz=enemy.z;
             enemy.x+=enemy.vx*dt;enemy.z+=enemy.vz*dt;
             const cityHit=resolveCityCollision(enemy,.45,px,pz);
-            // Preserve a strong tangential component so direct pursuit cannot pin enemies to walls.
-            if(cityHit&1){enemy.vx=0;enemy.vz+=(SIGN(enemy.z-building.z)||(enemy.i&1?1:-1))*maxSpeed;}
-            if(cityHit&2){enemy.vz=0;enemy.vx+=(SIGN(enemy.x-building.x)||(enemy.i&1?1:-1))*maxSpeed;}
+            // Keep the same turn direction during avoidance and wall contact so the forces cannot cancel.
+            if(cityHit&1){enemy.vx=0;enemy.vz+=SIGN(enemy.x-building.x)*turn*maxSpeed;}
+            if(cityHit&2){enemy.vz=0;enemy.vx-=SIGN(enemy.z-building.z)*turn*maxSpeed;}
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
             enemy.hit-=dt;enemy.h-=dt;
@@ -1632,12 +1632,12 @@
                 hudPage === 1 ? 'CHAT' :
                 // hudPage === 2 ? 'INVENTORY' : // INVENTORY HUD disabled
                 hudPage === 3 ? 'SETTINGS' :
-                'WILD CATCH',
+                'VOID CITY SURVIVORS',
                 20,
                 34
             );
             */
-            hudCtx.fillText(hudPage===3?'SETTINGS':'WILD CATCH',20,34);
+            hudCtx.fillText(hudPage===3?'SETTINGS':'VOID CITY SURVIVORS',20,34);
 
             if(!hudPage)drawBars(44);
 

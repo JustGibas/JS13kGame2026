@@ -57,7 +57,7 @@ function candidates() {
   return tests;
 }
 
-async function roadrollHTML(html) {
+async function roadrollHTML(html, allowFreeVars) {
   const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
   if (scripts.length !== 1) {
     throw new Error(`Roadroller expects exactly one inline script; found ${scripts.length}`);
@@ -69,14 +69,22 @@ async function roadrollHTML(html) {
     type: "js",
     action: "eval"
   }], {
-    // Dirty globals are unsafe because this page has single-letter element IDs.
-    allowFreeVars: false
+    allowFreeVars
   });
   await packer.optimize(1);
   const packed = packer.makeDecoder();
   const decoder = packed.firstLine + packed.secondLine;
   if (/<\/script/i.test(decoder)) {
     throw new Error("Roadroller decoder contains a closing script tag");
+  }
+
+  if (allowFreeVars) {
+    const ids = new Set([...html.matchAll(/\bid=(?:"([^"]+)"|'([^']+)'|([^\s>]+))/gi)]
+      .map(match => match[1] || match[2] || match[3]));
+    const collisions = packed.freeVars.filter(name => ids.has(name));
+    if (collisions.length) {
+      console.warn(`Roadroller dirty-global collision with element ID(s): ${collisions.join(", ")}`);
+    }
   }
 
   const start = script.index + script[0].indexOf(">") + 1;
@@ -96,10 +104,11 @@ async function buildArchive() {
 
   try {
     const terserHTML = await readFile(input, "utf8");
-    console.log("Optimizing Roadroller candidate...");
+    console.log("Optimizing Roadroller candidates...");
     const variants = [
       { name: "Terser", html: terserHTML },
-      { name: "Terser + Roadroller O1 safe", html: await roadrollHTML(terserHTML) }
+      { name: "Terser + Roadroller O1 safe", html: await roadrollHTML(terserHTML, false) },
+      { name: "Terser + Roadroller O1 dirty", html: await roadrollHTML(terserHTML, true) }
     ];
 
     const results = [];

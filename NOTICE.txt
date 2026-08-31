@@ -5,5 +5,8 @@ This product includes software developed by Justinas Gibas.
 
 This product includes software derived from third-party components:
 
-* microgl.js (https://github.com)
+* microgl.js (https://github.com/jagenjo/jstoolbits)
+  Copyright (c) Javi Agenjo
+
+* canvasUI.js (https://github.com/jagenjo/jstoolbits)
   Copyright (c) Javi Agenjo

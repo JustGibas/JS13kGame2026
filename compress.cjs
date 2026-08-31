@@ -61,20 +61,37 @@ function readPackedSize(executable, archive) {
 }
 
 function candidates() {
-  const tests = [{
-    name: "Deflate level=9",
-    options: ["-mm=Deflate", "-mx=9", "-mfb=258", "-mpass=15"]
-  }];
-  for (const order of [2, 4, 6, 8, 10, 12, 16]) {
-    tests.push({
-      name: `PPMd order=${order}`,
-      options: [`-mm=PPMd:o=${order}:mem=1m`]
-    });
+  const tests = [
+    {
+      name: "Deflate mx=9 fb=258 pass=15",
+      options: ["-mm=Deflate", "-mx=9", "-mfb=258", "-mpass=15"]
+    },
+    {
+      name: "Deflate mx=9 fb=128 pass=10",
+      options: ["-mm=Deflate", "-mx=9", "-mfb=128", "-mpass=10"]
+    },
+    {
+      name: "BZip2 mx=9",
+      options: ["-mm=BZip2", "-mx=9"]
+    },
+    {
+      name: "LZMA mx=9 fb=273",
+      options: ["-mm=LZMA", "-mx=9", "-mfb=273"]
+    }
+  ];
+
+  for (const mem of ["1m", "4m", "16m", "64m", "128m", "256m"]) {
+    for (const order of [2, 4, 6, 8, 10, 12, 16]) {
+      tests.push({
+        name: `PPMd order=${order} mem=${mem}`,
+        options: [`-mm=PPMd:o=${order}:mem=${mem}`]
+      });
+    }
   }
   return tests;
 }
 
-async function roadrollHTML(html, allowFreeVars) {
+async function roadrollHTML(html, allowFreeVars, level = 1, extraOptions = {}) {
   const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
   if (scripts.length !== 1) {
     throw new Error(`Roadroller expects exactly one inline script; found ${scripts.length}`);
@@ -86,9 +103,10 @@ async function roadrollHTML(html, allowFreeVars) {
     type: "js",
     action: "eval"
   }], {
-    allowFreeVars
+    allowFreeVars,
+    ...extraOptions
   });
-  await packer.optimize(1);
+  await packer.optimize(level);
   const packed = packer.makeDecoder();
   const decoder = packed.firstLine + packed.secondLine;
   if (/<\/script/i.test(decoder)) {
@@ -111,7 +129,8 @@ async function roadrollHTML(html, allowFreeVars) {
 
 async function buildArchive() {
   const args = process.argv.slice(2);
-  const files = args.filter(arg => !arg.startsWith("--"));
+  const deep = args.includes("--deep") || args.includes("--level2") || args.includes("-O2");
+  const files = args.filter(arg => !arg.startsWith("--") && !arg.startsWith("-O"));
   const input = resolve(files[0] || "index.min.html");
   const output = resolve(files[1] || "game.zip");
   await stat(input);
@@ -121,12 +140,21 @@ async function buildArchive() {
 
   try {
     const terserHTML = await readFile(input, "utf8");
-    console.log("Optimizing Roadroller candidates...");
+    console.log(`Optimizing Roadroller candidates (deep=${deep})...`);
+    const optLevel = deep ? 2 : 1;
     const variants = [
       { name: "Terser", html: terserHTML },
-      { name: "Terser + Roadroller O1 safe", html: await roadrollHTML(terserHTML, false) },
-      { name: "Terser + Roadroller O1 dirty", html: await roadrollHTML(terserHTML, true) }
+      { name: `Terser + Roadroller O${optLevel} safe`, html: await roadrollHTML(terserHTML, false, optLevel) },
+      { name: `Terser + Roadroller O${optLevel} dirty`, html: await roadrollHTML(terserHTML, true, optLevel) }
     ];
+
+    if (deep) {
+      console.log("Adding 16-context Roadroller variant...");
+      variants.push({
+        name: `Terser + Roadroller O2 dirty (16-ctx)`,
+        html: await roadrollHTML(terserHTML, true, 2, { numAbbreviations: 64, maxMemoryMB: 256 })
+      });
+    }
 
     const results = [];
     let number = 0;

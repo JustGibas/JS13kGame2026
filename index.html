@@ -1486,7 +1486,7 @@
 
     // INVENTORY HUD disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
     // CHAT disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
-    function currentUI(){return choosing?UI_LEVEL:!hudVisible?UI_TAB:hudPage===3?UI_SETTINGS:UI_MAIN}
+    function currentUI(){return hudVisible?hudPage===3?UI_SETTINGS:UI_MAIN:choosing?UI_LEVEL.concat(UI_TAB):UI_TAB}
     // -- /PART: State-Layout --
 
     // -- PART: Chat-Actions --
@@ -1536,7 +1536,7 @@
     // Returns the correct local transform for the HUD based on its visibility state
     function getHudTransform() {
         // translate(X, Y, Z): X=horizontal; Y=open -.05, closed/choices .5; Z=closed VR -1.5m, everything else -1.15m.
-        return new DOMMatrix().translate(0,hudVisible&&!choosing?-.05:.5,xr&&!hudVisible?-1.5:-1.15).toFloat32Array();
+        return new DOMMatrix().translate(0,hudVisible?-.05:.5,xr&&!hudVisible?-1.5:-1.15).toFloat32Array();
     }
 
     // --- HUD Interaction Needs Input-ray ---
@@ -1567,7 +1567,7 @@
     // -- PART: Canvas-Drawing --
     // --- HUD Drawing ---
     function drawBars(barY){
-        const barX=hudVisible&&!choosing?20:140,width=360;
+        const barX=hudVisible?20:140,width=360;
         // Bar entries: current value, maximum value, label, filled color, empty color.
         for(const bar of [[hp,maxHp,'HP',HP_COLOR,HP_BACK],[xp,level*3,'XP',XP_COLOR,XP_BACK]]){
             hudCtx.fillStyle=bar[4];hudCtx.fillRect(barX,barY,width,14);
@@ -1584,7 +1584,7 @@
         hudCtx.clearRect(0, 0, hudCan.width, hudCan.height);
 
         // Draw the compact menu tab while the main HUD is closed.
-        if (!hudVisible || choosing) {
+        if (!hudVisible) {
             const button = UI_TAB[0];
             const buttonX=button[0]*640;
             const buttonY=button[1]*320;
@@ -1602,7 +1602,7 @@
             drawBars(44);
 
             if(choosing){
-                for(const button of ui){
+                for(const button of UI_LEVEL){
                     const buttonX=button[0]*640,buttonY=button[1]*320,width=(button[2]-button[0])*640,height=(button[3]-button[1])*320,labels=button[4].split('|');
                     // Level-up card background, hover, border, title, and description colors.
                     hudCtx.fillStyle=hoverBtn===button?UI_HOVER:UI_BUTTON;hudCtx.fillRect(buttonX,buttonY,width,height);

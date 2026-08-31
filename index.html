@@ -1580,7 +1580,8 @@
     // Draws the entire HUD onto the 2D canvas
     function drawHUDCanvas(dt) {
         const ui = currentUI();
-        timer = (self._tm = (+self._tm || 0) + dt / 60).toFixed(3);
+        //timer = (self._tm = (+self._tm || 0) + dt / 60).toFixed(3);
+        timer=(skillTime/60).toFixed(3);
         hudCtx.clearRect(0, 0, hudCan.width, hudCan.height);
 
         // Draw the compact menu tab while the main HUD is closed.

@@ -769,7 +769,7 @@
 
     // -- MODULE: Gameplay-Combat --
     // const runStats={defeated:0};
-    const runStats={defeated:0,damage:0,score:0};
+    const runStats={defeated:0,dealt:0};
     // Enemies seek, skills hit automatically, and XP drops fuel upgrades.
     const enemies=[];
     const shots=[];
@@ -858,7 +858,7 @@
         choosing=0;
         orbCount=0;
         runStats.defeated=0;
-        runStats.damage=runStats.score=0;
+        runStats.dealt=0;
         skillTime=0;
         boltTime=0;
         //orbAngle=0;
@@ -939,7 +939,7 @@
     function damageNumber(x,z,amount){damageNumbers.push({x,y:1.4,z,n:ROUND(amount),t:1});}
     function hurt(enemy,amount,killer){
         amount=MIN(enemy.hp,MAX(1,amount|0));enemy.hp-=amount;damageNumber(enemy.x,enemy.z,amount);
-        if(!myId||killer===myId)runStats.damage+=amount; // damage addition
+        if(!myId||killer===myId)runStats.dealt+=amount; // damage addition
         if(enemy.hp<1)defeat(enemy,amount,killer);else playHitSound(enemy.x,enemy.z);
     }
     function defeat(enemy,amount,killer){
@@ -1713,7 +1713,7 @@
                     `LEVEL ${level}   DEFEATED ${runStats.defeated}   ${timer}m`,20,102
                 );
                 // damage and score text
-                hudCtx.fillText(`DAMAGE DEALT ${runStats.damage}   SCORE ${runStats.score}`,20,126);
+                hudCtx.fillText(`DAMAGE DEALT ${runStats.dealt}`,20,126);
                 // MUTED TEXT disabled: hudCtx.fillStyle = mmoEnabled ? UI_TEXT : UI_MUTED;
                 hudCtx.fillText(
                     `MMO ${mmoEnabled ? 'ON' : 'OFF'}   PLAYERS ${peerCount}`,20,150
@@ -2015,8 +2015,8 @@
         for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
         remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
         gl.disable(gl.BLEND);
-        for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier][2],enemy.mut<0?1.16:1,enemy.scale);
-        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier][2],enemy.mut<0?1.16:1,enemy.scale)));
+        for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier][2],1.16,enemy.scale);
+        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier][2],1.16,enemy.scale)));
         gl.depthMask(true);
         for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
         remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));

@@ -151,6 +151,7 @@
      // OPTIONAL: tracked planar player velocity for predictive enemy pursuit; currently unused.
      //let prevUserX=player.x,prevUserZ=player.z,userVelX=0,userVelZ=0;
     let last = 0; // Timestamp of the last frame for calculating delta time
+    let frameMs=0,fps=0; // Smoothed performance readout for the HUD
     let gl, xr = null, ref = null, xrM = M4(); // WebGL and WebXR objects
 
     //gl = canvas.getContext('webgl2', { antialias: true, xrCompatible: true });
@@ -767,7 +768,8 @@
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
 
     // -- MODULE: Gameplay-Combat --
-    const runStats={defeated:0};
+    // const runStats={defeated:0};
+    const runStats={defeated:0,damage:0,score:0};
     // Enemies seek, skills hit automatically, and XP drops fuel upgrades.
     const enemies=[];
     const shots=[];
@@ -856,6 +858,7 @@
         choosing=0;
         orbCount=0;
         runStats.defeated=0;
+        runStats.damage=runStats.score=0;
         skillTime=0;
         boltTime=0;
         //orbAngle=0;
@@ -936,6 +939,7 @@
     function damageNumber(x,z,amount){damageNumbers.push({x,y:1.4,z,n:ROUND(amount),t:1});}
     function hurt(enemy,amount,killer){
         amount=MIN(enemy.hp,MAX(1,amount|0));enemy.hp-=amount;damageNumber(enemy.x,enemy.z,amount);
+        if(!myId||killer===myId)runStats.damage+=amount; // damage addition
         if(enemy.hp<1)defeat(enemy,amount,killer);else playHitSound(enemy.x,enemy.z);
     }
     function defeat(enemy,amount,killer){
@@ -1708,10 +1712,13 @@
                 hudCtx.fillText(
                     `LEVEL ${level}   DEFEATED ${runStats.defeated}   ${timer}m`,20,102
                 );
+                // damage and score text
+                hudCtx.fillText(`DAMAGE DEALT ${runStats.damage}   SCORE ${runStats.score}`,20,126);
                 // MUTED TEXT disabled: hudCtx.fillStyle = mmoEnabled ? UI_TEXT : UI_MUTED;
                 hudCtx.fillText(
-                    `MMO ${mmoEnabled ? 'ON' : 'OFF'}   PLAYERS ${peerCount}`,20,126
+                    `MMO ${mmoEnabled ? 'ON' : 'OFF'}   PLAYERS ${peerCount}`,20,150
                 );
+                hudCtx.fillText(`X ${ROUND(player.x)}   Y ${ROUND(player.z)}`,20,174);
                 // LOG/MUTED TEXT disabled: hudCtx.fillStyle = UI_MUTED;
                 // LOG disabled: hudCtx.font = '14px monospace';
 
@@ -1754,6 +1761,11 @@
                 );
             }
         }
+
+        //MS and FPS
+        // Performance stays visible on every HUD page, including upgrades and the compact view.
+        hudCtx.fillStyle=UI_TEXT;hudCtx.font='16px system-ui';hudCtx.textAlign='right';hudCtx.textBaseline='alphabetic';
+        hudCtx.fillText(`${frameMs.toFixed(1)} MS   ${ROUND(fps)} FPS`,620,24);
 
         // Upload the canvas content to the WebGL texture
         gl.bindTexture(gl.TEXTURE_2D, hudTex);
@@ -2167,7 +2179,12 @@
         const session = frame && frame.session;
         if (session ? session !== xr : xr) return;
         session ? session.requestAnimationFrame(loop) : requestAnimationFrame(loop);
-        const dt=MIN(last?(time-last)/1000:0,.05);
+
+        // FPS and m/s calculation
+        // const dt=MIN(last?(time-last)/1000:0,.05);
+        const elapsed=last?time-last:0,dt=MIN(elapsed/1000,.05);
+        if(elapsed){frameMs=frameMs?lerp(frameMs,elapsed,.1):elapsed;fps=1000/frameMs;}
+
         last=time;
         updateWorld(dt, session, frame);
         let hudWH;

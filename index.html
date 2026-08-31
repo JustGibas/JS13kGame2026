@@ -802,7 +802,6 @@
     let shotId=0;
     let damage=1;
     let moveSpeed=3;
-    let regen=0;
     let choices=[];
     let seed=Date.now()|0;
     let hp=100;
@@ -869,7 +868,6 @@
         damage=1;
         boltRate=3;
         moveSpeed=3;
-        regen=0;
         maxHp=100;
         hp=100;
         items.length=0;
@@ -888,8 +886,8 @@
             return tier;
         };
         const pool=orbCount?
-            [0,/* 1, ORBIT RADIUS/SIZE and 2, ORBIT SPEED removed */3,4,5,6,7,8]:
-            [3,4,5,6,7,8];
+            [0,/* 1, ORBIT RADIUS/SIZE and 2, ORBIT SPEED removed */3,4,5,6,7]:
+            [3,4,5,6,7];
         choices=orbCount?[]:[[0,rollTier()]];
         while(choices.length<3){
             const type=pool[rng()*pool.length|0];
@@ -920,7 +918,6 @@
             hp=MIN(maxHp,hp+power*20);
         }
         else if(type===7)damage+=power;
-        else regen+=power/10;
         xp-=level++*3;
         choosing=0;
         hudPage=0;
@@ -1261,7 +1258,6 @@
     // -- /MODULE: Gameplay-Movement --
     // -- MODULE: Gameplay-Update --
     function updateWorld(dt, session, frame) {
-        hp=MIN(maxHp,hp+regen*dt);
         step(dt, getMove(session,frame));
         updateCity();
         updateEnemies(dt);
@@ -1485,8 +1481,7 @@
         if(type===4)return `+${power*10}% MOVE`;
         if(type===5)return `-${power*10}% COOLDOWN`;
         if(type===6)return `+${power*20} MAX HEALTH`;
-        if(type===7)return `+${power} DAMAGE`;
-        return `+${power/10} HP/SEC`;
+        return `+${power} DAMAGE`;
     }
 
     // INVENTORY HUD disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }

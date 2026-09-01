@@ -1712,7 +1712,7 @@
                 hudCtx.fillText(`DAMAGE DEALT ${runStats.dealt}`,20,126);
                 // MUTED TEXT disabled: hudCtx.fillStyle = mmoEnabled ? UI_TEXT : UI_MUTED;
                 hudCtx.fillText(
-                    `MMO ${mmoEnabled ? 'ON' : 'OFF'}   PLAYERS ${peerCount}`,20,150
+                    `MMO ${mmoEnabled ? 'ON' : 'OFF'}   PLAYERS ${peerCount+1}`,20,150
                 );
                 hudCtx.fillText(`X ${ROUND(player.x)}   Y ${ROUND(player.z)}`,20,174);
                 // LOG/MUTED TEXT disabled: hudCtx.fillStyle = UI_MUTED;

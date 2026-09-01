@@ -353,7 +353,7 @@
                 if(parts[8]===myId){
                     runStats.defeated++;
                     playKillSound(+parts[4],+parts[5]);
-                    dropReward(+parts[4],+parts[5],+parts[6],+parts[9]);
+                    dropReward(+parts[4],+parts[5],+parts[6],+parts[9],enemy?.max);
                 }
                 if(+parts[7])damageNumber(+parts[4],+parts[5],+parts[7]);
             }
@@ -929,8 +929,8 @@
         if(items.length>1000)items.shift();
     }
     function dropLoot(x,z){const roll=rng();dropXP(x,z,roll<.02?2:roll<.08?1:0);}
-    function dropReward(x,z,tier,mutation){
-        const count=powerValue(tier)*(mutation>=0?mutation+2:1),width=MIN(7,count);
+    function dropReward(x,z,tier,mutation,maxHealth){
+        const health=maxHealth||powerValue(tier)*(mutation>=0?mutation+2:1),count=MAX(1,1+ROUND(LOG2(health/3))),width=MIN(7,count);
         for(let i=count;i--;)dropLoot(x+(i%width-(width-1)/2)*.35,z+FLOOR(i/width)*.35);
     }
     function damageNumber(x,z,amount){damageNumbers.push({x,y:1.4,z,n:ROUND(amount),t:1});}
@@ -941,7 +941,7 @@
     }
     function defeat(enemy,amount,killer){
         const x=enemy.x,z=enemy.z,version=enemy.v,tier=enemy.tier,mutation=enemy.mut;
-        if(!myId||killer===myId){runStats.defeated++;playKillSound(x,z);dropReward(x,z,tier,mutation);}
+        if(!myId||killer===myId){runStats.defeated++;playKillSound(x,z);dropReward(x,z,tier,mutation,enemy.max);}
         if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}`);
         spawnEnemy(enemy);
     }

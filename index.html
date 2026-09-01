@@ -492,7 +492,7 @@
     let lastHit = null;
     // -- /PART: Core --
     
-    // -- SOLUTION: Keyboard-Pointer --
+    // -- PART: Keyboard-Pointer --
     // Keyboard event listeners for movement and HUD toggle
     document.addEventListener('keydown', event => {
         // CHAT disabled: if (event.target === chatInput) return;
@@ -563,9 +563,9 @@
             input.look.id=null;
         }
     });
-    // -- /SOLUTION: Keyboard-Pointer --
+    // -- /PART: Keyboard-Pointer --
     
-    // -- SOLUTION: Joystick --
+    // -- PART: Joystick --
     // --- Virtual Joysticks for Touch Devices ---
     function initJoysticks() {
         const joys = [
@@ -611,11 +611,11 @@
         }
     }
     initJoysticks();
-    // -- /SOLUTION: Joystick --
+    // -- /PART: Joystick --
     // -- PART: Ray --
     // --- Raycasting and Picking ---
     // Checks if a world-space ray intersects with a button on the HUD
-    // -- SOLUTION: Screen --
+    // -- PART: Screen --
     // Creates a world-space ray from screen coordinates (for desktop mouse picking)
     function rayFromScreen(px, py) {
     const rect=canvas.getBoundingClientRect();
@@ -655,7 +655,7 @@
 
 
     }
-    // -- /SOLUTION: Screen --
+    // -- /PART: Screen --
     // Handles a click/tap interaction in desktop mode
     function interactDesktopAt(px, py) {
         const ray=rayFromScreen(px,py);
@@ -1021,7 +1021,7 @@
             }
         }));
     }
-    // -- ITEM: Projectile --
+    // -- PART: Projectile --
     // Shared local/remote simulation is both clearer and smaller in the measured PPMd ZIP.
     function updateProjectiles(list,dt,remote){
         for(let i=list.length;i--;){
@@ -1056,7 +1056,7 @@
             if(projectile.t<=0)list.splice(i,1);
         }
     }
-    // -- /ITEM: Projectile --
+    // -- /PART: Projectile --
     function updateShots(dt){
         boltTime-=dt;
         if(boltCount&&boltTime<0){
@@ -1196,19 +1196,19 @@
     function getMove(session, frame) {
         let vx=0,vy=0,vt=0,gx=0,gy=0,gt=0;
         const deadzone=value=>ABS(value)>DZ?value:0;
-        // -- SOLUTION: Keyboard --
+        // -- PART: Keyboard --
         // Keyboard input (WASD for move, QE or arrows for move/turn)
     const kx = (+!!input.keys['KeyD']) - (+!!input.keys['KeyA']);
     const ky = +!!(input.keys['KeyW']||input.keys['ArrowUp']) - +!!(input.keys['KeyS']||input.keys['ArrowDown']);
     const kt = +!!(input.keys['KeyQ']||input.keys['ArrowLeft']) - +!!(input.keys['KeyE']||input.keys['ArrowRight']);
-        // -- /SOLUTION: Keyboard --
+        // -- /PART: Keyboard --
     
-        // -- SOLUTION: Joystick --
+        // -- PART: Joystick --
     // Virtual joystick input
     const jx = input.joy.L.x;
     const jy = -input.joy.L.y;
     const jt = -input.joy.R.x;
-        // -- /SOLUTION: Joystick --
+        // -- /PART: Joystick --
 
         // Standard handheld controller: left stick moves, right stick turns.
         if(!session){
@@ -1228,7 +1228,7 @@
             }else gamepadButtons=0;
         }
 
-        // -- SOLUTION: VR --
+        // -- PART: VR --
         // -- VR: Input --
         // VR gamepad input
         if (session) {
@@ -1252,14 +1252,14 @@
             }
         }
         // -- /VR: Input --
-        // -- /SOLUTION: VR --
+        // -- /PART: VR --
 
         // Return combined movement, prioritizing VR, then keyboard, then joystick
         const x=vx||kx||gx||jx,y=vy||ky||gy||jy,magnitude=MAX(1,HYPOT(x,y));
         return {x:x/magnitude,y:y/magnitude,t:vt||kt||gt||jt};
     }
 
-    // -- SOLUTION: Step --
+    // -- PART: Step --
     // Updates the user's position and orientation based on movement input and delta time
     function step(dt, movement) {
         // New movement logic
@@ -1287,7 +1287,7 @@
         tryPickupItems(dt);
 
     }
-    // -- /SOLUTION: Step --
+    // -- /PART: Step --
     // -- /MODULE: Movement --
     // -- PART: Update --
     function updateWorld(dt, session, frame) {
@@ -1852,6 +1852,8 @@
     // -- /PART: WebGL-Setup --
 
     // -- /MODULE: HUD --
+
+    // -- MODULE: World-Renderer --
     // -- PART: Sphere-Renderer --
     // Shared sphere geometry and renderer.
 
@@ -1929,13 +1931,13 @@
         }
     }
     // -- /PART: City --
-    
+
     // -- VR: Rendering --
-    // -- PART: VR-Disc --
+    // -- PART: Disc-Renderer --
     // Reticle removed; single disc shader used for VR hand/grip indicator
 
     // Use shared vsMVP for disc and a tiny fragment shader that reads the same uv varying name 'f'
-    const fsDisc=`in vec2 f;uniform vec4 col;uniform float width;out vec4 o;void main(){float d=distance(f,vec2(.5)),h=width/2.,r=smoothstep(.5,.5-h,d)-smoothstep(.5-h,.5-width,d);o=vec4(col.rgb,col.a*r);if(o.a<.02)discard;}`;
+    const fsDisc=`in vec2 f;uniform vec4 col;uniform float width;out vec4 o;void main(){float d=distance(f,vec2(.5)),h=width/2.,edge=fwidth(d)*1.5,r=1.-smoothstep(h-edge,h+edge,abs(d-(.5-h)));o=vec4(col.rgb,col.a*r);if(o.a<.02)discard;}`;
     const PDisc = prog(vsMVP, fsDisc);
     const uMDisc = gl.getUniformLocation(PDisc, 'M'),
           uVDisc = gl.getUniformLocation(PDisc, 'V'),
@@ -1945,6 +1947,9 @@
 
     // No custom VAO: reuse the HUD quad, which already has positions and UVs.
 
+    // -- /PART: Disc-Renderer --
+
+    // -- PART: Difficulty-Rings --
     // TEMP DEBUG: show the origin-centered 100-unit bands used by worldPower().
     const SHOW_DIFFICULTY_RINGS=1;
     function drawDifficultyRings(V,P){
@@ -1958,9 +1963,9 @@
         gl.disable(gl.BLEND);gl.depthMask(true);
     }
 
-    // -- /PART: VR-Disc --
+    // -- /PART: Difficulty-Rings --
 
-    // -- PART: VR-Beam --
+    // -- PART: Beam-Renderer --
     // Beam for pointing ray (reuses PC shared color program)
     const uMBeam = gl.getUniformLocation(PC, 'M'), uVBeam = gl.getUniformLocation(PC, 'V'), uPBeam = gl.getUniformLocation(PC, 'P'), uColBeam = gl.getUniformLocation(PC, 'col');
     const vboBeam = gl.createBuffer(), vaoBeam = gl.createVertexArray();
@@ -1970,7 +1975,41 @@
     gl.bufferData(gl.ARRAY_BUFFER, new F32([0,0,0, 1,0,0, 1,0,1, 0,0,0, 1,0,1, 0,0,1]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-    // -- /PART: VR-Beam --
+
+    // -- /PART: Beam-Renderer --
+
+    // -- PART: Beacon --
+    // TEMP VISUAL: one future drop-pod/tower spawn beacon at the world center.
+    const SPAWN_BEACONS=[[0,0]];
+    function drawSpawnBeacons(V,P){
+        gl.depthMask(false);gl.enable(gl.BLEND);
+        gl.useProgram(PC);gl.uniformMatrix4fv(uVBeam,false,V);gl.uniformMatrix4fv(uPBeam,false,P);
+        gl.useProgram(PDisc);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);
+        for(const beacon of SPAWN_BEACONS){
+            const x=beacon[0],z=beacon[1],width=4,height=300,length=HYPOT(player.x-x,player.z-z)||1,dx=(player.z-z)/length,dz=(x-player.x)/length;
+            // outer beam
+            gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.useProgram(PC);gl.bindVertexArray(vaoBeam);gl.uniform4f(uColBeam,1,1,1,.2);
+            gl.uniformMatrix4fv(uMBeam,false,new F32([dx*width,0,dz*width,0, 0,1,0,0, 0,height,0,0, x-dx*width/2,-.1,z-dz*width/2,1]));gl.drawArrays(gl.TRIANGLES,0,6);
+            // outer filled disc
+            gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(PDisc);gl.bindVertexArray(vaoH);gl.uniform1f(uWidthDisc,1);gl.uniform4f(uColDisc,.2,.2,.2,1);
+            let radius=1.7,ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
+            // inner beam
+            const inner=1;gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.useProgram(PC);gl.bindVertexArray(vaoBeam);gl.uniform4f(uColBeam,1,1,1,.35);
+            gl.uniformMatrix4fv(uMBeam,false,new F32([dx*inner,0,dz*inner,0, 0,1,0,0, 0,height,0,0, x-dx*inner/2,0,z-dz*inner/2,1]));gl.drawArrays(gl.TRIANGLES,0,6);
+            // inner filled disc
+            gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(PDisc);gl.bindVertexArray(vaoH);gl.uniform1f(uWidthDisc,1);gl.uniform4f(uColDisc,.55,.55,.55,1);
+            radius=.5;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
+            // outer accent ring
+            gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(PDisc);gl.bindVertexArray(vaoH);gl.uniform1f(uWidthDisc,.115);gl.uniform4f(uColDisc,1,1,1,1);
+            radius=2.15;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
+            // inner accent ring
+            gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.uniform1f(uWidthDisc,.1);gl.uniform4f(uColDisc,1,1,1,.99);
+            radius=.55;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
+        }
+        gl.disable(gl.BLEND);gl.depthMask(true);
+    }
+    // -- /PART: Beacon --
+
     // -- /VR: Rendering --
     
     // Shared scene renderer. Desktop supplies one synthetic head view; WebXR
@@ -2036,25 +2075,24 @@
     }
     // -- /PART: Camera --
 
-    // -- MODULE: World-Renderer --
     function drawWorld(V, P, W) {
         drawCity(V,P);
         // drawDifficultyRings(V,P); // TEMP DEBUG: difficulty boundaries
         const now=performance.now(),tt=now*.001,br=.144,live=enemy=>!enemy.dead&&now-enemy.last<15000;
-        // -- ITEM: XP --
+        // -- PART: XP --
         // Mesh and ghost loops intentionally remain separate: a shared pass helper is larger.
         for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,radius=.14+SIN(angle)*.025;item.t===2?(drawSphere(V,P,item.x-.08,item.y,item.z,radius,POWER[0][2]),drawSphere(V,P,item.x+.08,item.y,item.z,radius,POWER[5][2])):drawSphere(V,P,item.x,item.y,item.z,radius,item.t===1?POWER[3][2]:WHITE);}
-        // -- /ITEM: XP --
+        // -- /PART: XP --
         gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
-        // -- ITEM: XP --
+        // -- PART: XP --
         for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,color=item.t===1?[.05,.8,.12,.2]:item.t===2?[.5,.1,1,.25]:[1,1,1,.08+ABS(SIN(angle))*.18];drawSphere(V,P,item.x+COS(angle)*.06,item.y+.025,item.z+SIN(angle)*.06,.2,color);}
-        // -- /ITEM: XP --
-        // -- ITEM: Projectile --
+        // -- /PART: XP --
+        // -- PART: Projectile --
         // Intentional duplication: these similar loops produce a smaller PPMd ZIP than a shared helper.
         for(const projectile of shots)for(let j=3;j--;){const trailStep=j+1;drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[1,1,1,.2/trailStep]);}
         for(const projectile of remoteShots)for(let j=3;j--;){const trailStep=j+1;drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[1,1,1,.2/trailStep]);}
-        // -- /ITEM: Projectile --
-        // -- ENTITY: Enemy --
+        // -- /PART: Projectile --
+        // -- PART: Enemy --
         // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
         for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
         remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
@@ -2064,37 +2102,40 @@
         gl.depthMask(true);
         for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
         remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
-        // -- /ENTITY: Enemy --
-        // -- ITEM: Projectile --
+        // -- /PART: Enemy --
+        // -- PART: Projectile --
         gl.depthMask(false);
         for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br*1.14,WHITE);
         for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,.164,WHITE);
         gl.depthMask(true);
         for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
         for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
-        // -- /ITEM: Projectile --
-        // -- ITEM: Orb --
+        // -- /PART: Projectile --
+        // -- PART: Orb --
         // Local and peer loops intentionally repeat: PPMd compresses them smaller than a shared renderer.
         gl.depthMask(false);
         for(let i=orbCount;i--;){const angle=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,player.x+COS(angle)*2.5,.7,player.z+SIN(angle)*2.5,.27,WHITE);}
         gl.depthMask(true);
         for(let i=orbCount;i--;){const angle=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,player.x+COS(angle)*2.5,.7,player.z+SIN(angle)*2.5,.25,BLACK);}
-        // -- /ITEM: Orb --
+        // -- /PART: Orb --
         if (peers && peers.size) {
             const now = performance.now(), target = now - 120;
             peers.forEach((peer, id) => {
                 if (id === myId || now - (peer.last || 0) >= 15000) return;
                 const sample = samplePeer(peer, target) || peer;
                 drawCat(V, P, sample.x, .6, sample.z, (sample.yaw || 0) + PI, now*.005*MIN(3,peer.speed||0), .1, PEER_COL);
-                // -- ITEM: Orb --
+                // -- PART: Orb --
                 const peerPhase=orbitPhase(peer.op+(now-peer.ot)/1e3);
                 gl.depthMask(false);
                 for(let i=peer.oc;i--;){const angle=peerPhase+i*PI*2/peer.oc;drawSphere(V,P,sample.x+COS(angle)*2.5,.7,sample.z+SIN(angle)*2.5,.27,WHITE);}
                 gl.depthMask(true);
                 for(let i=peer.oc;i--;){const angle=peerPhase+i*PI*2/peer.oc;drawSphere(V,P,sample.x+COS(angle)*2.5,.7,sample.z+SIN(angle)*2.5,.25,BLACK);}
-                // -- /ITEM: Orb --
+                // -- /PART: Orb --
             });
         }
+        // Transparent beacon comes after characters so the existing depth buffer
+        // correctly separates enemies in front of it from enemies behind it.
+        drawSpawnBeacons(V,P);
         drawDamageNumbers(V,P,W);
     }
     // -- /MODULE: World-Renderer --

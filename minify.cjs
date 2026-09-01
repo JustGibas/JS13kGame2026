@@ -61,13 +61,8 @@ async function createPpmdMeasurer() {
   };
 }
 
-const REPORT_TYPES = ["FEATURE", "MODULE", "PART", "SOLUTION", "ITEM", "ENTITY"];
+const REPORT_TYPES = ["FEATURE", "MODULE", "PART"];
 
-// A marker may classify one block in several useful ways without adding more
-// anchor lines:
-//   // -- MODULE: Scene-Orb | ENTITY: Orb --
-//   // -- /MODULE: Scene-Orb | /ENTITY: Orb --
-// Existing one-classification markers remain valid.
 function findTagMarkers(source, type) {
   const line = /^\s*\/\/\s*--\s*(.*?)\s*--\s*$/gim;
   const markers = [];
@@ -75,7 +70,7 @@ function findTagMarkers(source, type) {
 
   while ((match = line.exec(source))) {
     for (const field of match[1].split("|")) {
-      const tag = field.trim().match(/^(\/?)\s*(FEATURE|MODULE|PART|SOLUTION|ITEM|ENTITY)\s*:\s*(.+)$/i);
+      const tag = field.trim().match(/^(\/?)\s*(FEATURE|MODULE|PART)\s*:\s*(.+)$/i);
       if (tag && tag[2].toUpperCase() === type) {
         markers.push({ closing: Boolean(tag[1]), name: tag[3].trim(), start: match.index, end: line.lastIndex });
       }
@@ -127,10 +122,7 @@ function buildReportTree(taggedSpans) {
   const parentOf = new Map();
   const allowedParents = {
     MODULE: new Set(["FEATURE"]),
-    PART: new Set(["FEATURE", "MODULE", "PART"]),
-    SOLUTION: new Set(["FEATURE", "MODULE", "PART"]),
-    ITEM: new Set(["FEATURE", "MODULE", "PART"]),
-    ENTITY: new Set(["FEATURE", "MODULE", "PART"])
+    PART: new Set(["FEATURE", "MODULE", "PART"])
   };
 
   for (const span of spans) {
@@ -186,28 +178,27 @@ function buildReportTree(taggedSpans) {
   return [...nodes.values()].filter(node => !node.parentKey);
 }
 
-function printRankedReport(nodes, { title, column, showKind = false }) {
+function printRankedReport(nodes, { title, column, showPath = false }) {
   if (!nodes.length) return;
-  const labelWidth = showKind ? 32 : 22;
   const measuredTotal = nodes.reduce((sum, node) => sum + (node.ppmdBytes || 0), 0);
   const sorted = [...nodes].sort((a, b) => (b.ppmdBytes ?? b.rawBytes) - (a.ppmdBytes ?? a.rawBytes));
   const max = Math.max(...sorted.map(node => node.ppmdBytes || 0), 1);
   const pathLabel = node => {
-    if (!showKind) return node.name;
+    if (!showPath) return node.name;
     const parent = node.parent;
-    return parent ? `${parent.name} › ${node.name}` : node.name;
+    return parent ? `${pathLabel(parent)} › ${node.name}` : node.name;
   };
+  const labelWidth = Math.max(column.length, ...nodes.map(node => pathLabel(node).length + (node.spans > 1 ? 3 : 0)));
 
   console.log(`\n${title}`);
-  console.log(`  ${column.padEnd(labelWidth)}${showKind ? ` ${"Kind".padEnd(8)}` : ""} ${"Minified".padStart(10)} ${"PPMd".padStart(9)} ${"Raw".padStart(9)}  Share  Relative`);
+  console.log(`  ${column.padEnd(labelWidth)} ${"Minified".padStart(10)} ${"PPMd".padStart(9)} ${"Raw".padStart(9)}  Share  Relative`);
   for (const node of sorted) {
     const estimated = node.estimatedBytes;
     const share = node.ppmdBytes == null || !measuredTotal ? "  n/a" : `${(100 * node.ppmdBytes / measuredTotal).toFixed(1)}%`.padStart(5);
     const bar = node.ppmdBytes == null ? "estimate failed" : node.ppmdBytes === 0 ? "—" : "█".repeat(Math.max(1, Math.round(20 * node.ppmdBytes / max)));
     const spans = node.spans > 1 ? ` ×${node.spans}` : "";
-    const label = `${pathLabel(node)}${spans}`.slice(0, labelWidth).padEnd(labelWidth);
-    const kind = showKind ? ` ${(node.type[0] + node.type.slice(1).toLowerCase()).padEnd(8)}` : "";
-    console.log(`  ${label}${kind} ${estimated == null ? "n/a".padStart(10) : size(estimated).padStart(10)} ${node.ppmdBytes == null ? "n/a".padStart(9) : size(node.ppmdBytes).padStart(9)} ${size(node.rawBytes).padStart(9)}  ${share}  ${bar}`);
+    const label = `${pathLabel(node)}${spans}`.padEnd(labelWidth);
+    console.log(`  ${label} ${estimated == null ? "n/a".padStart(10) : size(estimated).padStart(10)} ${node.ppmdBytes == null ? "n/a".padStart(9) : size(node.ppmdBytes).padStart(9)} ${size(node.rawBytes).padStart(9)}  ${share}  ${bar}`);
     if (node.error) console.log(`    ${node.error}`);
   }
   console.log("  Estimates at different levels overlap and do not sum to packed JavaScript.");
@@ -282,10 +273,10 @@ async function printSizeReport(sourceScripts, packedHTML, options) {
     title: "Module size estimates (largest first)",
     column: "Module"
   });
-  printRankedReport(nodes.filter(node => !["FEATURE", "MODULE"].includes(node.type)), {
-    title: "Smaller component estimates (largest first)",
-    column: "Parent › Component",
-    showKind: true
+  printRankedReport(nodes.filter(node => node.type === "PART"), {
+    title: "Part size estimates (largest first)",
+    column: "Parent › Part",
+    showPath: true
   });
   } finally {
     await ppmd.cleanup();

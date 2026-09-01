@@ -1522,7 +1522,7 @@
     function currentUI(){return hudVisible?hudPage===3?UI_SETTINGS:UI_MAIN:choosing?UI_LEVEL.concat(UI_TAB):UI_TAB}
     // -- /PART: State-Layout --
 
-    // -- PART: Chat-Actions --
+    // -- PART: Actions --
     /* CHAT disabled:
     function setChat(open) {
         hudPage = open ? 1 : 0; chatText = ''; chatInput.value = ''; logScroll=0;
@@ -1563,7 +1563,7 @@
         else if(event.key==='Escape')setChat(false);
     };
     */
-    // -- /PART: Chat-Actions --
+    // -- /PART: Actions --
 
     // -- PART: Transform-Picking --
     // Returns the correct local transform for the HUD based on its visibility state
@@ -1935,14 +1935,28 @@
     // Reticle removed; single disc shader used for VR hand/grip indicator
 
     // Use shared vsMVP for disc and a tiny fragment shader that reads the same uv varying name 'f'
-    const fsDisc=`in vec2 f;uniform vec4 col;out vec4 o;void main(){float d=distance(f,vec2(.5)),r=smoothstep(.5,.4,d)-smoothstep(.4,.3,d);o=vec4(col.rgb,col.a*r);if(o.a<.02)discard;}`;
+    const fsDisc=`in vec2 f;uniform vec4 col;uniform float width;out vec4 o;void main(){float d=distance(f,vec2(.5)),h=width/2.,r=smoothstep(.5,.5-h,d)-smoothstep(.5-h,.5-width,d);o=vec4(col.rgb,col.a*r);if(o.a<.02)discard;}`;
     const PDisc = prog(vsMVP, fsDisc);
     const uMDisc = gl.getUniformLocation(PDisc, 'M'),
           uVDisc = gl.getUniformLocation(PDisc, 'V'),
           uPDisc = gl.getUniformLocation(PDisc, 'P'),
-          uColDisc = gl.getUniformLocation(PDisc, 'col');
+          uColDisc = gl.getUniformLocation(PDisc, 'col'),
+          uWidthDisc = gl.getUniformLocation(PDisc, 'width');
 
     // No custom VAO: reuse the HUD quad, which already has positions and UVs.
+
+    // TEMP DEBUG: show the origin-centered 100-unit bands used by worldPower().
+    const SHOW_DIFFICULTY_RINGS=1;
+    function drawDifficultyRings(V,P){
+        if(!SHOW_DIFFICULTY_RINGS)return;
+        gl.useProgram(PDisc);gl.bindVertexArray(vaoH);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);gl.uniform1f(uWidthDisc,.008);
+        gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+        for(let danger=1;danger<=12;danger++){
+            const radius=danger*100,color=POWER[MIN(6,FLOOR(danger/2))][2],ring=new DOMMatrix().translate(0,.03,0).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();
+            gl.uniformMatrix4fv(uMDisc,false,ring);gl.uniform4f(uColDisc,color[0],color[1],color[2],.8);gl.drawArrays(gl.TRIANGLES,0,6);
+        }
+        gl.disable(gl.BLEND);gl.depthMask(true);
+    }
 
     // -- /PART: VR-Disc --
 
@@ -2025,6 +2039,7 @@
     // -- MODULE: World-Renderer --
     function drawWorld(V, P, W) {
         drawCity(V,P);
+        // drawDifficultyRings(V,P); // TEMP DEBUG: difficulty boundaries
         const now=performance.now(),tt=now*.001,br=.144,live=enemy=>!enemy.dead&&now-enemy.last<15000;
         // -- ITEM: XP --
         // Mesh and ghost loops intentionally remain separate: a shared pass helper is larger.
@@ -2099,6 +2114,7 @@
                 gl.useProgram(PDisc); gl.bindVertexArray(vaoH);
                 gl.uniformMatrix4fv(uMDisc,false,ring);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);
                 gl.uniform4f(uColDisc,col[0],col[1],col[2],.95);
+                gl.uniform1f(uWidthDisc,.2);
                 gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
                 gl.drawArrays(gl.TRIANGLES,0,6);
                 const hit=HUD_pick(hudWH,controllerRay(frame,src));

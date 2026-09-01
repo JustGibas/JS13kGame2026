@@ -93,7 +93,7 @@
 
     <script>
     // -- FEATURE: Core --
-    // -- MODULE: Core-Math --
+    // -- PART: Math --
     // Expose Math functions to global scope
     Object.getOwnPropertyNames(Math).forEach(name => window[name.toUpperCase()] = Math[name]);
     // --- Math Library ---
@@ -138,9 +138,9 @@
 
     // Creates a translation and scale matrix
     function translateScale(x,y,z,sx,sy,sz) { return new F32([sx,0,0,0, 0,sy,0,0, 0,0,sz,0, x,y,z,1]); }
-    // -- /MODULE: Core-Math --
+    // -- /PART: Math --
 
-    // -- MODULE: Core-Runtime --
+    // -- PART: Runtime --
     // const D = document
     // const canvas = D.getElementById('canvas');
     const canvas = document.getElementById('C');
@@ -164,10 +164,10 @@
         if(difference>PI)difference-=2*PI;else if(difference<-PI)difference+=2*PI;
         return start+difference*amount;
     }
-    // -- /MODULE: Core-Runtime --
+    // -- /PART: Runtime --
 
     // -- FEATURE: MMO --
-    // -- MODULE: MMO-Connection --
+    // -- PART: Connection --
     // Minimal MMO support using JS13k relay. Toggle via HUD. Other players use the shared character mesh.
     const MMO_URL = 'wss://relay.js13kgames.com/void-city-survivors'; // append subpaths to shard into rooms if desired
     let mmoEnabled = false;
@@ -216,6 +216,7 @@
 
     // LOG disabled: function logMMO(message){ log('MMO: '+message); }
     function sendMMO(message){try{if(ws?.readyState===1)ws.send(message);}catch(_){}}
+    function forgetPeer(id){peers.delete(id);remoteEnemies.delete(id);for(let i=remoteShots.length;i--;)if(remoteShots[i].o===id)remoteShots.splice(i,1);}
 
     function toggleMMO(){
         mmoEnabled = !mmoEnabled;
@@ -246,9 +247,9 @@
         // OPTIONAL handler disabled: ws.onerror = _ => { /* errors surface via close */ };
         ws.onmessage = ev => handleMMOMessage(ev.data);
     }
-    // -- /MODULE: MMO-Connection --
+    // -- /PART: Connection --
 
-    // -- MODULE: MMO-Messages --
+    // -- PART: Messages --
     function handleMMOMessage(message){
         if(typeof message!=='string')return;
         const command=message[0];
@@ -256,7 +257,7 @@
             // LOG disabled: case '@':myId=message.slice(1);logMMO('my id: '+myId);return;
             case '@':myId=message.slice(1);return;
             case '+':{const id=message.slice(1);if(id&&!peers.has(id))peers.set(id,{x:0,z:0,yaw:0,last:0,hist:[],oh:[]});return;}
-            case '-':{const id=message.slice(1);peers.delete(id);remoteEnemies.delete(id);for(let i=remoteShots.length;i--;)if(remoteShots[i].o===id)remoteShots.splice(i,1);return;}
+            case '-':forgetPeer(message.slice(1));return;
         }
         /* DIRECT MMO compatibility disabled to save bytes.
         Restore this block and remove `const payload=message` below if older clients
@@ -282,6 +283,7 @@
                     const nx = isFinite(x)?x:peer.x;
                     const nz = isFinite(z)?z:peer.z;
                     const ny = isFinite(yaw)?yaw:peer.yaw;
+                    if(!nearCity(nx,nz)){if(peers.has(id))forgetPeer(id);return;}
                     pushPeerSample(peer, nx, nz, ny, now);
                     peer.oc=+parts[5]||0;
                     //p.os=+parts[6]||.25; // ORBIT SIZE MMO field 
@@ -304,7 +306,7 @@
             const parts=payload.split('|'),
                 owner=parts[1];
 
-            if(owner&&owner!==myId){
+            if(owner&&owner!==myId&&peers.has(owner)){
                 const group=remoteEnemies.get(owner)||new Map(),
                     seen=new Set(),
                     now=performance.now();
@@ -312,6 +314,7 @@
                 for(const row of (parts[2]||'').split(';'))if(row){
                     const fields=row.split(',').map(Number),
                         id=fields[0];
+                    if(!nearCity(fields[2],fields[3]))continue;
                     seen.add(id);
 
                     let enemy=group.get(id);
@@ -353,7 +356,7 @@
                 if(parts[8]===myId){
                     runStats.defeated++;
                     playKillSound(+parts[4],+parts[5]);
-                    dropReward(+parts[4],+parts[5],+parts[6],+parts[9],enemy?.max);
+                    dropReward(+parts[4],+parts[5],+parts[6],+parts[9],+parts[10]||enemy?.max);
                 }
                 if(+parts[7])damageNumber(+parts[4],+parts[5],+parts[7]);
             }
@@ -363,9 +366,12 @@
                 enemy.dead=1;
             }
         }
+        if(payload[0]==='a'&&payload[1]==='|'){
+            const parts=payload.split('|');if(parts[1]===myId)runStats.dealt+=+parts[2];
+        }
         if(payload[0]==='s'&&payload[1]==='|'){
             const parts=payload.split('|');
-            if(parts[1]!==myId){
+            if(parts[1]!==myId&&peers.has(parts[1])&&nearCity(+parts[2],+parts[3])){
                 remoteShots.push({o:parts[1],x:+parts[2],y:.7,z:+parts[3],vx:+parts[4],vz:+parts[5],d:+parts[6]||1,i:+parts[7],t:3});
                 playShotSound(+parts[2],+parts[3]);
             }
@@ -382,9 +388,9 @@
         }
     }
     document.onvisibilitychange=_=>mmoEnabled&&!xr&&(document.hidden?(ws&&(ws.onmessage=ws.onclose=0),disconnectMMO()):connectMMO());
-    // -- /MODULE: MMO-Messages --
+    // -- /PART: Messages --
 
-    // -- MODULE: MMO-Sync --
+    // -- PART: Sync --
     function mmoTick(dt){
         if (!mmoEnabled || !ws || ws.readyState !== 1 || !myId) return;
         mmoSendTimer += dt;
@@ -408,11 +414,11 @@
             sendMMO('e|'+myId+'|'+enemies.map(enemy=>[enemy.i,enemy.v,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
         }
     }
-    // -- /MODULE: MMO-Sync --
+    // -- /PART: Sync --
 
     // -- /FEATURE: MMO --
 
-    // -- MODULE: Core-WebGL --
+    // -- PART: WebGL --
     // Resize the canvas to fill the window, accounting for device pixel ratio
     function resize() {
     const width=innerWidth,height=innerHeight,dpr=devicePixelRatio||1;
@@ -441,11 +447,11 @@
         if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw gl.getProgramInfoLog(program);
         return program;
     }
-    // -- /MODULE: Core-WebGL --
+    // -- /PART: WebGL --
     // -- /FEATURE: Core --
     
     // -- FEATURE: Input --
-    // -- MODULE: Input-Core --
+    // -- PART: Core --
     // --- Unified Input Handling ---
     // OPTIONAL: detects touch-style coarse pointers; CSS currently handles joystick visibility alone.
     //const isMobile=matchMedia('(pointer:coarse)').matches;
@@ -484,9 +490,9 @@
 
     // State for the raycast
     let lastHit = null;
-    // -- /MODULE: Input-Core --
+    // -- /PART: Core --
     
-    // -- MODULE: Input-Keyboard-Pointer --
+    // -- SOLUTION: Keyboard-Pointer --
     // Keyboard event listeners for movement and HUD toggle
     document.addEventListener('keydown', event => {
         // CHAT disabled: if (event.target === chatInput) return;
@@ -501,7 +507,8 @@
         if(!event.repeat&&choosing&&/^(Digit|Numpad)[1-3]$/.test(key)){
             event.preventDefault();playClickSound();upgrade(choices[+key.slice(-1)-1]);return;
         }
-        if(!event.repeat&&(key==='KeyH'||key==='Escape'||key==='KeyX')){playClickSound();hudVisible=!hudVisible;} // 'H' and escape key toggles HUD visibility
+        // KeyH HUD toggle disabled.
+        if(!event.repeat&&(key==='Escape'||key==='KeyX')){playClickSound();hudVisible=!hudVisible;} // Escape and X toggle HUD visibility
         //if (key === 'KeyF') {playClickSound(); beastMode = !beastMode;} // 'F' key toggles beastMode
     });
     document.addEventListener('keyup',event=>input.keys[event.code]=false);
@@ -556,9 +563,9 @@
             input.look.id=null;
         }
     });
-    // -- /MODULE: Input-Keyboard-Pointer --
+    // -- /SOLUTION: Keyboard-Pointer --
     
-    // -- MODULE: Input-Joystick --
+    // -- SOLUTION: Joystick --
     // --- Virtual Joysticks for Touch Devices ---
     function initJoysticks() {
         const joys = [
@@ -604,11 +611,11 @@
         }
     }
     initJoysticks();
-    // -- /MODULE: Input-Joystick --
-    // -- MODULE: Input-Ray --
+    // -- /SOLUTION: Joystick --
+    // -- PART: Ray --
     // --- Raycasting and Picking ---
     // Checks if a world-space ray intersects with a button on the HUD
-    // -- SOLUTION: Input-Ray-Screen --
+    // -- SOLUTION: Screen --
     // Creates a world-space ray from screen coordinates (for desktop mouse picking)
     function rayFromScreen(px, py) {
     const rect=canvas.getBoundingClientRect();
@@ -648,7 +655,7 @@
 
 
     }
-    // -- /SOLUTION: Input-Ray-Screen --
+    // -- /SOLUTION: Screen --
     // Handles a click/tap interaction in desktop mode
     function interactDesktopAt(px, py) {
         const ray=rayFromScreen(px,py);
@@ -740,12 +747,12 @@
     //T_V3_RAY_O[0] = user.x; T_V3_RAY_O[1] = user.y; T_V3_RAY_O[2] = user.z;
     //return { o: T_V3_RAY_O, d: T_V3_RAY_D };
     
-    // -- /MODULE: Input-Ray --
+    // -- /PART: Ray --
     // -- /FEATURE: Input --
 
     // -- FEATURE: Gameplay --
     //let beastMode = false; // toggle beast mode
-    // -- MODULE: Gameplay-World --
+    // -- MODULE: World --
     //const BOOST_DURATION = 15;          // seconds per pickup
     //const BOOST_AMOUNT  = 0.3;        // +30% per stack
     //const MAX_BOOSTS    = 100;           // safety cap
@@ -755,6 +762,7 @@
     const cityHash = (x,z,salt=0) => { const hash=SIN(x*127.1+z*311.7+salt*71.7)*43758.5453;return hash-FLOOR(hash); };
     const buildingAt = (x,z) => city[ROUND(x/CITY_BLOCK)+','+ROUND(z/CITY_BLOCK)];
     const insideBuilding = (x,z,radius=0) => {const building=buildingAt(x,z);return building&&ABS(x-building.x)<building.w/2+radius&&ABS(z-building.z)<building.d/2+radius};
+    const nearCity=(x,z)=>ABS(ROUND(x/CITY_BLOCK)-cityX)<16&&ABS(ROUND(z/CITY_BLOCK)-cityZ)<16;
     function updateCity(){
         const cx=ROUND(player.x/CITY_BLOCK),cz=ROUND(player.z/CITY_BLOCK);if(cx===cityX&&cz===cityZ)return;
         cityX=cx;cityZ=cz;const next=[],nextCity={};
@@ -768,7 +776,7 @@
     // Player capsule constants (smaller than an object w/ props)
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
 
-    // -- MODULE: Gameplay-Combat --
+    // -- MODULE: Combat --
     // const runStats={defeated:0};
     const runStats={defeated:0,dealt:0};
     // Enemies seek, skills hit automatically, and XP drops fuel upgrades.
@@ -798,19 +806,19 @@
     //let orbSpeed=2.5;
     let enemyVersion=0;
     let boltCount=1;
-    let boltRate=3;
+    let cooldownPower=0;
     let boltTime=0;
     let shotId=0;
     let damage=1;
-    let moveSpeed=3;
+    let movePower=0;
     let choices=[];
     let seed=Date.now()|0;
     let hp=100;
     let maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
-    const orbitPhase=time=>2.5*(15-ABS(time%30-15));
-    // One unbounded world ring drives safe-zone behavior, population, strength, and mutations.
-    const worldPower=(x,z)=>HYPOT(x,z)/100|0,enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3;
+    const orbitPhase=time=>2.5*(15-ABS(time%30-15)),cooldown=power=>MAX(.15,1/(1/3+.15*SQRT(power)));
+    // World rings drive population and power; starter protection has a smaller independent radius.
+    const STARTER_RADIUS=50,worldPower=(x,z)=>HYPOT(x,z)/100|0,enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3;
     function setEnemyPower(enemy){
         const danger=worldPower(enemy.x,enemy.z),time=skillTime/60,cap=MIN(6,FLOOR(danger/2)),roll=rng();
         enemy.tier=cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):rng()*(cap+1)|0):0;
@@ -838,7 +846,7 @@
             valid&=!insideBuilding(enemy.x,enemy.z,.6);
             if(valid)break;
         }
-        enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.hit=enemy.h=0;
+        enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.hit=0;enemy.h=[];
         enemy.v=++enemyVersion;
         setEnemyPower(enemy);
         return enemy;
@@ -850,7 +858,8 @@
     function syncEnemyPopulation(){
         const target=enemyPopulationTarget();
         while(enemies.length<target)enemies.push(spawnEnemy({i:enemies.length}));
-        enemies.length=target;
+        // Keep one ring's three-enemy population as hysteresis when moving inward.
+        if(enemies.length>target+3)enemies.length=target;
     }
     function resetRun(){
         level=1;
@@ -867,8 +876,8 @@
         //orbSpeed=2.5;
         boltCount=1;
         damage=1;
-        boltRate=3;
-        moveSpeed=3;
+        cooldownPower=0;
+        movePower=0;
         maxHp=100;
         hp=100;
         items.length=0;
@@ -912,8 +921,8 @@
         //}
         //else if(type===2)orbSpeed*=1+power*.15; // ORBIT SPEED upgrade removed
         else if(type===3)boltCount+=power;
-        else if(type===4)moveSpeed*=1+power*.1;
-        else if(type===5)boltRate=MAX(.15,boltRate*(1-power*.1));
+        else if(type===4)movePower+=power;
+        else if(type===5)cooldownPower+=power;
         else if(type===6){
             maxHp+=power*20;
             hp=MIN(maxHp,hp+power*20);
@@ -938,12 +947,13 @@
     function hurt(enemy,amount,killer){
         amount=MIN(enemy.hp,MAX(1,amount|0));enemy.hp-=amount;damageNumber(enemy.x,enemy.z,amount);
         if(!myId||killer===myId)runStats.dealt+=amount; // damage addition
+        else sendMMO(`a|${killer}|${amount}`);
         if(enemy.hp<1)defeat(enemy,amount,killer);else playHitSound(enemy.x,enemy.z);
     }
     function defeat(enemy,amount,killer){
         const x=enemy.x,z=enemy.z,version=enemy.v,tier=enemy.tier,mutation=enemy.mut;
         if(!myId||killer===myId){runStats.defeated++;playKillSound(x,z);dropReward(x,z,tier,mutation,enemy.max);}
-        if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}`);
+        if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
         spawnEnemy(enemy);
     }
     function updateEnemies(dt){
@@ -954,7 +964,7 @@
             peers.forEach(peer=>{const distance=(peer.x-enemy.x)**2+(peer.z-enemy.z)**2;if(now-peer.last<15000&&distance<best){best=distance;tx=peer.x;tz=peer.z;self=0;}});
             // Recycle abandoned enemies and never allow a powerful enemy inside the starter zone.
             if(best>120**2){spawnEnemy(enemy);continue;}
-            if(!worldPower(enemy.x,enemy.z)&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.scale=1;enemy.max=enemy.hp=1;}
+            if(HYPOT(enemy.x,enemy.z)<STARTER_RADIUS&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.scale=1;enemy.max=enemy.hp=1;}
             let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3,turn=enemy.i&1?1:-1;
             const building=buildingAt(enemy.x,enemy.z);if(building){
                 let ox=enemy.x-building.x,oz=enemy.z-building.z,od=HYPOT(ox,oz)||1,radius=building.r+2;
@@ -972,7 +982,7 @@
             if(cityHit&2){enemy.vz=0;enemy.vx-=SIGN(enemy.z-building.z)*turn*maxSpeed;}
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
-            enemy.hit-=dt;enemy.h-=dt;
+            enemy.hit-=dt;
             if(self&&distance<.6+enemy.scale*.6&&enemy.hit<0){
                 //player.x+=dx/d*(2+c.tier*.2); // knockback
                 //player.z+=dz/d*(2+c.tier*.2); // knockback
@@ -983,16 +993,17 @@
                 if(hp<1){resetRun();return;} // DEAD
                 continue;
             }
-            if(enemy.h<0)for(let i=orbCount;i--;){
+            for(let i=orbCount;i--;){
                 const angle=orbitPhase(skillTime)+i*PI*2/orbCount,ox=player.x+COS(angle)*2.5,oz=player.z+SIN(angle)*2.5;
-                if((enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){
-                    hurt(enemy,damage,myId);enemy.h=.5;break;
+                if((enemy.h[i]||0)<skillTime&&(enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){
+                    hurt(enemy,damage,myId);enemy.h[i]=skillTime+.15;
                 }
             }
             peers.forEach((peer,id)=>{
-                if(now-peer.last<15000&&(peer.oh[enemy.i]||0)<now)for(let i=peer.oc;i--;){
+                const hits=peer.oh[enemy.i]||(peer.oh[enemy.i]=[]);
+                if(now-peer.last<15000)for(let i=peer.oc;i--;){
                     const angle=orbitPhase(peer.op+(now-peer.ot)/1e3)+i*PI*2/peer.oc,ox=peer.x+COS(angle)*2.5,oz=peer.z+SIN(angle)*2.5;
-                    if((enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){hurt(enemy,peer.d,id);peer.oh[enemy.i]=now+500;break;}
+                    if((hits[i]||0)<now&&(enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){hurt(enemy,peer.d,id);hits[i]=now+150;}
                 }
             });
         }
@@ -1010,7 +1021,7 @@
             }
         }));
     }
-    // -- MODULE: Gameplay-Projectile-Simulation --
+    // -- ITEM: Projectile --
     // Shared local/remote simulation is both clearer and smaller in the measured PPMd ZIP.
     function updateProjectiles(list,dt,remote){
         for(let i=list.length;i--;){
@@ -1018,6 +1029,8 @@
             projectile.x+=projectile.vx*dt;
             projectile.z+=projectile.vz*dt;
             projectile.t-=dt;
+
+            if(remote&&!nearCity(projectile.x,projectile.z)){list.splice(i,1);continue;}
 
             if(insideBuilding(projectile.x,projectile.z,radius)){
                 list.splice(i,1);
@@ -1043,11 +1056,11 @@
             if(projectile.t<=0)list.splice(i,1);
         }
     }
-    // -- /MODULE: Gameplay-Projectile-Simulation --
+    // -- /ITEM: Projectile --
     function updateShots(dt){
         boltTime-=dt;
         if(boltCount&&boltTime<0){
-            boltTime=boltRate;
+            boltTime=cooldown(cooldownPower);
             let target=enemies[0],best=1e9;
             for(const enemy of enemies){
                 const distance=HYPOT(enemy.x-player.x,enemy.z-player.z);
@@ -1080,7 +1093,7 @@
             if((number.t-=dt)<0)damageNumbers.splice(i,1);
         }
     }
-    // -- /MODULE: Gameplay-Combat --
+    // -- /MODULE: Combat --
 
     function tryPickupItems(dt){
         // Closest point on capsule segment (vertical)
@@ -1136,9 +1149,9 @@
         if(px<pz){const side=dx||(prevX-building.x);entity.x=building.x+(side>=0?hx:-hx);return 1;}
         const side=dz||(prevZ-building.z);entity.z=building.z+(side>=0?hz:-hz);return 2;
     }
-    // -- /MODULE: Gameplay-World --
+    // -- /MODULE: World --
 
-    // -- MODULE: Gameplay-Movement --
+    // -- MODULE: Movement --
     // --- Movement Logic ---
     // Movement and input constants
     //const MOVES = 3;    // Movement speed in meters per second
@@ -1183,19 +1196,19 @@
     function getMove(session, frame) {
         let vx=0,vy=0,vt=0,gx=0,gy=0,gt=0;
         const deadzone=value=>ABS(value)>DZ?value:0;
-        // -- SOLUTION: Gameplay-Movement-Keyboard --
+        // -- SOLUTION: Keyboard --
         // Keyboard input (WASD for move, QE or arrows for move/turn)
     const kx = (+!!input.keys['KeyD']) - (+!!input.keys['KeyA']);
     const ky = +!!(input.keys['KeyW']||input.keys['ArrowUp']) - +!!(input.keys['KeyS']||input.keys['ArrowDown']);
     const kt = +!!(input.keys['KeyQ']||input.keys['ArrowLeft']) - +!!(input.keys['KeyE']||input.keys['ArrowRight']);
-        // -- /SOLUTION: Gameplay-Movement-Keyboard --
+        // -- /SOLUTION: Keyboard --
     
-        // -- SOLUTION: Gameplay-Movement-Joystick --
+        // -- SOLUTION: Joystick --
     // Virtual joystick input
     const jx = input.joy.L.x;
     const jy = -input.joy.L.y;
     const jt = -input.joy.R.x;
-        // -- /SOLUTION: Gameplay-Movement-Joystick --
+        // -- /SOLUTION: Joystick --
 
         // Standard handheld controller: left stick moves, right stick turns.
         if(!session){
@@ -1215,7 +1228,7 @@
             }else gamepadButtons=0;
         }
 
-        // -- SOLUTION: Gameplay-Movement-VR --
+        // -- SOLUTION: VR --
         // -- VR: Input --
         // VR gamepad input
         if (session) {
@@ -1239,18 +1252,18 @@
             }
         }
         // -- /VR: Input --
-        // -- /SOLUTION: Gameplay-Movement-VR --
+        // -- /SOLUTION: VR --
 
         // Return combined movement, prioritizing VR, then keyboard, then joystick
         const x=vx||kx||gx||jx,y=vy||ky||gy||jy,magnitude=MAX(1,HYPOT(x,y));
         return {x:x/magnitude,y:y/magnitude,t:vt||kt||gt||jt};
     }
 
-    // -- SOLUTION: Gameplay-Movement-Step --
+    // -- SOLUTION: Step --
     // Updates the user's position and orientation based on movement input and delta time
     function step(dt, movement) {
         // New movement logic
-        const speed = moveSpeed;
+        const speed=3+.35*SQRT(movePower);
         // Apply movement
     player.yaw += movement.t * 2/*TURNS*/ * dt; // Apply turning
         
@@ -1274,9 +1287,9 @@
         tryPickupItems(dt);
 
     }
-    // -- /SOLUTION: Gameplay-Movement-Step --
-    // -- /MODULE: Gameplay-Movement --
-    // -- MODULE: Gameplay-Update --
+    // -- /SOLUTION: Step --
+    // -- /MODULE: Movement --
+    // -- PART: Update --
     function updateWorld(dt, session, frame) {
         step(dt, getMove(session,frame));
         updateCity();
@@ -1285,11 +1298,11 @@
         updateShots(dt);
         mmoTick(dt);
     }
-    // -- /MODULE: Gameplay-Update --
+    // -- /PART: Update --
     // -- /FEATURE: Gameplay --
     
     // -- FEATURE: Scene --
-    // -- MODULE: Scene-Audio --
+    // -- MODULE: Audio --
     let audioContext,
         spatialOutput,
         localOutput,
@@ -1430,9 +1443,9 @@
             listener.setOrientation(forwardX,forwardY,forwardZ,upX,upY,upZ);
         }
     }
-    // -- /MODULE: Scene-Audio --
+    // -- /MODULE: Audio --
 
-    // -- MODULE: Scene-HUD --
+    // -- MODULE: HUD --
     // -- PART: State-Layout --
     // CHAT disabled: const LOG = [], CHAT = [];
     // LOG disabled: const LOG=[];
@@ -1498,8 +1511,8 @@
         //if(type===1)return `+${power*15}% ORBIT SIZE`; // ORBIT RADIUS/SIZE card removed
         //if(type===2)return `+${power*15}% ORB SPEED`; // ORBIT SPEED card removed
         if(type===3)return `+${power} BOLT${power>1?'S':''}`;
-        if(type===4)return `+${power*10}% MOVE`;
-        if(type===5)return `-${power*10}% COOLDOWN`;
+        if(type===4)return `+${ROUND(.35*(SQRT(movePower+power)-SQRT(movePower))*100)/100} MOVE`;
+        if(type===5)return `+${ROUND((cooldown(cooldownPower)/cooldown(cooldownPower+power)-1)*100)}% FIRE RATE`;
         if(type===6)return `+${power*20} MAX HEALTH`;
         return `+${power} DAMAGE`;
     }
@@ -1838,8 +1851,8 @@
     }
     // -- /PART: WebGL-Setup --
 
-    // -- /MODULE: Scene-HUD --
-    // -- MODULE: Scene-Sphere-Renderer --
+    // -- /MODULE: HUD --
+    // -- PART: Sphere-Renderer --
     // Shared sphere geometry and renderer.
 
     function buildSphere(lat=10, lon=12){
@@ -1883,9 +1896,9 @@
         gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
     }
 
-    // -- /MODULE: Scene-Sphere-Renderer --
+    // -- /PART: Sphere-Renderer --
 
-    // -- MODULE: Scene-City --
+    // -- PART: City --
     // Near black buildings with crisp white contour lines.
     //const groundVerts = new F32([-500,0,-500,500,0,-500,500,0,500,-500,0,-500,500,0,500,-500,0,500]);
     //const groundVao=gl.createVertexArray(),groundBuf=gl.createBuffer();
@@ -1915,10 +1928,10 @@
             gl.uniform4f(uS_Color,1,1,1,1);gl.bindVertexArray(edgeVao);gl.drawArrays(gl.LINES,0,24);
         }
     }
-    // -- /MODULE: Scene-City --
+    // -- /PART: City --
     
     // -- VR: Rendering --
-    // -- MODULE: Scene-VR-Disc --
+    // -- PART: VR-Disc --
     // Reticle removed; single disc shader used for VR hand/grip indicator
 
     // Use shared vsMVP for disc and a tiny fragment shader that reads the same uv varying name 'f'
@@ -1931,9 +1944,9 @@
 
     // No custom VAO: reuse the HUD quad, which already has positions and UVs.
 
-    // -- /MODULE: Scene-VR-Disc --
+    // -- /PART: VR-Disc --
 
-    // -- MODULE: Scene-VR-Beam --
+    // -- PART: VR-Beam --
     // Beam for pointing ray (reuses PC shared color program)
     const uMBeam = gl.getUniformLocation(PC, 'M'), uVBeam = gl.getUniformLocation(PC, 'V'), uPBeam = gl.getUniformLocation(PC, 'P'), uColBeam = gl.getUniformLocation(PC, 'col');
     const vboBeam = gl.createBuffer(), vaoBeam = gl.createVertexArray();
@@ -1943,12 +1956,12 @@
     gl.bufferData(gl.ARRAY_BUFFER, new F32([0,0,0, 1,0,0, 1,0,1, 0,0,0, 1,0,1, 0,0,1]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-    // -- /MODULE: Scene-VR-Beam --
+    // -- /PART: VR-Beam --
     // -- /VR: Rendering --
     
     // Shared scene renderer. Desktop supplies one synthetic head view; WebXR
     // supplies the headset's real eye views.
-    // -- MODULE: Scene-Character-Renderer --
+    // -- PART: Character-Renderer --
     const PEER_COL = [.7,.7,.8], BLACK=[0,0,0], WHITE=[1,1,1];
     function drawCat(Vmat, Pmat, x, y, z, yaw, anim, amp, col, shell=1, scale=1){
         const cy = COS(yaw-20), sy = SIN(yaw-20);
@@ -1971,9 +1984,9 @@
         place(-.55,.25, 0,.12);
         place(-.70,.30, cy1*.6,.11);
     }
-    // -- /MODULE: Scene-Character-Renderer --
+    // -- /PART: Character-Renderer --
 
-    // -- MODULE: Scene-Damage-Numbers --
+    // -- PART: Damage-Numbers --
     function drawDamageNumbers(V,P,W){
         if(!damageNumbers.length)return;
         const masks=[63,6,91,79,102,109,125,7,127,111],pos=[[0,2],[1,1],[1,-1],[0,-2],[-1,-1],[-1,1],[0,0]];
@@ -1990,9 +2003,9 @@
         }
         gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
     }
-    // -- /MODULE: Scene-Damage-Numbers --
+    // -- /PART: Damage-Numbers --
 
-    // -- MODULE: Scene-Camera --
+    // -- PART: Camera --
     function buildViewProj() {
       const cy = COS(player.yaw),
           sy = SIN(player.yaw);
@@ -2007,26 +2020,26 @@
         PV = MULTMAT4(M4(), P, V);
         invPV = INV(PV);
     }
-    // -- /MODULE: Scene-Camera --
+    // -- /PART: Camera --
 
-    // -- MODULE: Scene-World-Renderer --
+    // -- MODULE: World-Renderer --
     function drawWorld(V, P, W) {
         drawCity(V,P);
         const now=performance.now(),tt=now*.001,br=.144,live=enemy=>!enemy.dead&&now-enemy.last<15000;
-        // -- MODULE: Scene-XP-Mesh --
+        // -- ITEM: XP --
         // Mesh and ghost loops intentionally remain separate: a shared pass helper is larger.
         for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,radius=.14+SIN(angle)*.025;item.t===2?(drawSphere(V,P,item.x-.08,item.y,item.z,radius,POWER[0][2]),drawSphere(V,P,item.x+.08,item.y,item.z,radius,POWER[5][2])):drawSphere(V,P,item.x,item.y,item.z,radius,item.t===1?POWER[3][2]:WHITE);}
-        // -- /MODULE: Scene-XP-Mesh --
+        // -- /ITEM: XP --
         gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
-        // -- MODULE: Scene-XP-Ghost --
+        // -- ITEM: XP --
         for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,color=item.t===1?[.05,.8,.12,.2]:item.t===2?[.5,.1,1,.25]:[1,1,1,.08+ABS(SIN(angle))*.18];drawSphere(V,P,item.x+COS(angle)*.06,item.y+.025,item.z+SIN(angle)*.06,.2,color);}
-        // -- /MODULE: Scene-XP-Ghost --
-        // -- MODULE: Scene-Projectile-Trail --
+        // -- /ITEM: XP --
+        // -- ITEM: Projectile --
         // Intentional duplication: these similar loops produce a smaller PPMd ZIP than a shared helper.
         for(const projectile of shots)for(let j=3;j--;){const trailStep=j+1;drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[1,1,1,.2/trailStep]);}
         for(const projectile of remoteShots)for(let j=3;j--;){const trailStep=j+1;drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[1,1,1,.2/trailStep]);}
-        // -- /MODULE: Scene-Projectile-Trail --
-        // -- MODULE: Scene-Enemy --
+        // -- /ITEM: Projectile --
+        // -- ENTITY: Enemy --
         // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
         for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
         remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
@@ -2036,44 +2049,44 @@
         gl.depthMask(true);
         for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
         remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
-        // -- /MODULE: Scene-Enemy --
-        // -- MODULE: Scene-Projectile-Mesh --
+        // -- /ENTITY: Enemy --
+        // -- ITEM: Projectile --
         gl.depthMask(false);
         for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br*1.14,WHITE);
         for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,.164,WHITE);
         gl.depthMask(true);
         for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
         for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
-        // -- /MODULE: Scene-Projectile-Mesh --
-        // -- MODULE: Scene-Orb-Mesh --
+        // -- /ITEM: Projectile --
+        // -- ITEM: Orb --
         // Local and peer loops intentionally repeat: PPMd compresses them smaller than a shared renderer.
         gl.depthMask(false);
         for(let i=orbCount;i--;){const angle=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,player.x+COS(angle)*2.5,.7,player.z+SIN(angle)*2.5,.27,WHITE);}
         gl.depthMask(true);
         for(let i=orbCount;i--;){const angle=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,player.x+COS(angle)*2.5,.7,player.z+SIN(angle)*2.5,.25,BLACK);}
-        // -- /MODULE: Scene-Orb-Mesh --
+        // -- /ITEM: Orb --
         if (peers && peers.size) {
             const now = performance.now(), target = now - 120;
             peers.forEach((peer, id) => {
                 if (id === myId || now - (peer.last || 0) >= 15000) return;
                 const sample = samplePeer(peer, target) || peer;
                 drawCat(V, P, sample.x, .6, sample.z, (sample.yaw || 0) + PI, now*.005*MIN(3,peer.speed||0), .1, PEER_COL);
-                // -- MODULE: Scene-Peer-Orb --
+                // -- ITEM: Orb --
                 const peerPhase=orbitPhase(peer.op+(now-peer.ot)/1e3);
                 gl.depthMask(false);
                 for(let i=peer.oc;i--;){const angle=peerPhase+i*PI*2/peer.oc;drawSphere(V,P,sample.x+COS(angle)*2.5,.7,sample.z+SIN(angle)*2.5,.27,WHITE);}
                 gl.depthMask(true);
                 for(let i=peer.oc;i--;){const angle=peerPhase+i*PI*2/peer.oc;drawSphere(V,P,sample.x+COS(angle)*2.5,.7,sample.z+SIN(angle)*2.5,.25,BLACK);}
-                // -- /MODULE: Scene-Peer-Orb --
+                // -- /ITEM: Orb --
             });
         }
         drawDamageNumbers(V,P,W);
     }
-    // -- /MODULE: Scene-World-Renderer --
+    // -- /MODULE: World-Renderer --
     // -- /FEATURE: Scene --
 
     // -- FEATURE: VR --
-    // -- MODULE: VR-Input-Rendering --
+    // -- PART: Input-Rendering --
     // -- VR: Rendering --
     // OPTIONAL VISUALS: remove with its call to hide controller discs and beams; HUD ray clicks still work.
     function drawXRInput(session, frame, V, P, hudWH) {
@@ -2100,9 +2113,9 @@
         }
     }
     // -- /VR: Rendering --
-    // -- /MODULE: VR-Input-Rendering --
+    // -- /PART: Input-Rendering --
 
-    // -- MODULE: VR-Session --
+    // -- PART: Session --
     // -- VR: Session --
     // --- WebXR ---
 
@@ -2181,12 +2194,12 @@
         }
     }
     // -- /VR: Session --
-    // -- /MODULE: VR-Session --
+    // -- /PART: Session --
 
     // -- /FEATURE: VR --
     
     // -- FEATURE: Application --
-    // -- MODULE: Application-Loop --
+    // -- PART: Loop --
     function loop(time, frame) {
         // Rendering gate
         // if (loop.rendered) return; // disable rendering
@@ -2250,8 +2263,8 @@
             drawHud(hudWH, V, P);
         }
     }
-    // -- /MODULE: Application-Loop --
-    // -- MODULE: Application-Startup --
+    // -- /PART: Loop --
+    // -- PART: Startup --
     // --- Application Entry Point ---
     (function main() {
         //initXR(); // OPTIONAL WebXR startup status preflight.
@@ -2261,7 +2274,7 @@
         // LOG disabled: log('MENU H/X  Z SETTINGS');
         // LOG disabled: log('MOVE: WASD/QE or touch');
     })();
-    // -- /MODULE: Application-Startup --
+    // -- /PART: Startup --
     
     // -- /FEATURE: Application --
     </script>

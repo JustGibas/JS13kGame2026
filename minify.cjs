@@ -61,24 +61,44 @@ async function createPpmdMeasurer() {
   };
 }
 
+const REPORT_TYPES = ["FEATURE", "MODULE", "PART", "SOLUTION", "ITEM", "ENTITY"];
+
+// A marker may classify one block in several useful ways without adding more
+// anchor lines:
+//   // -- MODULE: Scene-Orb | ENTITY: Orb --
+//   // -- /MODULE: Scene-Orb | /ENTITY: Orb --
+// Existing one-classification markers remain valid.
+function findTagMarkers(source, type) {
+  const line = /^\s*\/\/\s*--\s*(.*?)\s*--\s*$/gim;
+  const markers = [];
+  let match;
+
+  while ((match = line.exec(source))) {
+    for (const field of match[1].split("|")) {
+      const tag = field.trim().match(/^(\/?)\s*(FEATURE|MODULE|PART|SOLUTION|ITEM|ENTITY)\s*:\s*(.+)$/i);
+      if (tag && tag[2].toUpperCase() === type) {
+        markers.push({ closing: Boolean(tag[1]), name: tag[3].trim(), start: match.index, end: line.lastIndex });
+      }
+    }
+  }
+  return markers;
+}
+
 // Collect the text owned directly by each tagged block. Text inside a nested
 // block of the same type belongs to the child only, preventing double-counting.
 function findTaggedRegions(source, type) {
-  const marker = new RegExp(`^\\s*//\\s*--\\s*(/?)${type}\\s*:\\s*(.*?)\\s*--\\s*$`, "gim");
   const stack = [];
   const regions = [];
-  let match;
 
-  while ((match = marker.exec(source))) {
-    const closing = Boolean(match[1]);
-    const name = match[2].trim();
+  for (const marker of findTagMarkers(source, type)) {
+    const { closing, name } = marker;
 
     if (!closing) {
       if (stack.length) {
         const parent = stack[stack.length - 1];
-        parent.parts.push(source.slice(parent.partStart, match.index));
+        parent.parts.push(source.slice(parent.partStart, marker.start));
       }
-      stack.push({ name, start: match.index, partStart: marker.lastIndex, parts: [] });
+      stack.push({ name, start: marker.start, partStart: marker.end, parts: [] });
       continue;
     }
 
@@ -90,16 +110,107 @@ function findTaggedRegions(source, type) {
     if (open.name.toLowerCase() !== name.toLowerCase()) {
       console.warn(`[size report] ${type} "${open.name}" closes as "${name}"`);
     }
-    open.parts.push(source.slice(open.partStart, match.index));
-    regions.push({ name: open.name, source: open.parts.join("\n"), start: open.start });
+    open.parts.push(source.slice(open.partStart, marker.start));
+    regions.push({ name: open.name, source: open.parts.join("\n"), start: open.start, end: marker.end });
 
-    if (stack.length) stack[stack.length - 1].partStart = marker.lastIndex;
+    if (stack.length) stack[stack.length - 1].partStart = marker.end;
   }
 
   for (const open of stack) {
     console.warn(`[size report] ${type} "${open.name}" has no closing tag`);
   }
   return regions.sort((a, b) => a.start - b.start);
+}
+
+function buildReportTree(taggedSpans) {
+  const spans = [...taggedSpans.values()].flat();
+  const parentOf = new Map();
+  const allowedParents = {
+    MODULE: new Set(["FEATURE"]),
+    PART: new Set(["FEATURE", "MODULE", "PART"]),
+    SOLUTION: new Set(["FEATURE", "MODULE", "PART"]),
+    ITEM: new Set(["FEATURE", "MODULE", "PART"]),
+    ENTITY: new Set(["FEATURE", "MODULE", "PART"])
+  };
+
+  for (const span of spans) {
+    const allowed = allowedParents[span.type];
+    if (!allowed) continue;
+    const parents = spans.filter(candidate =>
+      allowed.has(candidate.type) &&
+      candidate.script === span.script &&
+      candidate.start <= span.start && candidate.end >= span.end &&
+      (candidate.start < span.start || candidate.end > span.end)
+    );
+    parents.sort((a, b) => (a.end - a.start) - (b.end - b.start));
+    if (parents.length) parentOf.set(span, parents[0]);
+  }
+
+  const keyMemo = new Map();
+  const keyFor = span => {
+    if (keyMemo.has(span)) return keyMemo.get(span);
+    const parent = parentOf.get(span);
+    const key = `${parent ? `${keyFor(parent)}>` : ""}${span.type}:${span.name.toLowerCase()}`;
+    keyMemo.set(span, key);
+    return key;
+  };
+  const nodes = new Map();
+
+  for (const span of spans) {
+    const key = keyFor(span);
+    const parent = parentOf.get(span);
+    const existing = nodes.get(key);
+    if (existing) {
+      existing.source += `\n${span.source}`;
+      existing.spans++;
+      existing.start = Math.min(existing.start, span.start);
+    } else {
+      nodes.set(key, {
+        key,
+        parentKey: parent ? keyFor(parent) : null,
+        type: span.type,
+        name: span.name,
+        source: span.source,
+        start: span.start,
+        spans: 1,
+        children: []
+      });
+    }
+  }
+  for (const node of nodes.values()) {
+    if (node.parentKey && nodes.has(node.parentKey)) {
+      node.parent = nodes.get(node.parentKey);
+      node.parent.children.push(node);
+    }
+  }
+  return [...nodes.values()].filter(node => !node.parentKey);
+}
+
+function printRankedReport(nodes, { title, column, showKind = false }) {
+  if (!nodes.length) return;
+  const labelWidth = showKind ? 32 : 22;
+  const measuredTotal = nodes.reduce((sum, node) => sum + (node.ppmdBytes || 0), 0);
+  const sorted = [...nodes].sort((a, b) => (b.ppmdBytes ?? b.rawBytes) - (a.ppmdBytes ?? a.rawBytes));
+  const max = Math.max(...sorted.map(node => node.ppmdBytes || 0), 1);
+  const pathLabel = node => {
+    if (!showKind) return node.name;
+    const parent = node.parent;
+    return parent ? `${parent.name} › ${node.name}` : node.name;
+  };
+
+  console.log(`\n${title}`);
+  console.log(`  ${column.padEnd(labelWidth)}${showKind ? ` ${"Kind".padEnd(8)}` : ""} ${"Minified".padStart(10)} ${"PPMd".padStart(9)} ${"Raw".padStart(9)}  Share  Relative`);
+  for (const node of sorted) {
+    const estimated = node.estimatedBytes;
+    const share = node.ppmdBytes == null || !measuredTotal ? "  n/a" : `${(100 * node.ppmdBytes / measuredTotal).toFixed(1)}%`.padStart(5);
+    const bar = node.ppmdBytes == null ? "estimate failed" : node.ppmdBytes === 0 ? "—" : "█".repeat(Math.max(1, Math.round(20 * node.ppmdBytes / max)));
+    const spans = node.spans > 1 ? ` ×${node.spans}` : "";
+    const label = `${pathLabel(node)}${spans}`.slice(0, labelWidth).padEnd(labelWidth);
+    const kind = showKind ? ` ${(node.type[0] + node.type.slice(1).toLowerCase()).padEnd(8)}` : "";
+    console.log(`  ${label}${kind} ${estimated == null ? "n/a".padStart(10) : size(estimated).padStart(10)} ${node.ppmdBytes == null ? "n/a".padStart(9) : size(node.ppmdBytes).padStart(9)} ${size(node.rawBytes).padStart(9)}  ${share}  ${bar}`);
+    if (node.error) console.log(`    ${node.error}`);
+  }
+  console.log("  Estimates at different levels overlap and do not sum to packed JavaScript.");
 }
 
 async function measureRegions(regions, ppmd, options) {
@@ -122,49 +233,6 @@ async function measureRegions(regions, ppmd, options) {
   }
 }
 
-function disambiguateRegionLabels(regions) {
-  const counts = new Map();
-  for (const region of regions) {
-    const key = region.name.toLowerCase();
-    counts.set(key, (counts.get(key) || 0) + 1);
-  }
-
-  const seen = new Map();
-  for (const region of regions) {
-    const key = region.name.toLowerCase();
-    const occurrence = (seen.get(key) || 0) + 1;
-    seen.set(key, occurrence);
-    region.label = counts.get(key) > 1 ? `${region.name} #${occurrence}` : region.name;
-  }
-}
-
-async function printRegionReport(regions, ppmd, options, {
-  title,
-  column,
-  footer,
-  disambiguate = false,
-  zeroBar = "— (comments only)"
-}) {
-  if (disambiguate) disambiguateRegionLabels(regions);
-  await measureRegions(regions, ppmd, options);
-
-  const measuredTotal = regions.reduce((sum, region) => sum + (region.ppmdBytes || 0), 0);
-  regions.sort((a, b) => (b.ppmdBytes ?? b.rawBytes) - (a.ppmdBytes ?? a.rawBytes));
-  const max = Math.max(...regions.map(region => region.ppmdBytes || 0), 1);
-
-  console.log(`\n${title}`);
-  console.log(`  ${column.padEnd(22)} ${"Minified".padStart(10)} ${"PPMd".padStart(9)} ${"Raw".padStart(9)}  Share  Relative`);
-  for (const region of regions) {
-    const estimated = region.estimatedBytes;
-    const share = region.ppmdBytes == null || !measuredTotal ? "  n/a" : `${(100 * region.ppmdBytes / measuredTotal).toFixed(1)}%`.padStart(5);
-    const bar = region.ppmdBytes == null ? "estimate failed" : region.ppmdBytes === 0 ? zeroBar : "█".repeat(Math.max(1, Math.round(20 * region.ppmdBytes / max)));
-    const label = region.label || region.name;
-    console.log(`  ${label.slice(0, 22).padEnd(22)} ${estimated == null ? "n/a".padStart(10) : size(estimated).padStart(10)} ${region.ppmdBytes == null ? "n/a".padStart(9) : size(region.ppmdBytes).padStart(9)} ${size(region.rawBytes).padStart(9)}  ${share}  ${bar}`);
-    if (region.error) console.log(`    ${region.error}`);
-  }
-  console.log(`  ${footer}`);
-}
-
 async function printSizeReport(sourceScripts, packedHTML, options) {
   const ppmd = await createPpmdMeasurer();
   try {
@@ -184,9 +252,14 @@ async function printSizeReport(sourceScripts, packedHTML, options) {
   const zipDelta = packedPpmd.archiveBytes - ZIP_LIMIT;
   console.log(`  ${"PPMd ZIP".padEnd(12)} ${size(packedPpmd.archiveBytes).padStart(10)}  ${zipDelta <= 0 ? `${-zipDelta} B free` : `${zipDelta} B over`}  (measurement: ${MEASUREMENT_METHOD})`);
 
-  const regions = sourceScripts.flatMap(source => findTaggedRegions(source, "FEATURE"));
-  if (!regions.length) {
-    console.log("\nNo // -- FEATURE: name -- regions found.");
+  const tagged = new Map(REPORT_TYPES.map(type => [
+    type,
+    sourceScripts.flatMap((source, script) =>
+      findTaggedRegions(source, type).map(region => ({ ...region, type, script }))
+    )
+  ]));
+  if (![...tagged.values()].some(regions => regions.length)) {
+    console.log("\nNo size-report tags found.");
     return;
   }
 
@@ -196,34 +269,23 @@ async function printSizeReport(sourceScripts, packedHTML, options) {
     mangle: { ...options.mangle, toplevel: false, properties: false },
     compress: { ...options.compress, toplevel: false, unused: false }
   };
-  await printRegionReport(regions, ppmd, estimateOptions, {
+  const roots = buildReportTree(tagged);
+  const nodes = [];
+  const collect = node => { nodes.push(node); node.children.forEach(collect); };
+  roots.forEach(collect);
+  await measureRegions(nodes, ppmd, estimateOptions);
+  printRankedReport(nodes.filter(node => node.type === "FEATURE"), {
     title: "Feature size estimates (largest first)",
-    column: "Feature",
-    footer: "Estimates minify each feature independently; cross-feature optimization means they may not sum to packed JS.",
-    disambiguate: true,
-    zeroBar: "—"
+    column: "Feature"
   });
-
-  // Measure MODULE tags inside every feature for an actionable second-level breakdown.
-  const modules = regions
-    .flatMap(region => findTaggedRegions(region.source, "MODULE"));
-  if (!modules.length) return;
-  await printRegionReport(modules, ppmd, estimateOptions, {
+  printRankedReport(nodes.filter(node => node.type === "MODULE"), {
     title: "Module size estimates (largest first)",
-    column: "Module",
-    footer: "Module estimates exclude feature code outside MODULE tags."
+    column: "Module"
   });
-
-  // Scene-HUD has several distinct responsibilities. Its PART anchors make the
-  // module report actionable without changing the code fed to the real build.
-  const hudParts = modules
-    .filter(region => region.name.toLowerCase() === "scene-hud")
-    .flatMap(region => findTaggedRegions(region.source, "PART"));
-  if (!hudParts.length) return;
-  await printRegionReport(hudParts, ppmd, estimateOptions, {
-    title: "Scene-HUD part estimates (largest first)",
-    column: "Part",
-    footer: "Part estimates exclude Scene-HUD code outside PART tags."
+  printRankedReport(nodes.filter(node => !["FEATURE", "MODULE"].includes(node.type)), {
+    title: "Smaller component estimates (largest first)",
+    column: "Parent › Component",
+    showKind: true
   });
   } finally {
     await ppmd.cleanup();

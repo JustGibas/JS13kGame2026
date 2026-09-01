@@ -60,38 +60,39 @@ function readPackedSize(executable, archive) {
   return Number(match[1]);
 }
 
-function candidates() {
+function candidates(deep) {
+  if (!deep) {
+    return [{ name: MEASUREMENT_METHOD, options: MEASUREMENT_OPTIONS }];
+  }
+
   const tests = [
-    {
-      name: "Deflate mx=9 fb=258 pass=15",
-      options: ["-mm=Deflate", "-mx=9", "-mfb=258", "-mpass=15"]
-    },
-    {
-      name: "Deflate mx=9 fb=128 pass=10",
-      options: ["-mm=Deflate", "-mx=9", "-mfb=128", "-mpass=10"]
-    },
-    {
-      name: "BZip2 mx=9",
-      options: ["-mm=BZip2", "-mx=9"]
-    },
     {
       name: "LZMA mx=9 fb=273",
       options: ["-mm=LZMA", "-mx=9", "-mfb=273"]
     }
   ];
 
-  for (const mem of ["1m", "4m", "16m", "64m", "128m", "256m"]) {
-    for (const order of [2, 4, 6, 8, 10, 12, 16]) {
-      tests.push({
-        name: `PPMd order=${order} mem=${mem}`,
-        options: [`-mm=PPMd:o=${order}:mem=${mem}`]
-      });
-    }
+  // Sample the useful high-compression range instead of comparing two
+  // unrelated Deflate profiles with different fast-byte and pass settings.
+  for (const passes of [10, 15]) {
+    tests.push({
+      name: `Deflate mx=9 fb=258 pass=${passes}`,
+      options: ["-mm=Deflate", "-mx=9", "-mfb=258", `-mpass=${passes}`]
+    });
+  }
+
+  // Memory size does not affect this one-file archive in practice, so deep
+  // mode varies only the setting that materially changes results: PPMd order.
+  for (const order of [2, 4, 8, 12, 16]) {
+    tests.push({
+      name: `PPMd order=${order} mem=1m`,
+      options: [`-mm=PPMd:o=${order}:mem=1m`]
+    });
   }
   return tests;
 }
 
-async function roadrollHTML(html, allowFreeVars, level = 1, extraOptions = {}) {
+async function roadrollHTML(html, allowFreeVars, level = 1, extraOptions = {}, optimizationLabel = "Roadroller") {
   const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
   if (scripts.length !== 1) {
     throw new Error(`Roadroller expects exactly one inline script; found ${scripts.length}`);
@@ -106,7 +107,29 @@ async function roadrollHTML(html, allowFreeVars, level = 1, extraOptions = {}) {
     allowFreeVars,
     ...extraOptions
   });
-  await packer.optimize(level);
+  if (level === Infinity) {
+    let stop = false;
+    const stopOptimization = () => { stop = true; };
+    process.once("SIGINT", stopOptimization);
+    console.log(`${optimizationLabel} infinite optimization started; press Ctrl+C to keep both best results and finish.`);
+    try {
+      for (let currentLevel = 1; !stop; currentLevel++) {
+        try {
+          const result = await packer.optimize(currentLevel, async info => {
+            await new Promise(resolve => setImmediate(resolve));
+            if (stop) return false;
+          });
+          console.log(`  ${optimizationLabel} level ${currentLevel} complete: ${result.bestSize} estimated bytes`);
+        } catch (error) {
+          if (!(stop && error instanceof Error && error.message === "search aborted")) throw error;
+        }
+      }
+    } finally {
+      process.removeListener("SIGINT", stopOptimization);
+    }
+  } else {
+    await packer.optimize(level);
+  }
   const packed = packer.makeDecoder();
   const decoder = packed.firstLine + packed.secondLine;
   if (/<\/script/i.test(decoder)) {
@@ -129,7 +152,8 @@ async function roadrollHTML(html, allowFreeVars, level = 1, extraOptions = {}) {
 
 async function buildArchive() {
   const args = process.argv.slice(2);
-  const deep = args.includes("--deep") || args.includes("--level2") || args.includes("-O2");
+  const infinite = args.includes("--infinite") || args.includes("-OO");
+  const deep = infinite || args.includes("--deep") || args.includes("--level2") || args.includes("-O2");
   const files = args.filter(arg => !arg.startsWith("--") && !arg.startsWith("-O"));
   const input = resolve(files[0] || "index.min.html");
   const output = resolve(files[1] || "game.zip");
@@ -140,20 +164,30 @@ async function buildArchive() {
 
   try {
     const terserHTML = await readFile(input, "utf8");
-    console.log(`Optimizing Roadroller candidates (deep=${deep})...`);
-    const optLevel = deep ? 2 : 1;
-    const variants = [
-      { name: "Terser", html: terserHTML },
-      { name: `Terser + Roadroller O${optLevel} safe`, html: await roadrollHTML(terserHTML, false, optLevel) },
-      { name: `Terser + Roadroller O${optLevel} dirty`, html: await roadrollHTML(terserHTML, true, optLevel) }
-    ];
+    console.log(infinite ? "Infinite compression mode..." : deep ? "Deep compression benchmark..." : "Quick compression (use --deep for all variants)...");
+    const variants = [{ name: "Terser", html: terserHTML }];
 
-    if (deep) {
-      console.log("Adding 16-context Roadroller variant...");
-      variants.push({
-        name: `Terser + Roadroller O2 dirty (16-ctx)`,
-        html: await roadrollHTML(terserHTML, true, 2, { numAbbreviations: 64, maxMemoryMB: 256 })
-      });
+    if (infinite) {
+      const infiniteConfigs = [
+        { name: "dirty", options: {} },
+        { name: "dirty (16-ctx)", options: { numAbbreviations: 64, maxMemoryMB: 256 } }
+      ];
+      const infiniteResults = await Promise.all(infiniteConfigs.map(async config => ({
+        name: config.name,
+        html: await roadrollHTML(terserHTML, true, Infinity, config.options, `Roadroller ${config.name}`)
+      })));
+      variants.push(...infiniteResults.map(result => ({
+        name: `Terser + Roadroller infinite ${result.name}`,
+        html: result.html
+      })));
+    } else if (deep) {
+      variants.push(
+        { name: "Terser + Roadroller O2 dirty", html: await roadrollHTML(terserHTML, true, 2) },
+        {
+          name: "Terser + Roadroller O2 dirty (16-ctx)",
+          html: await roadrollHTML(terserHTML, true, 2, { numAbbreviations: 64, maxMemoryMB: 256 })
+        }
+      );
     }
 
     const results = [];
@@ -162,7 +196,7 @@ async function buildArchive() {
       const sourceDir = join(work, `source-${number}`);
       await mkdir(sourceDir);
       await writeFile(join(sourceDir, "index.html"), variant.html, "utf8");
-      for (const test of candidates()) {
+      for (const test of candidates(deep)) {
         const archive = join(work, `test-${number++}.zip`);
         run7Zip(sevenZip, sourceDir, archive, test.options);
         results.push({
@@ -173,8 +207,10 @@ async function buildArchive() {
         });
       }
     }
-    results.sort((a, b) => a.bytes - b.bytes);
-    const winner = results[0];
+    // Show the benchmark as a visual funnel: largest result first and the
+    // winning (smallest) result at the bottom, nearest the creation summary.
+    results.sort((a, b) => b.bytes - a.bytes);
+    const winner = results[results.length - 1];
     await rm(output, { force: true });
     await copyFile(winner.archive, output);
 

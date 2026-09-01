@@ -30,9 +30,9 @@
     <style>
         * {
             user-select: none;
-            -webkit-user-select: none;
-            -webkit-touch-callout: none;
-            -webkit-tap-highlight-color: transparent;
+            /* -webkit-user-select: none; */
+            /* -webkit-touch-callout: none; */
+            /* -webkit-tap-highlight-color: transparent; */
             touch-action: none;
         }
 
@@ -457,6 +457,7 @@
         pointer: { x: 0, y: 0 }
     };
     const DZ = .1;    // Deadzone for joystick/gamepad axes to prevent drift
+    let gamepadButtons=0;
     // -- VR: Input --
     // Point-to-move must be held briefly so a hand changing pose cannot move the player accidentally.
     // OPTIONAL: 150ms gesture debounce; remove with its timing and cleanup code for a smaller instant-response build.
@@ -506,7 +507,7 @@
     document.addEventListener('keyup',event=>input.keys[event.code]=false);
     window.addEventListener('blur',()=>input.keys={});
     // 300ms click blocker
-    let lastTouch=0;document.ontouchend=e=>{if(performance.now()-lastTouch<300)e.preventDefault();lastTouch=performance.now()};
+    // let lastTouch=0;document.ontouchend=e=>{if(performance.now()-lastTouch<300)e.preventDefault();lastTouch=performance.now()};
     
     // Pointer event listeners on the canvas for mouse-look and interaction
     canvas.addEventListener('pointerdown', event => {
@@ -534,8 +535,8 @@
             const dy=event.clientY-input.look.y;
             input.look.x=event.clientX;
             input.look.y=event.clientY;
-            player.yaw += dx * .002 * (opts[0] ? -1 : 1);
-            player.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,player.pitch+dy*.002*(opts[1] ? 1 : -1)));
+            player.yaw -= dx * .002 * (opts[0] ? -1 : 1);
+            player.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,player.pitch+dy*.002*(opts[1] ? -1 : 1)));
         }
     });
     
@@ -1180,7 +1181,8 @@
     // -- /VR: Input --
 
     function getMove(session, frame) {
-        let vx = 0, vy = 0, vt = 0;
+        let vx=0,vy=0,vt=0,gx=0,gy=0,gt=0;
+        const deadzone=value=>ABS(value)>DZ?value:0;
         // -- SOLUTION: Gameplay-Movement-Keyboard --
         // Keyboard input (WASD for move, QE or arrows for move/turn)
     const kx = (+!!input.keys['KeyD']) - (+!!input.keys['KeyA']);
@@ -1194,6 +1196,24 @@
     const jy = -input.joy.L.y;
     const jt = -input.joy.R.x;
         // -- /SOLUTION: Gameplay-Movement-Joystick --
+
+        // Standard handheld controller: left stick moves, right stick turns.
+        if(!session){
+            const pads=navigator.getGamepads?.();
+            let gamepad;
+            if(pads)for(const pad of pads)if(pad){gamepad=pad;break;}
+            if(gamepad){
+                const axes=gamepad.axes;
+                gx=deadzone(axes[0]||0);gy=-deadzone(axes[1]||0);gt=-deadzone(axes[2]||0);
+                let buttons=gamepad.buttons[2]?.pressed|gamepad.buttons[0]?.pressed<<1|gamepad.buttons[1]?.pressed<<2;
+                buttons|=gamepad.buttons[9]?.pressed<<3;
+                const pressed=buttons&~gamepadButtons;
+                gamepadButtons=buttons;
+                if(pressed)initAudio();
+                if(choosing)for(let i=0;i<3;i++){if(pressed&1<<i){activate(20+i);break;}}
+                else if(pressed&8){playClickSound();hudVisible=!hudVisible;}
+            }else gamepadButtons=0;
+        }
 
         // -- SOLUTION: Gameplay-Movement-VR --
         // -- VR: Input --
@@ -1209,7 +1229,6 @@
                 }
                 const axes=source.gamepad?.axes;
                 if(!axes||axes.length<2)continue;
-                const deadzone=value=>ABS(value)>DZ?value:0;
                 // OPTIONAL COMPATIBILITY: Meta Quest uses 2/3; fallback also supports compact 0/1-axis gamepads.
                 const axisOffset=axes.length>=4?2:0,x=deadzone(axes[axisOffset]||0),y=deadzone(axes[axisOffset+1]||0);
                 
@@ -1223,7 +1242,8 @@
         // -- /SOLUTION: Gameplay-Movement-VR --
 
         // Return combined movement, prioritizing VR, then keyboard, then joystick
-        return { x: vx || kx || jx, y: vy || ky || jy, t: vt || kt || jt };
+        const x=vx||kx||gx||jx,y=vy||ky||gy||jy,magnitude=MAX(1,HYPOT(x,y));
+        return {x:x/magnitude,y:y/magnitude,t:vt||kt||gt||jt};
     }
 
     // -- SOLUTION: Gameplay-Movement-Step --

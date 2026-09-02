@@ -151,7 +151,6 @@
      // OPTIONAL: tracked planar player velocity for predictive enemy pursuit; currently unused.
      //let prevUserX=player.x,prevUserZ=player.z,userVelX=0,userVelZ=0;
     let last = 0; // Timestamp of the last frame for calculating delta time
-    let frameMs=0,fps=0; // Smoothed performance readout for the HUD
     let gl, xr = null, ref = null, xrM = M4(); // WebGL and WebXR objects
 
     //gl = canvas.getContext('webgl2', { antialias: true, xrCompatible: true });
@@ -251,12 +250,11 @@
 
     // -- PART: Messages --
     function handleMMOMessage(message){
-        if(typeof message!=='string')return;
         const command=message[0];
         switch(command){
             // LOG disabled: case '@':myId=message.slice(1);logMMO('my id: '+myId);return;
             case '@':myId=message.slice(1);return;
-            case '+':{const id=message.slice(1);if(id&&!peers.has(id))peers.set(id,{x:0,z:0,yaw:0,last:0,hist:[],oh:[]});return;}
+            case '+':{const id=message.slice(1);if(!peers.has(id))peers.set(id,{x:0,z:0,yaw:0,last:0,hist:[],oh:[]});return;}
             case '-':forgetPeer(message.slice(1));return;
         }
         /* DIRECT MMO compatibility disabled to save bytes.
@@ -270,52 +268,30 @@
         */
         const payload=message;
         // Expected: p|id|x|z|yaw|orbs|orbPhase|damage
-        if (payload[0] === 'p' && payload[1] === '|'){
+        if(payload[0]==='p'){
             const parts = payload.split('|');
-            if (parts.length >= 5){
-                const id = parts[1];
-                if (id && id !== myId){
-                    const x = parseFloat(parts[2]);
-                    const z = parseFloat(parts[3]);
-                    const yaw = parseFloat(parts[4]);
+            const id = parts[1];
+                if(id!==myId){
+                    const x=+parts[2];
+                    const z=+parts[3];
+                    const yaw=+parts[4];
                     const peer = peers.get(id) || {x:0,z:0,yaw:0,last:0,hist:[],oh:[]};
                     const now = performance.now();
-                    const nx = isFinite(x)?x:peer.x;
-                    const nz = isFinite(z)?z:peer.z;
-                    const ny = isFinite(yaw)?yaw:peer.yaw;
-                    if(!nearCity(nx,nz)){if(peers.has(id))forgetPeer(id);return;}
-                    pushPeerSample(peer, nx, nz, ny, now);
-                    peer.oc=+parts[5]||0;
-                    //p.os=+parts[6]||.25; // ORBIT SIZE MMO field 
-                    //p.ov=+parts[7]||2.5; // ORBIT SPEED MMO field
-                    peer.op=+parts[6]||0;
+                    if(!nearCity(x,z)){if(peers.has(id))forgetPeer(id);return;}
+                    pushPeerSample(peer,x,z,yaw,now);
+                    peer.orbs=parts[5].split(',').slice(0,8).map(value=>MIN(9,+value));
+                    peer.op=+parts[6];
                     peer.ot=now;
-                    peer.d=+parts[7]||1;
-                    peer.eo=(parts[8]||'').split(',').slice(0,7).map(value=>MIN(9,+value||0));
-                    //p.oa=+parts[10]||2.5; // ORBIT RADIUS MMO field
+                    peer.d=+parts[7];
+                    const group=new Map(),fields=parts[8].split(',').map(Number);
+                    for(let i=0;i<MIN(12,fields.length);i+=3){const x=fields[i],z=fields[i+1],tier=beaconTier(x,z),health=MIN(1,MAX(-1,fields[i+2]));if(nearCity(x,z)){const beacon=[x,z,tier,health>=0,MAX(0,health),1];group.set(i,beacon);}}
+                    peer.b=group;
                     peers.set(id, peer);
                 }
-            }
         }
-        if(payload[0]==='b'&&payload[1]==='|'){
-            const parts=payload.split('|'),owner=parts[1];
-            if(owner&&owner!==myId&&peers.has(owner)){
-                const peer=peers.get(owner),previous=peer.b,group=new Map();
-                for(const row of (parts[2]||'').split(';').slice(0,4))if(row){
-                    const f=row.split(',').map(Number),tier=f[3]|0;
-                    if(f.length>8&&f.every(isFinite)&&tier>=0&&tier<7&&nearCity(f[1],f[2])){const max=MIN(1e9,MAX(1,f[6])),beacon=[f[1],f[2],tier,f[4]?1:0,MIN(max,MAX(0,f[5])),max,f[7]|0,MIN(6,MAX(0,f[8]|0)),f[0]|0];beacon[9]=previous?.get(beacon[8])?.[9];group.set(beacon[8],beacon);}
-                }
-                peer.b=group;
-            }
-        }
-        if(payload[0]==='v'&&payload[1]==='|'){
-            const parts=payload.split('|'),peer=peers.get(parts[4]),index=parts[1]===myId&&SPAWN_BEACONS.findIndex(beacon=>beacon[8]===+parts[2]),beacon=SPAWN_BEACONS[index];
-            if(index>0&&peer&&performance.now()-peer.last<15000&&!beacon[3]&&beacon[6]===+parts[3]&&(peer.x-beacon[0])**2+(peer.z-beacon[1])**2<.55**2){sendMMO(`g|${myId}|${beacon[8]}|${beacon[6]}|${parts[4]}`);SPAWN_BEACONS.splice(index,1);const replacement=spawnBeacon();if(replacement)SPAWN_BEACONS.push(replacement);}
-        }
-        if(payload[0]==='g'&&payload[1]==='|'){
-            const parts=payload.split('|'),group=peers.get(parts[1])?.b,beacon=group?.get(+parts[2]);
-            if(parts[4]===myId&&beacon&&beacon[6]===+parts[3])acceptBeaconClaim(beacon);
-            if(beacon)group.delete(+parts[2]);
+        if(payload[0]==='v'){
+            const parts=payload.split('|'),index=parts[1]===myId&&SPAWN_BEACONS.findIndex(beacon=>beacon[0]==parts[2]&&beacon[1]==parts[3]);
+            if(index>0&&!SPAWN_BEACONS[index][3]){SPAWN_BEACONS.splice(index,1);const beacon=spawnBeacon();if(beacon)SPAWN_BEACONS.push(beacon);}
         }
         /* MMO CHAT disabled:
         if (payload[0] === 'c' && payload[1] === '|'){
@@ -323,16 +299,16 @@
             if (id !== myId) say((id || '?').slice(-4) + ': ' + parts.slice(2).join('|').slice(0,64));
         }
         */
-        if (payload[0] === 'e' && payload[1] === '|'){
+        if(payload[0]==='e'){
             const parts=payload.split('|'),
                 owner=parts[1];
 
-            if(owner&&owner!==myId&&peers.has(owner)){
+            if(owner!==myId&&peers.has(owner)){
                 const group=remoteEnemies.get(owner)||new Map(),
                     seen=new Set(),
                     now=performance.now();
 
-                for(const row of (parts[2]||'').split(';'))if(row){
+                for(const row of parts[2].split(';'))if(row){
                     const fields=row.split(',').map(Number),
                         id=fields[0];
                     if(!nearCity(fields[2],fields[3]))continue;
@@ -351,7 +327,7 @@
                     enemy.tier=fields[5];
                     enemy.hp=fields[6];
                     enemy.max=fields[7];
-                    enemy.mut=fields[8]??-1;
+                    enemy.mut=fields[8];
                     enemy.scale=enemy.mut<0?1:1.5;
                     enemy.dead=0;
                     enemy.last=now;
@@ -364,11 +340,11 @@
                 remoteEnemies.set(owner,group);
             }
         }
-        if (payload[0] === 'k' && payload[1] === '|'){
+        if(payload[0]==='k'){
             const parts=payload.split('|'),enemy=parts[1]===myId&&enemies.find(enemy=>enemy.i===+parts[2]);
             if(enemy&&enemy.v===+parts[3])spawnEnemy(enemy);
         }
-        if (payload[0] === 'd' && payload[1] === '|'){
+        if(payload[0]==='d'){
             const parts=payload.split('|'),
                 group=remoteEnemies.get(parts[1]),
                 enemy=group&&group.get(+parts[2]);
@@ -377,7 +353,7 @@
                 if(parts[8]===myId){
                     runStats.defeated++;
                     playKillSound(+parts[4],+parts[5]);
-                    dropReward(+parts[4],+parts[5],+parts[6],+parts[9],+parts[10]||enemy?.max);
+                    dropReward(+parts[4],+parts[5],+parts[10]);
                 }
                 if(+parts[7])damageNumber(+parts[4],+parts[5],+parts[7]);
             }
@@ -387,17 +363,17 @@
                 enemy.dead=1;
             }
         }
-        if(payload[0]==='a'&&payload[1]==='|'){
+        if(payload[0]==='a'){
             const parts=payload.split('|');if(parts[1]===myId)runStats.dealt+=+parts[2];
         }
-        if(payload[0]==='s'&&payload[1]==='|'){
+        if(payload[0]==='s'){
             const parts=payload.split('|');
             if(parts[1]!==myId&&peers.has(parts[1])&&nearCity(+parts[2],+parts[3])){
-                remoteShots.push({o:parts[1],x:+parts[2],y:.7,z:+parts[3],vx:+parts[4],vz:+parts[5],d:+parts[6]||1,i:+parts[7],t:3,c:parts[8]===undefined?-1:MIN(6,MAX(-1,+parts[8]||0))});
+                remoteShots.push({o:parts[1],x:+parts[2],y:.7,z:+parts[3],vx:+parts[4],vz:+parts[5],d:+parts[6],i:+parts[7],t:3,c:MIN(6,MAX(-1,+parts[8]))});
                 playShotSound(+parts[2],+parts[3]);
             }
         }
-        if(payload[0]==='x'&&payload[1]==='|'){
+        if(payload[0]==='x'){
             const parts=payload.split('|'),
                 list=parts[1]===myId?shots:remoteShots;
 
@@ -422,19 +398,16 @@
                         '|' + player.x.toFixed(2) +
                         '|' + player.z.toFixed(2) +
                         '|' + player.yaw.toFixed(3)+
-                        '|'+orbCount+
-                        // '|'+orbSize.toFixed(2)+ // ORBIT SIZE MMO field 
-                        // '|'+orbSpeed.toFixed(2)+ // ORBIT SPEED MMO field 
+                        '|'+orbCounts.join(',')+
                         '|'+skillTime.toFixed(2)+
                         '|'+damage*(1+damageBonus)+
-                        '|'+evolvedOrbs.join(',');
+                        '|'+SPAWN_BEACONS.slice(1,5).flatMap(beacon=>[beacon[0],beacon[1],beacon[3]?(beacon[4]/beacon[5]).toFixed(2):-1]);
             sendMMO(message);
         }
         enemySendTimer+=dt;
         if(enemySendTimer>=.2){
             enemySendTimer=0;
             sendMMO('e|'+myId+'|'+enemies.map(enemy=>[enemy.i,enemy.v,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
-            sendMMO('b|'+myId+'|'+SPAWN_BEACONS.slice(1,5).map(beacon=>[beacon[8],beacon[0].toFixed(1),beacon[1].toFixed(1),beacon[2],beacon[3],beacon[4]||0,beacon[5]||1,beacon[6]||0,beacon[7]||0]).join(';'));
         }
     }
     // -- /PART: Sync --
@@ -463,11 +436,8 @@
         const vertexShader=gl.createShader(gl.VERTEX_SHADER);
         const fragmentShader=gl.createShader(gl.FRAGMENT_SHADER);
         gl.shaderSource(vertexShader,vs);gl.compileShader(vertexShader);
-        if(!gl.getShaderParameter(vertexShader,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(vertexShader);
         gl.shaderSource(fragmentShader,fs);gl.compileShader(fragmentShader);
-        if(!gl.getShaderParameter(fragmentShader,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(fragmentShader);
         gl.attachShader(program,vertexShader);gl.attachShader(program,fragmentShader);gl.linkProgram(program);
-        if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw gl.getProgramInfoLog(program);
         return program;
     }
     // -- /PART: WebGL --
@@ -486,7 +456,7 @@
         pointer: { x: 0, y: 0 }
     };
     const DZ = .1;    // Deadzone for joystick/gamepad axes to prevent drift
-    let gamepadButtons=0;
+    // GAMEPAD SUPPORT: let gamepadButtons=0;
     // -- VR: Input --
     // Point-to-move must be held briefly so a hand changing pose cannot move the player accidentally.
     // OPTIONAL: 150ms gesture debounce; remove with its timing and cleanup code for a smaller instant-response build.
@@ -512,7 +482,6 @@
     // -- /VR: Input --
 
     // State for the raycast
-    let lastHit = null;
     // -- /PART: Core --
     
     // -- PART: Keyboard-Pointer --
@@ -526,7 +495,7 @@
         // CHAT disabled: if(!event.repeat&&key==='Enter'){event.preventDefault();setChat(true);return;}
         // INVENTORY HUD disabled: if (!event.repeat && key === 'KeyF') { hudVisible=true;hudPage=2;return; }
         // CHAT disabled: if(!event.repeat&&key==='KeyC'){setChat(true);return;}
-        if(!event.repeat&&key==='KeyZ'){hudVisible=true;hudPage=3;return;}
+        if(!event.repeat&&key==='KeyZ'){hudVisible=true;return;}
         if(!event.repeat&&choosing&&/^(Digit|Numpad)[1-3]$/.test(key)){
             event.preventDefault();playClickSound();upgrade(choices[+key.slice(-1)-1]);return;
         }
@@ -682,7 +651,6 @@
     // Handles a click/tap interaction in desktop mode
     function interactDesktopAt(px, py) {
         const ray=rayFromScreen(px,py);
-        if(!ray)return;
         const WH = HUD_WH_world;
         const hit=HUD_pick(WH,ray);
 
@@ -698,48 +666,6 @@
         //    log('ground ' + g.map(v => v.toFixed(2)).join(','));
         //}
     }
-
-    // Creates a world-space ray from the camera or a VR controller
-    function rayFrom(mode, frame, src) {
-        if (mode === 'VR' && frame) {
-            // Use the controller's target ray space if available
-            if (src && src.targetRaySpace) {
-                const pose = frame.getPose(src.targetRaySpace, ref);
-                if (pose) {
-                    const matrix=MULTMAT4(M4(),xrM,pose.transform.matrix);
-                    const origin=[matrix[12],matrix[13],matrix[14]];
-                    const direction=[-matrix[8],-matrix[9],-matrix[10]]; // -Z is forward in WebXR.
-                    return {o:origin,d:direction};
-                }
-            }
-            // Fallback to any available controller
-            for (const source of xr.inputSources) {
-                if (source.targetRaySpace) {
-                    const pose = frame.getPose(source.targetRaySpace, ref);
-                    if (pose) {
-                        const matrix=MULTMAT4(M4(),xrM,pose.transform.matrix);
-                        const origin=[matrix[12],matrix[13],matrix[14]];
-                        const direction=[-matrix[8],-matrix[9],-matrix[10]];
-                        return {o:origin,d:direction};
-                    }
-                }
-            }
-            // Fallback to gaze/head pose
-            const pose = frame.getViewerPose(ref);
-            if (pose) {
-                const matrix=MULTMAT4(M4(),xrM,pose.views[0].transform.matrix);
-                return {o:[matrix[12],matrix[13],matrix[14]],d:[-matrix[8],-matrix[9],-matrix[10]]};
-            }
-        } else { // Desktop mode
-            const cy = COS(player.yaw), sy = SIN(player.yaw);
-            const cp = COS(player.pitch), sp = SIN(player.pitch);
-            T_V3_RAY_D[0] = -sy * cp; T_V3_RAY_D[1] = -sp; T_V3_RAY_D[2] = -cy * cp;
-            T_V3_RAY_O[0] = player.x; T_V3_RAY_O[1] = player.y; T_V3_RAY_O[2] = player.z;
-            return { o: T_V3_RAY_O, d: T_V3_RAY_D };
-        }
-        return null;
-    }
-    
 
     // Calculates the intersection point of a ray with the ground plane (Y=0)
     //function rayHitGround(ray) {
@@ -811,31 +737,24 @@
     // One shared power language for enemies, levels, loot, and upgrade rarity.
     // Index order is always weakest (red) to strongest (violet).
     const POWER=[
-        ['RED','#e53935',[.9,.04,.03]],
-        ['ORANGE','#fb8c00',[1,.25,.01]],
-        ['YELLOW','#fdd835',[1,.7,.02]],
-        ['GREEN','#43a047',[.05,.65,.12]],
-        ['CYAN','#00acc1',[.02,.65,.8]],
-        ['BLUE','#2979ff',[.04,.2,1]],
-        ['VIOLET','#8e24aa',[.55,.04,.75]]
+        ['#e53935',[.9,.04,.03]],
+        ['#fb8c00',[1,.25,.01]],
+        ['#fdd835',[1,.7,.02]],
+        ['#43a047',[.05,.65,.12]],
+        ['#00acc1',[.02,.65,.8]],
+        ['#2979ff',[.04,.2,1]],
+        ['#8e24aa',[.55,.04,.75]]
     ];
-    const powerTier=count=>MIN(6,(count-1)/3|0),powerValue=tier=>tier+1;
+    const powerValue=tier=>tier+1;
     let skillTime=0;
     let level=1;
     let xp=0;
     let choosing=0;
-    let orbCount=0;
-    //let orbAngle=0;
-    //let orbSize=.25;
-    //let orbRadius=2.5;
-    //let orbSpeed=2.5;
     let enemyVersion=0,enemyId=0;
-    let beaconEvent=0,beaconId=0;
-    let boltCount=1;
-    const evolvedOrbs=[],evolvedBolts=[],evolvedBoltTimes=[],evolutionQueue=[];
+    let beaconEvent=0;
+    const orbCounts=[1],boltCounts=[1],boltTimes=[],evolutionQueue=[],claimedBeacons=new Set;
     let damageBonus=0,healthBonus=0;
     let cooldownPower=0;
-    let boltTime=0;
     let shotId=0;
     let damage=1;
     let movePower=0;
@@ -844,10 +763,10 @@
     let hp=100;
     let maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
-    const orbitPhase=time=>2.5*(15-ABS(time%30-15)),cooldown=power=>MAX(.15,1/(1/3+.15*SQRT(power)));
+    const orbitPhase=time=>2.5*(15-ABS(time%30-15)),orbPhase=(time,tier)=>orbitPhase(time)*(1+(tier+1)*.08)+(tier+1)*1.7,cooldown=power=>MAX(.15,1/(1/3+.15*SQRT(power)));
     // World rings drive population and power; starter protection has a smaller independent radius.
-    const STARTER_RADIUS=50,worldPower=(x,z)=>HYPOT(x,z)/100|0,enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3;
-    function makeBeacon(x,z){let tier=0,cap=MIN(6,worldPower(x,z));while(tier<cap&&rng()<.4)tier++;return [x,z,tier,0,0,0,0,0,++beaconId];}
+    const STARTER_RADIUS=50,worldPower=(x,z)=>HYPOT(x,z)/100|0,beaconTier=(x,z)=>MIN(6,worldPower(x,z),-LOG(cityHash(x,z))|0),enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3;
+    function makeBeacon(x,z){x=ROUND(x*10)/10;z=ROUND(z*10)/10;return [x,z,beaconTier(x,z),0,0,0,0,0];}
     function spawnBeacon(){
         let fallback;
         for(let attempts=120;attempts--;){
@@ -917,12 +836,11 @@
         }
     }
     function claimRemoteBeacons(){
-        if(!myId)return;const now=performance.now();
-        peers.forEach((peer,owner)=>{if(now-peer.last<15000)peer.b?.forEach(beacon=>{if(!beacon[3]&&now-(beacon[9]||0)>1000&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<.55**2){beacon[9]=now;sendMMO(`v|${owner}|${beacon[8]}|${beacon[6]}|${myId}`);}})});
+        peers.forEach((peer,owner)=>peer.b?.forEach(beacon=>{const claim=owner+','+beacon[0]+','+beacon[1];if(!beacon[3]&&!claimedBeacons.has(claim)&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<.55**2){claimedBeacons.add(claim);acceptBeaconClaim(beacon);sendMMO(`v|${owner}|${beacon[0]}|${beacon[1]}`);}}));
     }
     function acceptBeaconClaim(remote){
         if(SPAWN_BEACONS.length>4){let oldest=-1;for(let i=1;i<SPAWN_BEACONS.length;i++)if(SPAWN_BEACONS[i][3]&&(oldest<0||SPAWN_BEACONS[i][6]<SPAWN_BEACONS[oldest][6]))oldest=i;if(oldest>0){const removed=SPAWN_BEACONS.splice(oldest,1)[0];for(let i=enemies.length;i--;)if(enemies[i].b===removed[6])enemies.splice(i,1);}}
-        const beacon=[remote[0],remote[1],remote[2],0,0,0,0,0,++beaconId,1];SPAWN_BEACONS.push(beacon);startBeacon(beacon);
+        const beacon=[remote[0],remote[1],remote[2],0,0,0,0,0,1];SPAWN_BEACONS.push(beacon);startBeacon(beacon);
     }
     function finishBeacons(){
         for(let i=SPAWN_BEACONS.length;i-->1;){
@@ -932,7 +850,7 @@
             const success=cleared&&beacon[4]>0;
             if(beacon[3]&&(beacon[4]<1||success)){
                 for(let j=enemies.length;j--;)if(enemies[j].b===beacon[6])enemies.splice(j,1);
-                SPAWN_BEACONS.splice(i,1);if(!beacon[9]||SPAWN_BEACONS.length<4){const replacement=spawnBeacon();if(replacement)SPAWN_BEACONS.push(replacement);}
+                SPAWN_BEACONS.splice(i,1);if(!beacon[8]||SPAWN_BEACONS.length<4){const replacement=spawnBeacon();if(replacement)SPAWN_BEACONS.push(replacement);}
                 if(success){evolutionQueue.push(beacon[2]);if(choosing<2)rollEvolution(evolutionQueue.shift());}
             }
         }
@@ -941,17 +859,11 @@
         level=1;
         xp=0;
         choosing=0;
-        orbCount=0;
+        orbCounts.length=1;orbCounts[0]=1;
         runStats.defeated=0;
         runStats.dealt=0;
         skillTime=0;
-        boltTime=0;
-        //orbAngle=0;
-        //orbSize=.25;
-        //orbRadius=2.5;
-        //orbSpeed=2.5;
-        boltCount=1;
-        evolvedOrbs.length=evolvedBolts.length=evolvedBoltTimes.length=evolutionQueue.length=0;
+        boltTimes.length=evolutionQueue.length=0;boltCounts.length=1;boltCounts[0]=1;claimedBeacons.clear();
         damageBonus=healthBonus=0;
         damage=1;
         cooldownPower=0;
@@ -961,7 +873,6 @@
         items.length=0;
         damageNumbers.length=0;
         choices=[];
-        hudPage=0;
         player.x=0;
         player.z=2;
         updateCity();
@@ -975,10 +886,8 @@
             while(tier<cap&&rng()<.4)tier++;
             return tier;
         };
-        const pool=orbCount?
-            [0,/* 1, ORBIT RADIUS/SIZE and 2, ORBIT SPEED removed */3,4,5,6,7]:
-            [3,4,5,6,7];
-        choices=orbCount?[]:[[0,rollTier()]];
+        const pool=[0,3,4,5,6,7];
+        choices=[];
         while(choices.length<3){
             const type=pool[rng()*pool.length|0];
             if(!choices.some(choice=>choice[0]===type))choices.push([type,rollTier()]);
@@ -988,29 +897,24 @@
     function showChoices(mode){
         for(let i=3;i--;){
             const choice=choices[i];
-            UI_LEVEL[i][4]=POWER[choice[1]][0]+'|'+cardText(choice[0],powerValue(choice[1]));
+            UI_LEVEL[i][4]=cardText(choice[0],powerValue(choice[1]));
             UI_LEVEL[i][6]=choice[1];
         }
         choosing=mode;
         hudVisible=false;
-        playLevelSound();
     }
     function rollEvolution(tier){
         choices=[[8,tier],[9,tier],[rng()<.5?10:11,tier]].sort(()=>rng()-.5);showChoices(2);
+        playLevelSound();
     }
     function upgrade(choice){
         const type=choice[0],power=powerValue(choice[1]);
-        if(type===8)evolvedOrbs[choice[1]]=(evolvedOrbs[choice[1]]||0)+1;
-        else if(type===9)evolvedBolts[choice[1]]=(evolvedBolts[choice[1]]||0)+1;
+        if(type===8)orbCounts[choice[1]+1]=(orbCounts[choice[1]+1]||0)+1;
+        else if(type===9)boltCounts[choice[1]+1]=(boltCounts[choice[1]+1]||0)+1;
         else if(type===10)damageBonus+=power/100;
         else if(type===11){const added=maxHp/(1+healthBonus)*power/100;healthBonus+=power/100;maxHp+=added;hp+=added;}
-        else if(type===0)orbCount+=power;
-        //else if(type===1){ // ORBIT RADIUS/SIZE upgrade removed
-        //    orbRadius*=1+p*.15;
-        //    orbSize*=1+p*.03;
-        //}
-        //else if(type===2)orbSpeed*=1+power*.15; // ORBIT SPEED upgrade removed
-        else if(type===3)boltCount+=power;
+        else if(type===0)orbCounts[0]+=power;
+        else if(type===3)boltCounts[0]+=power;
         else if(type===4)movePower+=power;
         else if(type===5)cooldownPower+=power;
         else if(type===6){
@@ -1020,18 +924,12 @@
         else if(type===7)damage+=power;
         if(type<8)xp-=level++*3;
         choosing=0;
-        hudPage=0;
         if(evolutionQueue.length)rollEvolution(evolutionQueue.shift());else if(xp>=level*3)rollChoices();
     }
-    function dropXP(x,z,type=0){
-        items.push({x,y:.16,z,r:.4,t:type});
-        // number of items in the world
-        if(items.length>1000)items.shift();
-    }
-    function dropLoot(x,z){const roll=rng();dropXP(x,z,roll<.02?2:roll<.08?1:0);}
-    function dropReward(x,z,tier,mutation,maxHealth){
-        const health=maxHealth||powerValue(tier)*(mutation>=0?mutation+2:1),count=MAX(1,1+ROUND(LOG2(health/3))),width=MIN(7,count);
-        for(let i=count;i--;)dropLoot(x+(i%width-(width-1)/2)*.35,z+FLOOR(i/width)*.35);
+    function dropReward(x,z,maxHealth){
+        const count=MAX(1,1+ROUND(LOG2(maxHealth/3))),width=MIN(7,count);
+        for(let i=count;i--;){const roll=rng();items.push({x:x+(i%width-(width-1)/2)*.35,y:.16,z:z+FLOOR(i/width)*.35,r:.4,t:roll<.02?2:roll<.08?1:0});}
+        while(items.length>1000)items.shift();
     }
     function damageNumber(x,z,amount){damageNumbers.push({x,y:1.4,z,n:ROUND(amount),t:1});}
     function hurt(enemy,amount,killer){
@@ -1042,7 +940,7 @@
     }
     function defeat(enemy,amount,killer){
         const x=enemy.x,z=enemy.z,version=enemy.v,tier=enemy.tier,mutation=enemy.mut;
-        if(!myId||killer===myId){runStats.defeated++;playKillSound(x,z);dropReward(x,z,tier,mutation,enemy.max);}
+        if(!myId||killer===myId){runStats.defeated++;playKillSound(x,z);dropReward(x,z,enemy.max);}
         if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
         enemy.b?enemies.splice(enemies.indexOf(enemy),1):spawnEnemy(enemy);
     }
@@ -1078,7 +976,7 @@
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
             enemy.hit-=dt;
             if(targetBeacon&&distance<.6+enemy.scale*.6){
-                const amount=enemy.max;targetBeacon[4]-=amount;damageNumber(targetBeacon[0],targetBeacon[1],amount);
+                targetBeacon[4]-=enemy.max;
                 enemy.b?enemies.splice(enemies.indexOf(enemy),1):spawnEnemy(enemy);
                 continue;
             }
@@ -1092,26 +990,16 @@
                 if(hp<1){resetRun();return;} // DEAD
                 continue;
             }
-            for(let i=orbCount;i--;){
-                const angle=orbitPhase(skillTime)+i*PI*2/orbCount,ox=player.x+COS(angle)*2.5,oz=player.z+SIN(angle)*2.5;
-                if((enemy.h[i]||0)<skillTime&&(enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){
-                    hurt(enemy,damage*(1+damageBonus),myId);enemy.h[i]=skillTime+.15;
-                }
-            }
-            let hitIndex=orbCount;
-            for(let tier=0;tier<7;tier++)for(let i=evolvedOrbs[tier]||0;i--;){
-                const count=evolvedOrbs[tier],angle=orbitPhase(skillTime)+i*PI*2/count,radius=3.5+tier*.25,ox=player.x+COS(angle)*radius,oz=player.z+SIN(angle)*radius;
+            let hitIndex=0;
+            for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){
+                const count=orbCounts[tier+1],angle=orbPhase(skillTime,tier)+i*PI*2/count,radius=tier<0?2.5:4+tier*1.5,ox=player.x+COS(angle)*radius,oz=player.z+SIN(angle)*radius;
                 if((enemy.h[hitIndex]||0)<skillTime&&(enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){hurt(enemy,damage*(1+damageBonus)*(tier+2),myId);enemy.h[hitIndex]=skillTime+.15;}hitIndex++;
             }
             peers.forEach((peer,id)=>{
                 const hits=peer.oh[enemy.i]||(peer.oh[enemy.i]=[]);
-                if(now-peer.last<15000)for(let i=peer.oc;i--;){
-                    const angle=orbitPhase(peer.op+(now-peer.ot)/1e3)+i*PI*2/peer.oc,ox=peer.x+COS(angle)*2.5,oz=peer.z+SIN(angle)*2.5;
-                    if((hits[i]||0)<now&&(enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){hurt(enemy,peer.d,id);hits[i]=now+150;}
-                }
-                let hitIndex=peer.oc;
-                if(now-peer.last<15000)for(let tier=0;tier<7;tier++)for(let i=peer.eo?.[tier]||0;i--;){
-                    const count=peer.eo[tier],angle=orbitPhase(peer.op+(now-peer.ot)/1e3)+i*PI*2/count,radius=3.5+tier*.25,ox=peer.x+COS(angle)*radius,oz=peer.z+SIN(angle)*radius;
+                let hitIndex=0;
+                if(now-peer.last<15000)for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){
+                    const count=peer.orbs[tier+1],angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/count,radius=tier<0?2.5:4+tier*1.5,ox=peer.x+COS(angle)*radius,oz=peer.z+SIN(angle)*radius;
                     if((hits[hitIndex]||0)<now&&(enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){hurt(enemy,peer.d*(tier+2),id);hits[hitIndex]=now+150;}hitIndex++;
                 }
             });
@@ -1180,9 +1068,7 @@
         playShotSound();
     }
     function updateShots(dt){
-        boltTime-=dt;
-        if(boltCount&&boltTime<0){boltTime=cooldown(cooldownPower);fireBolts(-1,boltCount);}
-        for(let tier=0;tier<7;tier++)if(evolvedBolts[tier]&&((evolvedBoltTimes[tier]=(evolvedBoltTimes[tier]||0)-dt)<0)){evolvedBoltTimes[tier]=cooldown(cooldownPower);fireBolts(tier,evolvedBolts[tier]);}
+        for(let tier=-1;tier<7;tier++){const index=tier+1,count=boltCounts[index];if(count&&((boltTimes[index]=(boltTimes[index]||0)-dt)<0)){boltTimes[index]=cooldown(cooldownPower);fireBolts(tier,count);}}
         updateProjectiles(shots,dt,0);
         updateProjectiles(remoteShots,dt,1);
         for(let i=damageNumbers.length;i--;){
@@ -1292,7 +1178,8 @@
     // -- /VR: Input --
 
     function getMove(session, frame) {
-        let vx=0,vy=0,vt=0,gx=0,gy=0,gt=0;
+        let vx=0,vy=0,vt=0;
+        // GAMEPAD SUPPORT: let vx=0,vy=0,vt=0,gx=0,gy=0,gt=0;
         const deadzone=value=>ABS(value)>DZ?value:0;
         // -- PART: Keyboard --
         // Keyboard input (WASD for move, QE or arrows for move/turn)
@@ -1308,7 +1195,7 @@
     const jt = -input.joy.R.x;
         // -- /PART: Joystick --
 
-        // Standard handheld controller: left stick moves, right stick turns.
+        /* GAMEPAD SUPPORT: Standard handheld controller: left stick moves, right stick turns.
         if(!session){
             const pads=navigator.getGamepads?.();
             let gamepad;
@@ -1324,7 +1211,7 @@
                 if(choosing)for(let i=0;i<3;i++){if(pressed&1<<i){activate(20+i);break;}}
                 else if(pressed&8){playClickSound();hudVisible=!hudVisible;}
             }else gamepadButtons=0;
-        }
+        } */
 
         // -- PART: VR --
         // -- VR: Input --
@@ -1353,8 +1240,10 @@
         // -- /PART: VR --
 
         // Return combined movement, prioritizing VR, then keyboard, then joystick
-        const x=vx||kx||gx||jx,y=vy||ky||gy||jy,magnitude=MAX(1,HYPOT(x,y));
-        return {x:x/magnitude,y:y/magnitude,t:vt||kt||gt||jt};
+        const x=vx||kx||jx,y=vy||ky||jy,magnitude=MAX(1,HYPOT(x,y));
+        // GAMEPAD SUPPORT: const x=vx||kx||gx||jx,y=vy||ky||gy||jy,magnitude=MAX(1,HYPOT(x,y));
+        return {x:x/magnitude,y:y/magnitude,t:vt||kt||jt};
+        // GAMEPAD SUPPORT: return {x:x/magnitude,y:y/magnitude,t:vt||kt||gt||jt};
     }
 
     // -- PART: Step --
@@ -1414,7 +1303,8 @@
 
     function initAudio(){
         if(!audioContext){
-            const context=audioContext=new (window.AudioContext||window.webkitAudioContext)(),
+            // LEGACY fallback disabled: new (window.AudioContext||window.webkitAudioContext)()
+            const context=audioContext=new AudioContext(),
                 filter=context.createBiquadFilter(),
                 reverb=context.createConvolver(),
                 impulse=context.createBuffer(2,context.sampleRate*1.4,context.sampleRate),
@@ -1529,20 +1419,18 @@
             forwardX=-matrix[8],forwardY=-matrix[9],forwardZ=-matrix[10],
             upX=matrix[4],upY=matrix[5],upZ=matrix[6];
 
-        if(listener.positionX){
-            listener.positionX.value=x;
-            listener.positionY.value=y;
-            listener.positionZ.value=z;
-            listener.forwardX.value=forwardX;
-            listener.forwardY.value=forwardY;
-            listener.forwardZ.value=forwardZ;
-            listener.upX.value=upX;
-            listener.upY.value=upY;
-            listener.upZ.value=upZ;
-        }else{
-            listener.setPosition(x,y,z);
-            listener.setOrientation(forwardX,forwardY,forwardZ,upX,upY,upZ);
-        }
+        listener.positionX.value=x;
+        listener.positionY.value=y;
+        listener.positionZ.value=z;
+        listener.forwardX.value=forwardX;
+        listener.forwardY.value=forwardY;
+        listener.forwardZ.value=forwardZ;
+        listener.upX.value=upX;
+        listener.upY.value=upY;
+        listener.upZ.value=upZ;
+        // LEGACY fallbacks disabled:
+        // listener.setPosition(x,y,z);
+        // listener.setOrientation(forwardX,forwardY,forwardZ,upX,upY,upZ);
     }
     // -- /MODULE: Audio --
 
@@ -1551,7 +1439,7 @@
     // CHAT disabled: const LOG = [], CHAT = [];
     // LOG disabled: const LOG=[];
     // CHAT disabled: let logScroll = 0, hudVisible = true, hudPage = 0, chatText = '';
-    let hudVisible=true,hudPage=0;
+    let hudVisible=true;
     let HUD_WH_world = M4(), hoverBtn = null;
 
     // --- HUD COLOR PALETTE ---
@@ -1567,7 +1455,7 @@
     // LOG disabled: function log(message){LOG.push(message);LOG.length>200&&LOG.shift()}
     // CHAT disabled: function say(message) { log(message); CHAT.push(message); CHAT.length > 4 && CHAT.shift(); }
 
-    let uiEnterLabel = 'ENTER VR';
+    let uiEnterLabel = 'VR';
     /* VR/desktop CHAT input disabled:
     const CHAT_NAV=[
         [.66,.62,.80,.72,'UP',4],[.82,.62,.96,.72,'DOWN',5]
@@ -1585,46 +1473,34 @@
     */
     // u0,v0,u1,v1,label,action
     const UI_MAIN = [
-        [.66,.16,.96,.28,'SETTINGS',13],
-        // [.66,.34,.96,.46,'INVENTORY',12], // INVENTORY HUD disabled
-        // CHAT disabled: [.66,.52,.96,.64,'CHAT',3],
+        [.66,.10,.96,.20,'AUDIO',16],
+        [.66,.24,.96,.34,'SHOTS',17],
+        [.66,.38,.96,.48,'SWAP',18],
+        [.66,.52,.96,.62,'INV X',14],
+        [.66,.66,.96,.76,'INV Y',15],
+        [.04,.82,.32,.94,'',2],[.34,.82,.62,.94,'',1],
         [.66,.82,.96,.94,'CLOSE',6]
-    ], UI_TAB = [[.4,0,.6,.12,'MENU',7]], UI_BACK=[
-        [.66,.85,.96,.95,'BACK',17]
-    ], UI_SETTINGS=[
-        [.06,.15,.48,.26,'',2],[.52,.15,.94,.26,'',1],
-        // CHAT disabled: [.06,.31,.48,.42,'AUDIO',17],[.52,.31,.94,.42,'SWAP HANDS',19],
-        [.06,.31,.48,.42,'AUDIO',16],[.52,.31,.94,.42,'SWAP HANDS',18],
-        // CHAT disabled: [.06,.47,.48,.58,'SHOTS',18],[.52,.47,.94,.58,'INVERT X',14],
-        [.06,.47,.48,.58,'SHOTS',17],[.52,.47,.94,.58,'INVERT X',14],
-        // CHAT disabled: [.06,.63,.48,.74,'CLOSED CHAT',16],
-        [.52,.63,.94,.74,'INVERT Y',15],
-        [.06,.82,.94,.94,'BACK',0]
-    ], UI_LEVEL=[
+    ], UI_TAB = [[.4,0,.6,.12,'MENU',7]], UI_LEVEL=[
         [.025,.28,.325,.56,'+ ORB',20],
-        //[.35,.28,.65,.56,'EXPAND',21], // ORBIT RADIUS/SIZE placeholder removed
         [.35,.28,.65,.56,'',21],
-        //[.675,.28,.975,.56,'FASTER',22], // ORBIT SPEED placeholder removed
         [.675,.28,.975,.56,'',22]
     ];
     function cardText(type,power){
-        if(type===0)return `+${power} ORB${power>1?'S':''}`;
-        if(type===8)return '+1 EVOLVED ORB';
-        if(type===9)return '+1 EVOLVED BOLT';
-        if(type===10)return `+${power}% DAMAGE`;
-        if(type===11)return `+${power}% MAX HEALTH`;
-        //if(type===1)return `+${power*15}% ORBIT SIZE`; // ORBIT RADIUS/SIZE card removed
-        //if(type===2)return `+${power*15}% ORB SPEED`; // ORBIT SPEED card removed
-        if(type===3)return `+${power} BOLT${power>1?'S':''}`;
-        if(type===4)return `+${ROUND(.35*(SQRT(movePower+power)-SQRT(movePower))*100)/100} MOVE`;
-        if(type===5)return `+${ROUND((cooldown(cooldownPower)/cooldown(cooldownPower+power)-1)*100)}% FIRE RATE`;
-        if(type===6)return `+${power*20} MAX HEALTH`;
-        return `+${power} DAMAGE`;
+        if(type===0)return `+${power} ORB`;
+        if(type===8)return '+1 EVO ORB';
+        if(type===9)return '+1 EVO BOLT';
+        if(type===10)return `+${power}% DMG`;
+        if(type===11)return `+${power}% HP`;
+        if(type===3)return `+${power} BOLT`;
+        if(type===4)return `+${ROUND(.35*(SQRT(movePower+power)-SQRT(movePower))*100)/100} SPD`;
+        if(type===5)return `+${ROUND((cooldown(cooldownPower)/cooldown(cooldownPower+power)-1)*100)}% RATE`;
+        if(type===6)return `+${power*20} HP`;
+        return `+${power} DMG`;
     }
 
     // INVENTORY HUD disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===2 ? UI_BACK : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
     // CHAT disabled: function currentUI() { return choosing ? UI_LEVEL : !hudVisible ? UI_TAB : hudPage===1 ? xr ? UI_KEYS : UI_CHAT : hudPage===3 ? UI_SETTINGS : UI_MAIN; }
-    function currentUI(){return hudVisible?hudPage===3?UI_SETTINGS:UI_MAIN:choosing?UI_LEVEL.concat(UI_TAB):UI_TAB}
+    function currentUI(){return hudVisible?UI_MAIN:choosing?UI_LEVEL.concat(UI_TAB):UI_TAB}
     // -- /PART: State-Layout --
 
     // -- PART: Actions --
@@ -1645,8 +1521,7 @@
         playClickSound();
         if(action>19)return upgrade(choices[action-20]);
         // CHAT disabled: if (typeof action === 'string') chatText = (chatText + action).slice(0,64);
-        if (!action) hudPage=0;
-        else if (action === 1) toggleXRFromUI();
+        if (action === 1) toggleXRFromUI();
         else if (action === 2) toggleMMO();
         // CHAT disabled: else if (action === 3) setChat(true);
         // CHAT disabled: else if (action === 4) logScroll=MIN(MAX(0,LOG.length-1),logScroll+1);
@@ -1657,7 +1532,6 @@
         // CHAT disabled: else if (action === 8) chatText=chatText.slice(0,-1);
         // CHAT disabled: else if (action === 10) sendChat();
         // CHAT disabled: else if (action === 11) setChat(false);
-        else if (action === 13) hudPage=3;
         else if (action>13) opts[action-14]^=1;
     }
     /* CHAT disabled:
@@ -1705,21 +1579,19 @@
     // -- PART: Canvas-Drawing --
     // --- HUD Drawing ---
     function drawBars(barY){
-        const barX=hudVisible?20:140,width=360;
+        const barX=hudVisible?20:130,width=380;
         // Bar entries: current value, maximum value, label, filled color, empty color.
         for(const bar of [[hp,maxHp,'HP',HP_COLOR,HP_BACK],[xp,level*3,'XP',XP_COLOR,XP_BACK]]){
-            hudCtx.fillStyle=bar[4];hudCtx.fillRect(barX,barY,width,14);
-            hudCtx.fillStyle=bar[3];hudCtx.fillRect(barX,barY,width*MIN(1,bar[0]/bar[1]),14);
-            hudCtx.fillStyle=UI_TEXT;hudCtx.font='11px system-ui';hudCtx.textAlign='left';hudCtx.textBaseline='middle';
-            hudCtx.fillText(`${bar[2]} ${ROUND(bar[0])}/${bar[1]}`,barX+8,barY+7);barY+=18;
+            hudCtx.fillStyle=bar[4];hudCtx.fillRect(barX,barY,width,20);
+            hudCtx.fillStyle=bar[3];hudCtx.fillRect(barX,barY,width*MIN(1,bar[0]/bar[1]),20);
+            hudCtx.fillStyle=UI_TEXT;hudCtx.font='13px system-ui';hudCtx.textAlign='left';hudCtx.textBaseline='middle';
+            hudCtx.fillText(`${bar[2]} ${ROUND(bar[0])}/${bar[1]}`,barX+8,barY+10);barY+=24;
         }
         hudCtx.textBaseline='alphabetic';
     }
     // Draws the entire HUD onto the 2D canvas
-    function drawHUDCanvas(dt) {
+    function drawHUDCanvas() {
         const ui = currentUI();
-        //timer = (self._tm = (+self._tm || 0) + dt / 60).toFixed(3);
-        timer=(skillTime/60).toFixed(3);
         hudCtx.clearRect(0, 0, hudCan.width, hudCan.height);
 
         // Draw the compact menu tab while the main HUD is closed.
@@ -1742,13 +1614,11 @@
 
             if(choosing){
                 for(const button of UI_LEVEL){
-                    const buttonX=button[0]*640,buttonY=button[1]*320,width=(button[2]-button[0])*640,height=(button[3]-button[1])*320,labels=button[4].split('|');
+                    const buttonX=button[0]*640,buttonY=button[1]*320,width=(button[2]-button[0])*640,height=(button[3]-button[1])*320;
                     // Level-up card background, hover, border, title, and description colors.
                     hudCtx.fillStyle=hoverBtn===button?UI_HOVER:UI_BUTTON;hudCtx.fillRect(buttonX,buttonY,width,height);
-                    hudCtx.strokeStyle=POWER[button[6]][1];hudCtx.lineWidth=5;hudCtx.strokeRect(buttonX+2,buttonY+2,width-4,height-4);
-                    hudCtx.fillStyle=POWER[button[6]][1];hudCtx.font='bold 19px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';
-                    hudCtx.fillText(labels[0],buttonX+width/2,buttonY+height*.35);
-                    hudCtx.fillStyle=UI_TEXT;hudCtx.font='13px system-ui';hudCtx.fillText(labels[1],buttonX+width/2,buttonY+height*.68);
+                    hudCtx.strokeStyle=hudCtx.fillStyle=POWER[button[6]][0];hudCtx.lineWidth=5;hudCtx.strokeRect(buttonX+2,buttonY+2,width-4,height-4);
+                    hudCtx.font='bold 16px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';hudCtx.fillText(button[4],buttonX+width/2,buttonY+height/2);
                 }
             }
 
@@ -1768,17 +1638,12 @@
             }
             */
         } else {
-            // Main panel and accent bar.
-            // Open HUD main panel background and left grayscale border.
+            // Open HUD main panel background.
             hudCtx.fillStyle = UI_PANEL;
             hudCtx.fillRect(6, 6, 628, 308);
-            hudCtx.fillStyle = UI_TEXT;
-            hudCtx.fillRect(6, 6, 5, 308);
 
-            // Page title.
             hudCtx.textAlign = 'left';
             hudCtx.textBaseline = 'alphabetic';
-            hudCtx.font = '20px system-ui';
             /* CHAT disabled:
             hudCtx.fillText(
                 hudPage === 1 ? 'CHAT' :
@@ -1789,10 +1654,7 @@
                 34
             );
             */
-            hudCtx.fillText(hudPage===3?'SETTINGS':'VOID CITY SURVIVORS',20,34);
-
-            if(!hudPage)drawBars(44);
-
+            drawBars(36);
             hudCtx.font = '16px system-ui';
             hudCtx.fillStyle = UI_TEXT;
 
@@ -1835,24 +1697,12 @@
                 hudCtx.font = '14px monospace';
                 hudCtx.fillText('Items and equipment', 20, 112);
             } */
-            if (!hudPage) {
-                // Main status page.
-                let peerCount = 0,
-                    now = performance.now();
-                peers.forEach(peer =>
-                    now - (peer.last || 0) < 15000 && peerCount++
-                );
+            let peerCount=0,now=performance.now(),y=82;
+            peers.forEach(peer =>
+                now - (peer.last || 0) < 15000 && peerCount++
+            );
 
-                hudCtx.fillText(
-                    `LEVEL ${level}   DEFEATED ${runStats.defeated}   ${timer}m`,20,102
-                );
-                // damage and score text
-                hudCtx.fillText(`DAMAGE DEALT ${runStats.dealt}`,20,126);
-                // MUTED TEXT disabled: hudCtx.fillStyle = mmoEnabled ? UI_TEXT : UI_MUTED;
-                hudCtx.fillText(
-                    `MMO ${mmoEnabled ? 'ON' : 'OFF'}   PLAYERS ${peerCount+1}`,20,150
-                );
-                hudCtx.fillText(`X ${ROUND(player.x)}   Y ${ROUND(player.z)}`,20,174);
+                for(const text of [`LVL ${level}`,`MOBS ${runStats.defeated}`,`DMG ${runStats.dealt}`,`TIME ${FLOOR(skillTime/6)/10}m`,`MMO ${mmoEnabled?'ON':'OFF'}`,`PPL ${peerCount+1}`,`X ${ROUND(player.x)}`,`Y ${ROUND(player.z)}`])hudCtx.fillText(text,28,y+=18);
                 // LOG/MUTED TEXT disabled: hudCtx.fillStyle = UI_MUTED;
                 // LOG disabled: hudCtx.font = '14px monospace';
 
@@ -1863,8 +1713,6 @@
                     hudCtx.fillText(message.slice(0, 48), 20, 158 + i * 17)
                 );
                 */
-            }
-
             // Draw every button belonging to the active page.
             for (const button of ui) {
                 const buttonX=button[0]*640;
@@ -1895,11 +1743,6 @@
                 );
             }
         }
-
-        //MS and FPS
-        // Performance stays visible on every HUD page, including upgrades and the compact view.
-        hudCtx.fillStyle=UI_TEXT;hudCtx.font='16px system-ui';hudCtx.textAlign='right';hudCtx.textBaseline='alphabetic';
-        hudCtx.fillText(`${frameMs.toFixed(1)} MS   ${ROUND(fps)} FPS`,620,24);
 
         // Upload the canvas content to the WebGL texture
         gl.bindTexture(gl.TEXTURE_2D, hudTex);
@@ -1935,9 +1778,9 @@
           uVH = gl.getUniformLocation(PH, 'V'),
           uPH = gl.getUniformLocation(PH, 'P');
 
-    const vboH = gl.createBuffer(), vaoH = gl.createVertexArray();
+    const vaoH = gl.createVertexArray();
     gl.bindVertexArray(vaoH);
-    gl.bindBuffer(gl.ARRAY_BUFFER, vboH);
+    gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());
     // Vertex data for the HUD quad (position and UV coordinates).
     gl.bufferData(gl.ARRAY_BUFFER, new F32([-.26,.15,0, 0,1,  .26,.15,0, 1,1,  .26,-.15,0, 1,0,  -.26,.15,0, 0,1,  .26,-.15,0, 1,0,  -.26,-.15,0, 0,0]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0); 
@@ -1946,9 +1789,6 @@
     gl.enableVertexAttribArray(1); 
     gl.vertexAttribPointer(1, 2, 
     gl.FLOAT, false, 20, 12);
-    function updHUD(dt) {
-        drawHUDCanvas(dt);
-    }
     function drawHud(M,V,P) {
         gl.useProgram(PH);gl.bindVertexArray(vaoH);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,hudTex);
         gl.uniformMatrix4fv(uMH,false,M);gl.uniformMatrix4fv(uVH,false,V);gl.uniformMatrix4fv(uPH,false,P);
@@ -1980,9 +1820,8 @@
     function sph(theta,phi){ return [SIN(theta)*COS(phi),COS(theta),SIN(theta)*SIN(phi)]; }
 
     const sphereVao = gl.createVertexArray();
-    const sphereBuf = gl.createBuffer();
     gl.bindVertexArray(sphereVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, sphereBuf);
+    gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());
     const sphereVerts = buildSphere();
     gl.bufferData(gl.ARRAY_BUFFER, sphereVerts, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
@@ -2018,19 +1857,19 @@
         -1,-1,-1,1,-1,-1,1,-1,-1,1,-1,1,1,-1,1,-1,-1,1,-1,-1,1,-1,-1,-1,
         -1,1,-1,1,1,-1,1,1,-1,1,1,1,1,1,1,-1,1,1,-1,1,1,-1,1,-1,
         -1,-1,-1,-1,1,-1,1,-1,-1,1,1,-1,1,-1,1,1,1,1,-1,-1,1,-1,1,1]);
-    const buildingVao=gl.createVertexArray(),buildingBuf=gl.createBuffer();
-    gl.bindVertexArray(buildingVao);gl.bindBuffer(gl.ARRAY_BUFFER,buildingBuf);gl.bufferData(gl.ARRAY_BUFFER,cubeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
-    const edgeVao=gl.createVertexArray(),edgeBuf=gl.createBuffer();
-    gl.bindVertexArray(edgeVao);gl.bindBuffer(gl.ARRAY_BUFFER,edgeBuf);gl.bufferData(gl.ARRAY_BUFFER,edgeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+    const buildingVao=gl.createVertexArray();
+    gl.bindVertexArray(buildingVao);gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,cubeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+    const edgeVao=gl.createVertexArray();
+    gl.bindVertexArray(edgeVao);gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,edgeVerts,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
     updateCity();resetBeacons();resetEnemies();
     function drawCity(V,P){
         gl.useProgram(PC);gl.uniformMatrix4fv(uS_V,false,V);gl.uniformMatrix4fv(uS_P,false,P);
         //gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,0,0,0,1);gl.bindVertexArray(groundVao);gl.drawArrays(gl.TRIANGLES,0,6);
         for(const building of buildings){
-            // Draw each building as a white cube scaled to its width, height, and depth.
+            // Draw each building as a dark cube scaled to its width, height, and depth.
             gl.uniformMatrix4fv(uS_M,false,translateScale(building.x,building.h/2,building.z,building.w/2,building.h/2,building.d/2));
             gl.uniform4f(uS_Color,.05,.05,.05,1);gl.bindVertexArray(buildingVao);gl.drawArrays(gl.TRIANGLES,0,36);
-            // Draw a slightly larger black outline around each building to create a crisp contour effect.
+            // Draw a slightly larger white outline around each building to create a crisp contour effect.
             gl.uniformMatrix4fv(uS_M,false,translateScale(building.x,building.h/2,building.z,building.w/2+.01,building.h/2+.01,building.d/2+.01)); // 0.01 biger
             gl.uniform4f(uS_Color,1,1,1,1);gl.bindVertexArray(edgeVao);gl.drawArrays(gl.LINES,0,24);
         }
@@ -2054,28 +1893,12 @@
 
     // -- /PART: Disc-Renderer --
 
-    // -- PART: Difficulty-Rings --
-    // TEMP DEBUG: show the origin-centered 100-unit bands used by worldPower().
-    const SHOW_DIFFICULTY_RINGS=1;
-    function drawDifficultyRings(V,P){
-        if(!SHOW_DIFFICULTY_RINGS)return;
-        gl.useProgram(PDisc);gl.bindVertexArray(vaoH);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);gl.uniform1f(uWidthDisc,.008);
-        gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-        for(let danger=1;danger<=12;danger++){
-            const radius=danger*100,color=POWER[MIN(6,FLOOR(danger/2))][2],ring=new DOMMatrix().translate(0,.03,0).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();
-            gl.uniformMatrix4fv(uMDisc,false,ring);gl.uniform4f(uColDisc,color[0],color[1],color[2],.8);gl.drawArrays(gl.TRIANGLES,0,6);
-        }
-        gl.disable(gl.BLEND);gl.depthMask(true);
-    }
-
-    // -- /PART: Difficulty-Rings --
-
     // -- PART: Beam-Renderer --
     // Beam for pointing ray (reuses PC shared color program)
     const uMBeam = gl.getUniformLocation(PC, 'M'), uVBeam = gl.getUniformLocation(PC, 'V'), uPBeam = gl.getUniformLocation(PC, 'P'), uColBeam = gl.getUniformLocation(PC, 'col');
-    const vboBeam = gl.createBuffer(), vaoBeam = gl.createVertexArray();
+    const vaoBeam = gl.createVertexArray();
     gl.bindVertexArray(vaoBeam);
-    gl.bindBuffer(gl.ARRAY_BUFFER, vboBeam);
+    gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());
     // A simple quad scaled to form the beam
     gl.bufferData(gl.ARRAY_BUFFER, new F32([0,0,0, 1,0,0, 1,0,1, 0,0,0, 1,0,1, 0,0,1]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
@@ -2091,7 +1914,7 @@
         gl.useProgram(PDisc);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);
         const visibleBeacons=SPAWN_BEACONS.slice(),now=performance.now();peers.forEach(peer=>{if(now-peer.last<15000)peer.b?.forEach(beacon=>visibleBeacons.push(beacon))});
         for(const beacon of visibleBeacons){
-            const x=beacon[0],z=beacon[1],color=beacon.length>2?POWER[beacon[2]][2]:WHITE,health=beacon[3]?MAX(0,beacon[4])/beacon[5]:1,visual=beacon[3]? .2+.8*SQRT(health):1,width=4*visual,height=beacon.length<3?300:beacon[3]?20+280*health:180,length=HYPOT(player.x-x,player.z-z)||1,dx=(player.z-z)/length,dz=(x-player.x)/length;
+            const x=beacon[0],z=beacon[1],color=beacon.length>2?POWER[beacon[2]][1]:WHITE,health=beacon[3]?MAX(0,beacon[4])/beacon[5]:1,visual=beacon[3]? .2+.8*SQRT(health):1,width=4*visual,height=beacon.length<3?300:beacon[3]?20+280*health:180,length=HYPOT(player.x-x,player.z-z)||1,dx=(player.z-z)/length,dz=(x-player.x)/length;
             // outer beam
             gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.useProgram(PC);gl.bindVertexArray(vaoBeam);gl.uniform4f(uColBeam,color[0],color[1],color[2],.2);
             gl.uniformMatrix4fv(uMBeam,false,new F32([dx*width,0,dz*width,0, 0,1,0,0, 0,height,0,0, x-dx*width/2,-.1,z-dz*width/2,1]));gl.drawArrays(gl.TRIANGLES,0,6);
@@ -2108,8 +1931,8 @@
             gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(PDisc);gl.bindVertexArray(vaoH);gl.uniform1f(uWidthDisc,.115);gl.uniform4f(uColDisc,color[0],color[1],color[2],1);
             radius=2.15*visual;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
             // inner accent ring
-            gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.uniform1f(uWidthDisc,.1);gl.uniform4f(uColDisc,color[0],color[1],color[2],.99);
-            radius=.55*visual;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
+            // gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.uniform1f(uWidthDisc,.1);gl.uniform4f(uColDisc,color[0],color[1],color[2],.99);
+            // radius=.55*visual;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
         }
         gl.disable(gl.BLEND);gl.depthMask(true);
     }
@@ -2153,7 +1976,7 @@
         for(const number of damageNumbers){
             const text=''+number.n;
             for(let j=0;j<text.length;j++)for(let segment=0;segment<7;segment++)if(masks[+text[j]]>>segment&1){
-                const vertical=segment===1||segment===2||segment===4||segment===5,x=(j-(text.length-1)/2)*.35+pos[segment][0]*.15,y=pos[segment][1]*.15,
+                const vertical=segment%3,x=(j-(text.length-1)/2)*.35+pos[segment][0]*.15,y=pos[segment][1]*.15,
                     wx=number.x+W[0]*x+W[4]*y,wy=number.y+W[1]*x+W[5]*y,wz=number.z+W[2]*x+W[6]*y,
                     M=new F32([W[0]*(vertical?.035:.13),W[1]*(vertical?.035:.13),W[2]*(vertical?.035:.13),0,W[4]*(vertical?.13:.035),W[5]*(vertical?.13:.035),W[6]*(vertical?.13:.035),0,W[8]*.02,W[9]*.02,W[10]*.02,0,wx,wy,wz,1]);
                 gl.uniformMatrix4fv(uS_M,false,M);gl.uniform4f(uS_Color,1,1,1,MIN(1,number.t*2));gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
@@ -2182,11 +2005,10 @@
 
     function drawWorld(V, P, W) {
         drawCity(V,P);
-        // drawDifficultyRings(V,P); // TEMP DEBUG: difficulty boundaries
         const now=performance.now(),tt=now*.001,br=.144,live=enemy=>!enemy.dead&&now-enemy.last<15000;
         // -- PART: XP --
         // Mesh and ghost loops intentionally remain separate: a shared pass helper is larger.
-        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,radius=.14+SIN(angle)*.025;item.t===2?(drawSphere(V,P,item.x-.08,item.y,item.z,radius,POWER[0][2]),drawSphere(V,P,item.x+.08,item.y,item.z,radius,POWER[5][2])):drawSphere(V,P,item.x,item.y,item.z,radius,item.t===1?POWER[3][2]:WHITE);}
+        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,radius=.14+SIN(angle)*.025;item.t===2?(drawSphere(V,P,item.x-.08,item.y,item.z,radius,POWER[0][1]),drawSphere(V,P,item.x+.08,item.y,item.z,radius,POWER[5][1])):drawSphere(V,P,item.x,item.y,item.z,radius,item.t===1?POWER[3][1]:WHITE);}
         // -- /PART: XP --
         gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
         // -- PART: XP --
@@ -2194,24 +2016,24 @@
         // -- /PART: XP --
         // -- PART: Projectile --
         // Intentional duplication: these similar loops produce a smaller PPMd ZIP than a shared helper.
-        for(const projectile of shots)for(let j=3;j--;){const trailStep=j+1,color=projectile.c<0?WHITE:POWER[projectile.c][2];drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[color[0],color[1],color[2],.2/trailStep]);}
-        for(const projectile of remoteShots)for(let j=3;j--;){const trailStep=j+1,color=projectile.c<0?WHITE:POWER[projectile.c][2];drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[color[0],color[1],color[2],.2/trailStep]);}
+        for(const projectile of shots)for(let j=3;j--;){const trailStep=j+1,color=projectile.c<0?WHITE:POWER[projectile.c][1];drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[color[0],color[1],color[2],.2/trailStep]);}
+        for(const projectile of remoteShots)for(let j=3;j--;){const trailStep=j+1,color=projectile.c<0?WHITE:POWER[projectile.c][1];drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[color[0],color[1],color[2],.2/trailStep]);}
         // -- /PART: Projectile --
         // -- PART: Enemy --
         // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
-        for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
-        remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][2],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
+        for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
+        remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
         gl.disable(gl.BLEND);
-        for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier][2],1.16,enemy.scale);
-        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier][2],1.16,enemy.scale)));
+        for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier][1],1.16,enemy.scale);
+        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier][1],1.16,enemy.scale)));
         gl.depthMask(true);
         for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
         remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
         // -- /PART: Enemy --
         // -- PART: Projectile --
         gl.depthMask(false);
-        for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br*1.14,projectile.c<0?WHITE:POWER[projectile.c][2]);
-        for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,.164,projectile.c<0?WHITE:POWER[projectile.c][2]);
+        for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br*1.14,projectile.c<0?WHITE:POWER[projectile.c][1]);
+        for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,.164,projectile.c<0?WHITE:POWER[projectile.c][1]);
         gl.depthMask(true);
         for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
         for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
@@ -2219,26 +2041,21 @@
         // -- PART: Orb --
         // Local and peer loops intentionally repeat: PPMd compresses them smaller than a shared renderer.
         gl.depthMask(false);
-        for(let i=orbCount;i--;){const angle=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,player.x+COS(angle)*2.5,.7,player.z+SIN(angle)*2.5,.27,WHITE);}
-        for(let tier=0;tier<7;tier++)for(let i=evolvedOrbs[tier]||0;i--;){const angle=orbitPhase(skillTime)+i*PI*2/evolvedOrbs[tier],radius=3.5+tier*.25;drawSphere(V,P,player.x+COS(angle)*radius,.7,player.z+SIN(angle)*radius,.27,POWER[tier][2]);}
+        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=tier<0?2.5:4+tier*1.5;drawSphere(V,P,player.x+COS(angle)*radius,.7,player.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
         gl.depthMask(true);
-        for(let i=orbCount;i--;){const angle=orbitPhase(skillTime)+i*PI*2/orbCount;drawSphere(V,P,player.x+COS(angle)*2.5,.7,player.z+SIN(angle)*2.5,.25,BLACK);}
-        for(let tier=0;tier<7;tier++)for(let i=evolvedOrbs[tier]||0;i--;){const angle=orbitPhase(skillTime)+i*PI*2/evolvedOrbs[tier],radius=3.5+tier*.25;drawSphere(V,P,player.x+COS(angle)*radius,.7,player.z+SIN(angle)*radius,.25,BLACK);}
+        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=tier<0?2.5:4+tier*1.5;drawSphere(V,P,player.x+COS(angle)*radius,.7,player.z+SIN(angle)*radius,.25,BLACK);}
         // -- /PART: Orb --
-        if (peers && peers.size) {
+        if(peers.size){
             const now = performance.now(), target = now - 120;
             peers.forEach((peer, id) => {
                 if (id === myId || now - (peer.last || 0) >= 15000) return;
                 const sample = samplePeer(peer, target) || peer;
                 drawCat(V, P, sample.x, .6, sample.z, (sample.yaw || 0) + PI, now*.005*MIN(3,peer.speed||0), .1, PEER_COL);
                 // -- PART: Orb --
-                const peerPhase=orbitPhase(peer.op+(now-peer.ot)/1e3);
                 gl.depthMask(false);
-                for(let i=peer.oc;i--;){const angle=peerPhase+i*PI*2/peer.oc;drawSphere(V,P,sample.x+COS(angle)*2.5,.7,sample.z+SIN(angle)*2.5,.27,WHITE);}
-                for(let tier=0;tier<7;tier++)for(let i=peer.eo?.[tier]||0;i--;){const angle=peerPhase+i*PI*2/peer.eo[tier],radius=3.5+tier*.25;drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,POWER[tier][2]);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=tier<0?2.5:4+tier*1.5;drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
                 gl.depthMask(true);
-                for(let i=peer.oc;i--;){const angle=peerPhase+i*PI*2/peer.oc;drawSphere(V,P,sample.x+COS(angle)*2.5,.7,sample.z+SIN(angle)*2.5,.25,BLACK);}
-                for(let tier=0;tier<7;tier++)for(let i=peer.eo?.[tier]||0;i--;){const angle=peerPhase+i*PI*2/peer.eo[tier],radius=3.5+tier*.25;drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=tier<0?2.5:4+tier*1.5;drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
                 // -- /PART: Orb --
             });
         }
@@ -2287,8 +2104,8 @@
 
     // OPTIONAL: preflights WebXR support for a startup status message; Enter VR already handles failure.
     /*function initXR(){
-        if(!('xr'in navigator)){log('WebXR not available');return}
-        navigator.xr.isSessionSupported('immersive-vr').then(supported=>log(supported?'VR ready: Click Enter VR':'VR not supported')).catch(error=>log('VR check failed: '+error.message));
+        if(!('xr'in navigator)){log('NO VR');return}
+        navigator.xr.isSessionSupported('immersive-vr').then(supported=>log(supported?'VR READY':'NO VR')).catch(error=>log('VR ERR '+error.message));
     }*/
     // if vr not avalable we split screen in to stereo view some day
 
@@ -2303,7 +2120,7 @@
             // Request a new session
             // OPTIONAL FEATURE: remove hand-tracking here if hand gestures and pinch HUD input are removed.
             const session=xr=await navigator.xr.requestSession('immersive-vr', { 'optionalFeatures': ['local-floor', 'hand-tracking'] });
-            uiEnterLabel = 'Exit VR';
+            uiEnterLabel = 'EXIT';
 
             // OPTIONAL COMPATIBILITY: redundant when the context honors its existing xrCompatible:true flag.
             // OPTIONAL compatibility disabled: await gl.makeXRCompatible();
@@ -2317,7 +2134,7 @@
 
             // WebXR select events cover controller triggers and hand pinches, including hand sources with no gamepad.
             xr.addEventListener('select', event => {
-                const hit = HUD_pick(HUD_WH_world, rayFrom('VR',event.frame,event.inputSource));
+                const hit = HUD_pick(HUD_WH_world, controllerRay(event.frame,event.inputSource));
                 if (hit && hit.button) activate(hit.button[5]);
             });
             xr.addEventListener('selectstart',event=>selecting.add(event.inputSource));
@@ -2337,7 +2154,7 @@
                 // OPTIONAL DEBOUNCE CLEANUP: remove with pointStarted.
                 pointStarted.clear();
                 selecting.clear();
-                uiEnterLabel = 'Enter VR';
+                uiEnterLabel = 'VR';
                 // OPTIONAL CLEANUP: the next desktop frame binds and sizes the framebuffer again.
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
                 gl.viewport(0,0,canvas.width,canvas.height);
@@ -2375,11 +2192,7 @@
         if (session ? session !== xr : xr) return;
         session ? session.requestAnimationFrame(loop) : requestAnimationFrame(loop);
 
-        // FPS and m/s calculation
-        // const dt=MIN(last?(time-last)/1000:0,.05);
-        const elapsed=last?time-last:0,dt=MIN(elapsed/1000,.05);
-        if(elapsed){frameMs=frameMs?lerp(frameMs,elapsed,.1):elapsed;fps=1000/frameMs;}
-
+        const dt=MIN(last?(time-last)/1000:0,.05);
         last=time;
         updateWorld(dt, session, frame);
         let hudWH;
@@ -2398,7 +2211,7 @@
                 const hit = HUD_pick(hudWH, controllerRay(frame, src));
                 if (hit && hit.button) { hoverBtn = hit.button; break; }
             }
-            updHUD(dt);
+            drawHUDCanvas();
             const layer = session.renderState.baseLayer;
             gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -2421,7 +2234,7 @@
                 const hit = HUD_pick(hudWH, rayFromScreen(input.pointer.x, input.pointer.y));
                 if (hit && hit.button) hoverBtn = hit.button;
             }
-            updHUD(dt);
+            drawHUDCanvas();
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
             gl.viewport(0, 0, canvas.width, canvas.height);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -2432,14 +2245,12 @@
     // -- /PART: Loop --
     // -- PART: Startup --
     // --- Application Entry Point ---
-    (function main() {
-        //initXR(); // OPTIONAL WebXR startup status preflight.
-        requestAnimationFrame(loop);
+    //initXR(); // OPTIONAL WebXR startup status preflight.
+    requestAnimationFrame(loop);
         // LOG disabled: log('Survive, collect XP, get upgrades');
         // CHAT disabled: log('MENU H/X  C CHAT  Z SETTINGS');
         // LOG disabled: log('MENU H/X  Z SETTINGS');
         // LOG disabled: log('MOVE: WASD/QE or touch');
-    })();
     // -- /PART: Startup --
     
     // -- /FEATURE: Application --

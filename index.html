@@ -352,7 +352,7 @@
             if(parts[1]!==myId){
                 if(parts[8]===myId){
                     runStats.defeated++;
-                    playKillSound(+parts[4],+parts[5]);
+                    playImpactSound(+parts[4],+parts[5],1);
                     dropReward(+parts[4],+parts[5],+parts[10]);
                 }
                 if(+parts[7])damageNumber(+parts[4],+parts[5],+parts[7]);
@@ -823,11 +823,13 @@
         // Keep one ring's three-enemy population as hysteresis when moving inward.
         if(ordinary>target+3)for(let i=enemies.length;i--&&ordinary>target;)if(!enemies[i].b){enemies.splice(i,1);ordinary--;}
     }
-    function spawnBeaconWave(beacon){for(let count=10;count--;)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6]},beacon[0],beacon[1],18,10));}
+    function spawnBeaconWave(beacon){
+        for(let count=10;count--;)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6]},beacon[0],beacon[1],18,10));
+    }
     function startBeacon(beacon){
         const danger=worldPower(beacon[0],beacon[1]),time=skillTime/60;
         beacon[3]=1;beacon[4]=beacon[5]=10*CEIL((1+danger*1.8)*powerValue(beacon[2])*EXP(time*.08*danger/(1+danger)));beacon[6]=++beaconEvent;beacon[7]=0;
-        spawnBeaconWave(beacon);playLevelSound();
+        spawnBeaconWave(beacon);playMotif(beacon[0],beacon[1]);
     }
     function activateBeacons(){
         for(let i=1;i<SPAWN_BEACONS.length;i++){
@@ -851,7 +853,8 @@
             if(beacon[3]&&(beacon[4]<1||success)){
                 for(let j=enemies.length;j--;)if(enemies[j].b===beacon[6])enemies.splice(j,1);
                 SPAWN_BEACONS.splice(i,1);if(!beacon[8]||SPAWN_BEACONS.length<4){const replacement=spawnBeacon();if(replacement)SPAWN_BEACONS.push(replacement);}
-                if(success){evolutionQueue.push(beacon[2]);if(choosing<2)rollEvolution(evolutionQueue.shift());}
+                if(success){playMotif(beacon[0],beacon[1]);evolutionQueue.push(beacon[2]);if(choosing<2)rollEvolution(evolutionQueue.shift());}
+                else playMotif(beacon[0],beacon[1],1);
             }
         }
     }
@@ -892,7 +895,7 @@
             const type=pool[rng()*pool.length|0];
             if(!choices.some(choice=>choice[0]===type))choices.push([type,rollTier()]);
         }
-        showChoices(1);
+        showChoices(1);playMotif(player.x,player.z);
     }
     function showChoices(mode){
         for(let i=3;i--;){
@@ -905,7 +908,6 @@
     }
     function rollEvolution(tier){
         choices=[[8,tier],[9,tier],[rng()<.5?10:11,tier]].sort(()=>rng()-.5);showChoices(2);
-        playLevelSound();
     }
     function upgrade(choice){
         const type=choice[0],power=powerValue(choice[1]);
@@ -936,11 +938,11 @@
         amount=MIN(enemy.hp,MAX(1,amount|0));enemy.hp-=amount;damageNumber(enemy.x,enemy.z,amount);
         if(!myId||killer===myId)runStats.dealt+=amount; // damage addition
         else sendMMO(`a|${killer}|${amount}`);
-        if(enemy.hp<1)defeat(enemy,amount,killer);else playHitSound(enemy.x,enemy.z);
+        if(enemy.hp<1)defeat(enemy,amount,killer);else playImpactSound(enemy.x,enemy.z);
     }
     function defeat(enemy,amount,killer){
         const x=enemy.x,z=enemy.z,version=enemy.v,tier=enemy.tier,mutation=enemy.mut;
-        if(!myId||killer===myId){runStats.defeated++;playKillSound(x,z);dropReward(x,z,enemy.max);}
+        if(!myId||killer===myId){runStats.defeated++;playImpactSound(x,z,1);dropReward(x,z,enemy.max);}
         if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
         enemy.b?enemies.splice(enemies.indexOf(enemy),1):spawnEnemy(enemy);
     }
@@ -1045,7 +1047,7 @@
                 for(const [owner,group] of remoteEnemies)
                     for(const enemy of group.values())
                         if(!enemy.dead&&(enemy.x-projectile.x)**2+(enemy.z-projectile.z)**2<(.5+radius)**2){
-                            playHitSound(enemy.x,enemy.z);
+                            playImpactSound(enemy.x,enemy.z);
                             projectile.t=0;
                             break remoteHit;
                         }
@@ -1296,8 +1298,8 @@
     let audioContext,
         spatialOutput,
         localOutput,
-        lastKillSound=0,
-        lastHitSound=0,
+        lastImpactSound=0,
+        notes=[330,494,660],
         // CHAT disabled: opts=[0,0,1,1,1,0];
         opts=[0,0,1,1,0];
 
@@ -1321,7 +1323,7 @@
 
             reverb.buffer=impulse;
             filter.frequency.value=6000;
-            reverbGain.gain.value=.18;
+            reverbGain.gain.value=.2;
 
             // Local sounds go straight to the filter. Spatial sounds split into dry and reverberated paths.
             filter.connect(compressor).connect(context.destination);
@@ -1329,6 +1331,7 @@
             spatialBus.connect(reverb).connect(reverbGain).connect(filter);
             spatialOutput=spatialBus;
             localOutput=filter;
+            playSound(38,1e6,.001);
         }
         audioContext.resume();
     }
@@ -1384,20 +1387,14 @@
     function playShotSound(x=player.x,z=player.z){
         // CHAT disabled: if(opts[4]){
         if(opts[3]){
-            playSound(880,.1,.07,'square',180,0,.005,x,.7,z);
-            playSound(1760,.05,.025,'sine',440,0,.005,x,.7,z);
+            playSound(900,.1,.07,'square',180,0,.005,x,.7,z);
         }
     }
-    function playKillSound(x,z){
-        if(!audioContext||audioContext.currentTime-lastKillSound<.035)return;
-        lastKillSound=audioContext.currentTime;
-        playSound(260,.14,.08,'triangle',90,0,.005,x,.6,z);
-        playSound(900,.035,.025,'square',180,0,.002,x,.6,z);
-    }
-    function playHitSound(x,z){
-        if(!audioContext||audioContext.currentTime-lastHitSound<.025)return;
-        lastHitSound=audioContext.currentTime;
-        playSound(300,.08,.035,'triangle',130,0,.003,x,.6,z);
+    function playImpactSound(x,z,kill){
+        if(!kill&&performance.now()-lastImpactSound<25)return;
+        lastImpactSound=performance.now();
+        playSound(kill?260:300,kill?.14:.08,kill?.08:.035,'triangle',kill?90:130,0,.003,x,.6,z);
+        if(kill)playSound(900,.035,.025,'square',180,0,.002,x,.6,z);
     }
     function playHurtSound(){
         playSound(100,.3,.18,'sawtooth',38);
@@ -1407,10 +1404,11 @@
         playSound(frequency,.1,.06,'square',frequency*2);
         playSound(frequency*1.5,.22,.035,'triangle',frequency*3,.05);
     }
-    function playLevelSound(){
-        playSound(330,.18,.05,'sawtooth',320);
-        playSound(494,.18,.05,'sawtooth',480,.22);
-        playSound(660,1,.07,'sawtooth',640,.44,.03);
+    function playMotif(x,z,reverse){
+        for(let i=0;i<3;i++){
+            const frequency=notes[reverse?2-i:i];
+            playSound(frequency,i<2?.18:1,.06,'triangle',frequency*.97,i*.22,.03,x,.6,z);
+        }
     }
     function updateAudioListener(matrix){
         if(!audioContext)return;

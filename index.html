@@ -119,10 +119,10 @@
     let PV = M4(), invPV = M4(); // Combined and inverse matrices for picking
 
     // Multiplies a 3D point (w=1) by a 4x4 matrix
-    function mulPoint(matrix,point) { const x=point[0],y=point[1],z=point[2],w=1;return [matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12]*w,matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13]*w,matrix[2]*x+matrix[6]*y+matrix[10]*z+matrix[14]*w]; }
+    function mulPoint(matrix,point) { const x=point[0],y=point[1],z=point[2];return [matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12],matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13],matrix[2]*x+matrix[6]*y+matrix[10]*z+matrix[14]]; }
 
     // Multiplies a 3D direction (w=0) by a 4x4 matrix
-    function mulDir(matrix,direction) { const x=direction[0],y=direction[1],z=direction[2],w=0;return [matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12]*w,matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13]*w,matrix[2]*x+matrix[6]*y+matrix[10]*z+matrix[14]*w]; }
+    function mulDir(matrix,direction) { const x=direction[0],y=direction[1],z=direction[2];return [matrix[0]*x+matrix[4]*y+matrix[8]*z,matrix[1]*x+matrix[5]*y+matrix[9]*z,matrix[2]*x+matrix[6]*y+matrix[10]*z]; }
 
     //function mul4(m, v) { return [m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3], m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3], m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3], m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]]; }
     const mul4 = (out,matrix,vector) => {
@@ -955,7 +955,7 @@
                 if(beacon[3]&&distance<best){best=distance;tx=beacon[0];tz=beacon[1];self=0;targetBeacon=beacon;}
             }
             // Recycle abandoned enemies and never allow a powerful enemy inside the starter zone.
-            if(best>120**2){spawnEnemy(enemy);continue;}
+            if(best>75**2){spawnEnemy(enemy);continue;}
             if(HYPOT(enemy.x,enemy.z)<STARTER_RADIUS&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.scale=1;enemy.max=enemy.hp=1;}
             let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3,turn=enemy.i&1?1:-1;
             const building=buildingAt(enemy.x,enemy.z);if(building){
@@ -1455,7 +1455,6 @@
     // LOG disabled: function log(message){LOG.push(message);LOG.length>200&&LOG.shift()}
     // CHAT disabled: function say(message) { log(message); CHAT.push(message); CHAT.length > 4 && CHAT.shift(); }
 
-    let uiEnterLabel = 'VR';
     /* VR/desktop CHAT input disabled:
     const CHAT_NAV=[
         [.66,.62,.80,.72,'UP',4],[.82,.62,.96,.72,'DOWN',5]
@@ -1478,7 +1477,7 @@
         [.66,.38,.96,.48,'SWAP',18],
         [.66,.52,.96,.62,'INV X',14],
         [.66,.66,.96,.76,'INV Y',15],
-        [.04,.82,.32,.94,'',2],[.34,.82,.62,.94,'',1],
+        [.04,.82,.32,.94,'',2],[.34,.82,.62,.94,'VR',1],
         [.66,.82,.96,.94,'CLOSE',6]
     ], UI_TAB = [[.4,0,.6,.12,'MENU',7]], UI_LEVEL=[
         [.025,.28,.325,.56,'+ ORB',20],
@@ -1734,7 +1733,6 @@
                 hudCtx.textAlign = 'center';
                 hudCtx.textBaseline = 'middle';
                 hudCtx.fillText(
-                    action === 1 ? uiEnterLabel :
                     action === 2 ? 'MMO ' + (mmoEnabled ? 'ON' : 'OFF') :
                     action>13 ? button[4]+' '+(opts[action-14]?'ON':'OFF') :
                     button[4],
@@ -2073,7 +2071,7 @@
     // OPTIONAL VISUALS: remove with its call to hide controller discs and beams; HUD ray clicks still work.
     function drawXRInput(session, frame, V, P, hudWH) {
         for (const src of session.inputSources || []) {
-            const col = [1, 1, .5];
+            const col = WHITE;
             const target = src.targetRaySpace ? frame.getPose(src.targetRaySpace, ref) : null;
             if (target) {
                 const matrix=MULTMAT4(M4(),xrM,target.transform.matrix),scale=.1-.02*(src.gamepad?.buttons[1]?.value||0);
@@ -2118,24 +2116,20 @@
                 return;
             }
             // Request a new session
-            // OPTIONAL FEATURE: remove hand-tracking here if hand gestures and pinch HUD input are removed.
-            const session=xr=await navigator.xr.requestSession('immersive-vr', { 'optionalFeatures': ['local-floor', 'hand-tracking'] });
-            uiEnterLabel = 'EXIT';
+            const hands='XRHand'in window&&navigator.userAgent.includes('Android');
+            xr=await navigator.xr.requestSession('immersive-vr',hands?{optionalFeatures:['hand-tracking']}:undefined);
 
             // OPTIONAL COMPATIBILITY: redundant when the context honors its existing xrCompatible:true flag.
             // OPTIONAL compatibility disabled: await gl.makeXRCompatible();
             // Set up the XRWebGLLayer for the session
             // xr.updateRenderState({ baseLayer: new XRWebGLLayer(xr, gl)});
-            xr.updateRenderState({ baseLayer: new XRWebGLLayer(xr, gl),depthNear:.2,depthFar:3000 }); // vr depth range
-            // OPTIONAL FALLBACK: Quest supports local-floor; keep for other WebXR implementations.
-            try { ref = await xr.requestReferenceSpace('local-floor'); }
-            // LOG disabled: catch (_) { ref = await xr.requestReferenceSpace('local'); log('XR floor unavailable; using local space'); }
-            catch(_){ref=await xr.requestReferenceSpace('local')}
+            xr.updateRenderState({baseLayer:new XRWebGLLayer(xr,gl),depthNear:.2,depthFar:3000}); // vr depth range
+            ref=await xr.requestReferenceSpace('local');
 
             // WebXR select events cover controller triggers and hand pinches, including hand sources with no gamepad.
             xr.addEventListener('select', event => {
                 const hit = HUD_pick(HUD_WH_world, controllerRay(event.frame,event.inputSource));
-                if (hit && hit.button) activate(hit.button[5]);
+                hit?.button&&activate(hit.button[5]);
             });
             xr.addEventListener('selectstart',event=>selecting.add(event.inputSource));
             xr.addEventListener('selectend',event=>selecting.delete(event.inputSource));
@@ -2143,8 +2137,8 @@
             xr.addEventListener('inputsourceschange',event=>event.removed.forEach(source=>{pointStarted.delete(source);selecting.delete(source)}));
             
 
-            xr.addEventListener('end', () => {
-                if (xr !== session) return;
+            xr.addEventListener('end', event => {
+                if (xr !== event.target) return;
                 // If the canvas holds pointer lock, release it when exiting VR
                 // OPTIONAL CLEANUP: entering VR normally leaves no desktop pointer lock.
                 document.exitPointerLock();
@@ -2154,7 +2148,6 @@
                 // OPTIONAL DEBOUNCE CLEANUP: remove with pointStarted.
                 pointStarted.clear();
                 selecting.clear();
-                uiEnterLabel = 'VR';
                 // OPTIONAL CLEANUP: the next desktop frame binds and sizes the framebuffer again.
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
                 gl.viewport(0,0,canvas.width,canvas.height);

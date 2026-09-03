@@ -930,7 +930,7 @@
     function dropReward(x,z,maxHealth){
         const count=MAX(1,1+ROUND(LOG2(maxHealth/3))),width=MIN(7,count);
         for(let i=count;i--;){const roll=rng();items.push({x:x+(i%width-(width-1)/2)*.35,y:.16,z:z+FLOOR(i/width)*.35,r:.4,t:roll<.02?2:roll<.08?1:0});}
-        while(items.length>1000)items.shift();
+        // while(items.length>1000)items.shift();
     }
     function damageNumber(x,z,amount){damageNumbers.push({x,y:1.4,z,n:ROUND(amount),t:1});}
     function hurt(enemy,amount,killer){
@@ -1482,9 +1482,9 @@
         if(type===10)return `+${power}% DMG (${ROUND(damage*power)/100})`;
         if(type===11)return `+${power}% HP (${ROUND(maxHp/(1+healthBonus)*power)/100})`;
         if(type===3)return `+${power} BOLT`;
-        if(type===4)return '+0.03 MOVE';
+        if(type===4)return `+${(.35*(SQRT(movePower+power)-SQRT(movePower))).toFixed(2)} MOVE`;
         if(type===5)return `+${(1/cooldown(cooldownPower+power)-1/cooldown(cooldownPower)).toFixed(2)} RATE`;
-        if(type===6)return `+${power*20} HP`;
+        if(type===6)return `+${ROUND(power*20*(1+healthBonus))} HP`;
         return `+${power} DMG`;
     }
 

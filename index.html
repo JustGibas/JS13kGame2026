@@ -254,7 +254,7 @@
         switch(command){
             // LOG disabled: case '@':myId=message.slice(1);logMMO('my id: '+myId);return;
             case '@':myId=message.slice(1);return;
-            case '+':{const id=message.slice(1);if(!peers.has(id))peers.set(id,{x:0,z:0,yaw:0,last:0,hist:[],oh:[]});return;}
+            case '+':{const id=message.slice(1);if(!peers.has(id))peers.set(id,{x:0,z:0,last:0,hist:[],oh:[]});return;}
             case '-':forgetPeer(message.slice(1));return;
         }
         /* DIRECT MMO compatibility disabled to save bytes.
@@ -275,16 +275,15 @@
                     const x=+parts[2];
                     const z=+parts[3];
                     const yaw=+parts[4];
-                    const peer = peers.get(id) || {x:0,z:0,yaw:0,last:0,hist:[],oh:[]};
+                    const peer = peers.get(id) || {x:0,z:0,last:0,hist:[],oh:[]};
                     const now = performance.now();
                     if(!nearCity(x,z)){if(peers.has(id))forgetPeer(id);return;}
                     pushPeerSample(peer,x,z,yaw,now);
                     peer.orbs=parts[5].split(',').slice(0,8).map(value=>MIN(9,+value));
                     peer.op=+parts[6];
-                    peer.ot=now;
                     peer.d=+parts[7];
-                    const group=new Map(),fields=parts[8].split(',').map(Number);
-                    for(let i=0;i<MIN(12,fields.length);i+=3){const x=fields[i],z=fields[i+1],tier=beaconTier(x,z),health=MIN(1,MAX(-1,fields[i+2])),beacon=[x,z,tier,health>=0,MAX(0,health),1];group.set(i,beacon);}
+                    const group=[],fields=parts[8].split(',').map(Number);
+                    for(let i=0;i<MIN(12,fields.length);i+=3){const x=fields[i],z=fields[i+1],tier=beaconTier(x,z),health=MIN(1,MAX(-1,fields[i+2])),beacon=[x,z,tier,health>=0,MAX(0,health),1];group.push(beacon);}
                     peer.b=group;
                     peers.set(id, peer);
                 }
@@ -305,18 +304,15 @@
 
             if(owner!==myId&&peers.has(owner)){
                 const group=remoteEnemies.get(owner)||new Map(),
-                    seen=new Set(),
                     now=performance.now();
 
                 for(const row of parts[2].split(';'))if(row){
                     const fields=row.split(',').map(Number),
                         id=fields[0];
                     if(!nearCity(fields[2],fields[3]))continue;
-                    seen.add(id);
-
                     let enemy=group.get(id);
                     if(!enemy||enemy.v!==fields[1]){
-                        enemy={i:id,v:fields[1],x:fields[2],z:fields[3],yaw:fields[4],hit:0};
+                        enemy={i:id,v:fields[1],x:fields[2],z:fields[3],hit:0};
                     }else if(fields[6]<enemy.hp){
                         damageNumber(enemy.x,enemy.z,enemy.hp-fields[6]);
                     }
@@ -329,13 +325,12 @@
                     enemy.max=fields[7];
                     enemy.mut=fields[8];
                     enemy.scale=enemy.mut<0?1:1.5;
-                    enemy.dead=0;
                     enemy.last=now;
                     group.set(id,enemy);
                 }
 
-                for(const id of group.keys()){
-                    if(!seen.has(id))group.delete(id);
+                for(const [id,enemy] of group){
+                    if(enemy.last<now)group.delete(id);
                 }
                 remoteEnemies.set(owner,group);
             }
@@ -491,7 +486,7 @@
         initAudio();
         const key=event.code;
         input.keys[key]=true;
-        if(key.startsWith('Arrow'))event.preventDefault();
+        // if(key.startsWith('Arrow'))event.preventDefault();
         // CHAT disabled: if(!event.repeat&&key==='Enter'){event.preventDefault();setChat(true);return;}
         // INVENTORY HUD disabled: if (!event.repeat && key === 'KeyF') { hudVisible=true;hudPage=2;return; }
         // CHAT disabled: if(!event.repeat&&key==='KeyC'){setChat(true);return;}
@@ -766,7 +761,7 @@
     const orbitPhase=time=>2.5*(15-ABS(time%30-15)),orbPhase=(time,tier)=>orbitPhase(time)*(1+(tier+1)*.08)+(tier+1)*1.7,orbRadius=tier=>tier<0?2.5:4+tier*1.5,cooldown=power=>MAX(.15,1/(1/3+.15*SQRT(power)));
     // World rings drive population and power; starter protection has a smaller independent radius.
     const STARTER_RADIUS=50,worldPower=(x,z)=>HYPOT(x,z)/100|0,beaconTier=(x,z)=>MIN(6,worldPower(x,z),-LOG(cityHash(x,z))|0),enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3,scaledHealth=(danger,tier)=>CEIL((1+danger*1.8)*powerValue(tier)*EXP(skillTime/60*.08*danger/(1+danger)));
-    function makeBeacon(x,z){x=ROUND(x*10)/10;z=ROUND(z*10)/10;return [x,z,beaconTier(x,z),0,0,0,0,0];}
+    function makeBeacon(x,z){x=ROUND(x*10)/10;z=ROUND(z*10)/10;return [x,z,beaconTier(x,z)];}
     function spawnBeacon(){
         let fallback;
         for(let attempts=120;attempts--;){
@@ -931,6 +926,7 @@
         const count=MAX(1,1+ROUND(LOG2(maxHealth/3))),width=MIN(7,count);
         for(let i=count;i--;){const roll=rng();items.push({x:x+(i%width-(width-1)/2)*.35,y:.16,z:z+FLOOR(i/width)*.35,r:.4,t:roll<.02?2:roll<.08?1:0});}
         // while(items.length>1000)items.shift();
+        while(items.length>10000)items.shift();
     }
     function damageNumber(x,z,amount){damageNumbers.push({x,y:1.4,z,n:ROUND(amount),t:1});}
     function hurt(enemy,amount,killer){
@@ -995,7 +991,7 @@
                 const hits=peer.oh[enemy.i]||(peer.oh[enemy.i]=[]);
                 let hitIndex=0;
                 if(now-peer.last<15000)for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){
-                    const count=peer.orbs[tier+1],angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/count,radius=orbRadius(tier),ox=peer.x+COS(angle)*radius,oz=peer.z+SIN(angle)*radius;
+                    const count=peer.orbs[tier+1],angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/count,radius=orbRadius(tier),ox=peer.x+COS(angle)*radius,oz=peer.z+SIN(angle)*radius;
                     if((hits[hitIndex]||0)<now&&(enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){hurt(enemy,peer.d*(tier+2),id);hits[hitIndex]=now+150;}hitIndex++;
                 }
             });
@@ -2034,16 +2030,16 @@
         for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(V,P,player.x+COS(angle)*radius,.7,player.z+SIN(angle)*radius,.25,BLACK);}
         // -- /PART: Orb --
         if(peers.size){
-            const now = performance.now(), target = now - 120;
+            const target = now - 120;
             peers.forEach((peer, id) => {
                 if (id === myId || now - (peer.last || 0) >= 15000) return;
                 const sample = samplePeer(peer, target) || peer;
                 drawCat(V, P, sample.x, .6, sample.z, (sample.yaw || 0) + PI, now*.005*MIN(3,peer.speed||0), .1, PEER_COL);
                 // -- PART: Orb --
                 gl.depthMask(false);
-                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
                 gl.depthMask(true);
-                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
                 // -- /PART: Orb --
             });
         }

@@ -175,7 +175,7 @@
     const peers = new Map(); // id -> interpolated player and skill state
     const remoteEnemies = new Map(); // owner id -> Map(enemy id -> predicted enemy)
     const remoteShots = [];
-    let mmoSendTimer = 0, enemySendTimer = 0;
+    let mmoSendTimer = 0;
 
     // Peer interpolation delay (ms). Higher = smoother but more laggy. 120ms is a good balance.
     function pushPeerSample(peer, x, z, yaw, now){
@@ -225,7 +225,7 @@
     function disconnectMMO(){
         try { if (ws) ws.close(); } catch(_){}
         ws = null; myId = null; peers.clear();remoteEnemies.clear();remoteShots.length=0;
-        mmoSendTimer=enemySendTimer=0;
+        mmoSendTimer=0;
         // LOG disabled: logMMO('disabled');
     }
 
@@ -398,10 +398,6 @@
                         '|'+damage*(1+damageBonus)+
                         '|'+SPAWN_BEACONS.slice(1,5).flatMap(beacon=>[beacon[0],beacon[1],beacon[3]?(beacon[4]/beacon[5]).toFixed(2):-1]);
             sendMMO(message);
-        }
-        enemySendTimer+=dt;
-        if(enemySendTimer>=.2){
-            enemySendTimer=0;
             sendMMO('e|'+myId+'|'+enemies.map(enemy=>[enemy.i,enemy.v,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
         }
     }
@@ -713,7 +709,7 @@
         for(let z=cz-15;z<=cz+15;z++)for(let x=cx-15;x<=cx+15;x++){
             if(ABS(x)<2&&ABS(z)<2||cityHash(x,z)<.28+HYPOT(x,z)/72)continue;
             const side=cityHash(x,z,1)>.5,wall=8+10*(HYPOT(x,z)/12|0)+ABS(x-z)%3*.3,width=side?wall:8+cityHash(x,z,1)*4,depth=side?8+cityHash(x,z,2)*4:wall,height=6+cityHash(x,z,3)*26,building={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w:width,d:depth,h:height};
-            building.r=MIN(width,depth)*.43;next.push(building);
+            next.push(building);
         }
         if(next.length)buildings=next;
     }
@@ -790,20 +786,24 @@
             enemy.max=enemy.hp=CEIL(enemy.max*(enemy.mut+2));
         }
     }
-    function spawnEnemy(enemy,anchorX=player.x,anchorZ=player.z,minRadius=35,range=20){
-        let angle,radius,valid;
+    function spawnEnemy(enemy){
+        const beacon=enemy.b&&SPAWN_BEACONS.find(beacon=>beacon[6]===enemy.b),anchorX=beacon?beacon[0]:player.x,anchorZ=beacon?beacon[1]:player.z;
+        if(enemy.b&&!beacon){enemy.dead=1;return;}
+        let angle,radius,x,z,valid;
         // Keep new enemies at least 50 units away from active peers.
-        for(let attempts=30;attempts--;){
+        for(let attempts=100;attempts--;){
             angle=rng()*PI*2;
-            radius=minRadius+rng()*range;
-            enemy.x=anchorX+COS(angle)*radius;
-            enemy.z=anchorZ+SIN(angle)*radius;
+            radius=beacon?18+rng()*10:35+rng()*20;
+            x=anchorX+COS(angle)*radius;
+            z=anchorZ+SIN(angle)*radius;
             valid=1;
-            peers.forEach(peer=>valid&=HYPOT(peer.x-enemy.x,peer.z-enemy.z)>=50);
-            valid&=!insideBuilding(enemy.x,enemy.z,.6);
+            peers.forEach(peer=>valid&=HYPOT(peer.x-x,peer.z-z)>=50);
+            valid&=!insideBuilding(x,z,.6);
             if(valid)break;
         }
-        enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.s=0;enemy.h=[];
+        // If every attempt fails, keep the last candidate; the stuck timer retries.
+        enemy.x=x;enemy.z=z;
+        enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.s=enemy.dead=0;enemy.h=[];
         enemy.v=++enemyVersion;
         setEnemyPower(enemy);
         return enemy;
@@ -819,7 +819,7 @@
         if(ordinary>target+3)for(let i=enemies.length;i--&&ordinary>target;)if(!enemies[i].b){enemies.splice(i,1);ordinary--;}
     }
     function spawnBeaconWave(beacon){
-        for(let count=10;count--;)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6]},beacon[0],beacon[1],18,10));
+        for(let count=10;count--;)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6]}));
     }
     function startBeacon(beacon){
         const danger=worldPower(beacon[0],beacon[1]);
@@ -930,6 +930,7 @@
     }
     function damageNumber(x,z,amount){damageNumbers.push({x,y:1.4,z,n:ROUND(amount),t:1});}
     function hurt(enemy,amount,killer){
+        if(enemy.dead)return;
         amount=MIN(enemy.hp,MAX(1,amount|0));enemy.hp-=amount;damageNumber(enemy.x,enemy.z,amount);
         if(!myId||killer===myId)runStats.dealt+=amount; // damage addition
         else sendMMO(`a|${killer}|${amount}`);
@@ -939,12 +940,13 @@
         const x=enemy.x,z=enemy.z,version=enemy.v,tier=enemy.tier,mutation=enemy.mut;
         if(!myId||killer===myId){runStats.defeated++;playImpactSound(x,z,1);dropReward(x,z,enemy.max);}
         if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
-        enemy.b?enemies.splice(enemies.indexOf(enemy),1):spawnEnemy(enemy);
+        enemy.b?enemy.dead=1:spawnEnemy(enemy);
     }
     function updateEnemies(dt){
         skillTime+=dt;
         syncEnemyPopulation();
         for(const enemy of enemies){
+            if(enemy.dead)continue;
             let tx=player.x,tz=player.z,best=(tx-enemy.x)**2+(tz-enemy.z)**2,now=performance.now(),self=1,targetBeacon;
             peers.forEach(peer=>{const distance=(peer.x-enemy.x)**2+(peer.z-enemy.z)**2;if(now-peer.last<15000&&distance<best){best=distance;tx=peer.x;tz=peer.z;self=0;}});
             for(let i=1;i<SPAWN_BEACONS.length;i++){
@@ -962,13 +964,13 @@
             const px=enemy.x,pz=enemy.z;
             enemy.x+=enemy.vx*dt;enemy.z+=enemy.vz*dt;
             const wall=resolveCityCollision(enemy,.45,px,pz);
-            if(wall){const side=enemy.i&1?maxSpeed:-maxSpeed;enemy.vx=side*(wall===1);enemy.vz=side*(wall<0);}
+            if(wall){const side=SIGN((wall===1?enemy.vx||dx:enemy.vz||dz)||1)*maxSpeed;enemy.vx=side*(wall===1);enemy.vz=side*(wall<0);}
             if((enemy.s=HYPOT(enemy.x-px,enemy.z-pz)<dt?enemy.s+dt:0)>1){spawnEnemy(enemy);continue;}
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
             if(targetBeacon&&distance<.6+enemy.scale*.6){
                 targetBeacon[4]-=enemy.hp;
-                enemy.b?enemies.splice(enemies.indexOf(enemy),1):spawnEnemy(enemy);
+                enemy.b?enemy.dead=1:spawnEnemy(enemy);
                 continue;
             }
             if(self&&distance<.6+enemy.scale*.6){
@@ -985,17 +987,18 @@
             let hitIndex=0;
             for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){
                 const count=orbCounts[tier+1],angle=orbPhase(skillTime,tier)+i*PI*2/count,radius=orbRadius(tier),ox=player.x+COS(angle)*radius,oz=player.z+SIN(angle)*radius;
-                if((enemy.h[hitIndex]||0)<skillTime&&(enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){hurt(enemy,damage*(1+damageBonus)*(tier+2),myId);enemy.h[hitIndex]=skillTime+.15;}hitIndex++;
+                if((enemy.h[hitIndex]||0)<skillTime&&(enemy.x-ox)**2+(enemy.z-oz)**2<(.25+.5*enemy.scale)**2){hurt(enemy,damage*(1+damageBonus)*(tier+2),myId);enemy.h[hitIndex]=skillTime+.15;}hitIndex++;
             }
             peers.forEach((peer,id)=>{
                 const hits=peer.oh[enemy.i]||(peer.oh[enemy.i]=[]);
                 let hitIndex=0;
                 if(now-peer.last<15000)for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){
                     const count=peer.orbs[tier+1],angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/count,radius=orbRadius(tier),ox=peer.x+COS(angle)*radius,oz=peer.z+SIN(angle)*radius;
-                    if((hits[hitIndex]||0)<now&&(enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){hurt(enemy,peer.d*(tier+2),id);hits[hitIndex]=now+150;}hitIndex++;
+                    if((hits[hitIndex]||0)<now&&(enemy.x-ox)**2+(enemy.z-oz)**2<(.25+.5*enemy.scale)**2){hurt(enemy,peer.d*(tier+2),id);hits[hitIndex]=now+150;}hitIndex++;
                 }
             });
         }
+        for(let i=enemies.length;i--;)if(enemies[i].dead)enemies.splice(i,1);
     }
     function updateRemoteEnemies(dt){
         const now=performance.now();
@@ -1116,7 +1119,7 @@
     if (player.y - 1.6 < 0) player.y = 1.6;
     }
 
-    // Circle against all building footprints, preserving a free movement axis.
+    // Reject blocked axes against all footprints; preserve the free sliding axis.
     function resolveCityCollision(entity,radius,prevX,prevZ){
         const x=entity.x,z=entity.z;if(!buildingAt(x,z,radius))return 0;
         entity.z=prevZ;

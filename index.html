@@ -968,8 +968,8 @@
             enemy.x+=enemy.vx*dt;enemy.z+=enemy.vz*dt;
             const building=buildingAt(enemy.x,enemy.z),cityHit=resolveCityCollision(enemy,.45,px,pz);
             // Preserve sideways momentum; use ID only to break a head-on tie.
-            if(cityHit&1){enemy.vx=0;enemy.vz=SIGN(enemy.vz||dz||enemy.i%2||-1)*maxSpeed;}
-            if(cityHit&2){enemy.vz=0;enemy.vx=SIGN(enemy.vx||dx||enemy.i%2||-1)*maxSpeed;}
+            if(cityHit&1){enemy.vx=0;enemy.vz=SIGN(enemy.vz||dz||1)*maxSpeed;}
+            if(cityHit&2){enemy.vz=0;enemy.vx=SIGN(enemy.vx||dx||1)*maxSpeed;}
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
             enemy.hit-=dt;
@@ -1481,11 +1481,11 @@
         if(type===0)return `+${power} ORB`;
         if(type===8)return '+1 EVO ORB';
         if(type===9)return '+1 EVO BOLT';
-        if(type===10)return `+${power}% DMG`;
-        if(type===11)return `+${power}% HP`;
+        if(type===10)return `+${power}% DMG (${ROUND(damage*power)/100})`;
+        if(type===11)return `+${power}% HP (${ROUND(maxHp/(1+healthBonus)*power)/100})`;
         if(type===3)return `+${power} BOLT`;
-        if(type===4)return `+${ROUND(.35*(SQRT(movePower+power)-SQRT(movePower))*100)/100} SPD`;
-        if(type===5)return `+${ROUND((cooldown(cooldownPower)/cooldown(cooldownPower+power)-1)*100)}% RATE`;
+        if(type===4)return '+0.03 MOVE';
+        if(type===5)return `+${(1/cooldown(cooldownPower+power)-1/cooldown(cooldownPower)).toFixed(2)} RATE`;
         if(type===6)return `+${power*20} HP`;
         return `+${power} DMG`;
     }

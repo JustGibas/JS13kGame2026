@@ -284,7 +284,7 @@
                     peer.ot=now;
                     peer.d=+parts[7];
                     const group=new Map(),fields=parts[8].split(',').map(Number);
-                    for(let i=0;i<MIN(12,fields.length);i+=3){const x=fields[i],z=fields[i+1],tier=beaconTier(x,z),health=MIN(1,MAX(-1,fields[i+2]));if(nearCity(x,z)){const beacon=[x,z,tier,health>=0,MAX(0,health),1];group.set(i,beacon);}}
+                    for(let i=0;i<MIN(12,fields.length);i+=3){const x=fields[i],z=fields[i+1],tier=beaconTier(x,z),health=MIN(1,MAX(-1,fields[i+2])),beacon=[x,z,tier,health>=0,MAX(0,health),1];group.set(i,beacon);}
                     peer.b=group;
                     peers.set(id, peer);
                 }
@@ -959,21 +959,17 @@
             // Recycle abandoned enemies and never allow a powerful enemy inside the starter zone.
             if(best>75**2){spawnEnemy(enemy);continue;}
             if(HYPOT(enemy.x,enemy.z)<STARTER_RADIUS&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.scale=1;enemy.max=enemy.hp=1;}
-            let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3,turn=enemy.i&1?1:-1;
-            const building=buildingAt(enemy.x,enemy.z);if(building){
-                let ox=enemy.x-building.x,oz=enemy.z-building.z,od=HYPOT(ox,oz)||1,radius=building.r+2;
-                if(od<radius){fx+=(ox*(radius-od)-oz*turn)/od*3;fz+=(oz*(radius-od)+ox*turn)/od*3;}
-            }
+            let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3;
             enemy.vx+=fx*dt;enemy.vz+=fz*dt;
             // HP drives movement speed logarithmically, including mutation HP.
             let speed=HYPOT(enemy.vx,enemy.vz)||1;
             if(speed>maxSpeed){enemy.vx*=maxSpeed/speed;enemy.vz*=maxSpeed/speed;speed=maxSpeed;}
             const px=enemy.x,pz=enemy.z;
             enemy.x+=enemy.vx*dt;enemy.z+=enemy.vz*dt;
-            const cityHit=resolveCityCollision(enemy,.45,px,pz);
-            // Keep the same turn direction during avoidance and wall contact so the forces cannot cancel.
-            if(cityHit&1){enemy.vx=0;enemy.vz+=SIGN(enemy.x-building.x)*turn*maxSpeed;}
-            if(cityHit&2){enemy.vz=0;enemy.vx-=SIGN(enemy.z-building.z)*turn*maxSpeed;}
+            const building=buildingAt(enemy.x,enemy.z),cityHit=resolveCityCollision(enemy,.45,px,pz);
+            // Preserve sideways momentum; use ID only to break a head-on tie.
+            if(cityHit&1){enemy.vx=0;enemy.vz=SIGN(enemy.vz||dz||enemy.i%2||-1)*maxSpeed;}
+            if(cityHit&2){enemy.vz=0;enemy.vx=SIGN(enemy.vx||dx||enemy.i%2||-1)*maxSpeed;}
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
             enemy.hit-=dt;

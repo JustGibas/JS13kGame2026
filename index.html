@@ -268,7 +268,7 @@
         */
         const payload=message;
         // Expected: p|id|x|z|yaw|orbs|orbPhase|damage
-        if(payload[0]==='p'){
+        if(command==='p'){
             const parts = payload.split('|');
             const id = parts[1];
                 if(id!==myId){
@@ -289,7 +289,7 @@
                     peers.set(id, peer);
                 }
         }
-        if(payload[0]==='v'){
+        if(command==='v'){
             const parts=payload.split('|'),index=parts[1]===myId&&SPAWN_BEACONS.findIndex(beacon=>beacon[0]==parts[2]&&beacon[1]==parts[3]);
             if(index>0&&!SPAWN_BEACONS[index][3]){SPAWN_BEACONS.splice(index,1);const beacon=spawnBeacon();if(beacon)SPAWN_BEACONS.push(beacon);}
         }
@@ -299,7 +299,7 @@
             if (id !== myId) say((id || '?').slice(-4) + ': ' + parts.slice(2).join('|').slice(0,64));
         }
         */
-        if(payload[0]==='e'){
+        if(command==='e'){
             const parts=payload.split('|'),
                 owner=parts[1];
 
@@ -316,7 +316,7 @@
 
                     let enemy=group.get(id);
                     if(!enemy||enemy.v!==fields[1]){
-                        enemy={i:id,v:fields[1],x:fields[2],z:fields[3],yaw:fields[4],hp:fields[6],hit:0,h:0};
+                        enemy={i:id,v:fields[1],x:fields[2],z:fields[3],yaw:fields[4],hit:0};
                     }else if(fields[6]<enemy.hp){
                         damageNumber(enemy.x,enemy.z,enemy.hp-fields[6]);
                     }
@@ -340,11 +340,11 @@
                 remoteEnemies.set(owner,group);
             }
         }
-        if(payload[0]==='k'){
+        if(command==='k'){
             const parts=payload.split('|'),enemy=parts[1]===myId&&enemies.find(enemy=>enemy.i===+parts[2]);
             if(enemy&&enemy.v===+parts[3])spawnEnemy(enemy);
         }
-        if(payload[0]==='d'){
+        if(command==='d'){
             const parts=payload.split('|'),
                 group=remoteEnemies.get(parts[1]),
                 enemy=group&&group.get(+parts[2]);
@@ -363,17 +363,17 @@
                 enemy.dead=1;
             }
         }
-        if(payload[0]==='a'){
+        if(command==='a'){
             const parts=payload.split('|');if(parts[1]===myId)runStats.dealt+=+parts[2];
         }
-        if(payload[0]==='s'){
+        if(command==='s'){
             const parts=payload.split('|');
             if(parts[1]!==myId&&peers.has(parts[1])&&nearCity(+parts[2],+parts[3])){
                 remoteShots.push({o:parts[1],x:+parts[2],y:.7,z:+parts[3],vx:+parts[4],vz:+parts[5],d:+parts[6],i:+parts[7],t:3,c:MIN(6,MAX(-1,+parts[8]))});
                 playShotSound(+parts[2],+parts[3]);
             }
         }
-        if(payload[0]==='x'){
+        if(command==='x'){
             const parts=payload.split('|'),
                 list=parts[1]===myId?shots:remoteShots;
 
@@ -763,14 +763,14 @@
     let hp=100;
     let maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
-    const orbitPhase=time=>2.5*(15-ABS(time%30-15)),orbPhase=(time,tier)=>orbitPhase(time)*(1+(tier+1)*.08)+(tier+1)*1.7,cooldown=power=>MAX(.15,1/(1/3+.15*SQRT(power)));
+    const orbitPhase=time=>2.5*(15-ABS(time%30-15)),orbPhase=(time,tier)=>orbitPhase(time)*(1+(tier+1)*.08)+(tier+1)*1.7,orbRadius=tier=>tier<0?2.5:4+tier*1.5,cooldown=power=>MAX(.15,1/(1/3+.15*SQRT(power)));
     // World rings drive population and power; starter protection has a smaller independent radius.
-    const STARTER_RADIUS=50,worldPower=(x,z)=>HYPOT(x,z)/100|0,beaconTier=(x,z)=>MIN(6,worldPower(x,z),-LOG(cityHash(x,z))|0),enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3;
+    const STARTER_RADIUS=50,worldPower=(x,z)=>HYPOT(x,z)/100|0,beaconTier=(x,z)=>MIN(6,worldPower(x,z),-LOG(cityHash(x,z))|0),enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3,scaledHealth=(danger,tier)=>CEIL((1+danger*1.8)*powerValue(tier)*EXP(skillTime/60*.08*danger/(1+danger)));
     function makeBeacon(x,z){x=ROUND(x*10)/10;z=ROUND(z*10)/10;return [x,z,beaconTier(x,z),0,0,0,0,0];}
     function spawnBeacon(){
         let fallback;
         for(let attempts=120;attempts--;){
-            const angle=rng()*PI*2,radius=160+rng()*80,x=player.x+COS(angle)*radius,z=player.z+SIN(angle)*radius;
+            const angle=rng()*PI*2,radius=100+rng()*50,x=player.x+COS(angle)*radius,z=player.z+SIN(angle)*radius;
             let valid=HYPOT(x,z)>=STARTER_RADIUS&&SPAWN_BEACONS.every(beacon=>HYPOT(beacon[0]-x,beacon[1]-z)>=90)&&!buildings.some(building=>ABS(x-building.x)<building.w/2+6&&ABS(z-building.z)<building.d/2+6),now=performance.now();
             peers.forEach(peer=>valid&=now-peer.last>15000||HYPOT(peer.x-x,peer.z-z)>=50);
             if(valid){fallback||=[x,z];if(HYPOT(x,z)>HYPOT(player.x,player.z))return makeBeacon(x,z);}
@@ -786,7 +786,7 @@
         enemy.tier=cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):rng()*(cap+1)|0):0;
         enemy.mut=-1;enemy.scale=1;
         // Exponential time scaling is gated by distance, preserving one-HP origin enemies forever.
-        enemy.max=enemy.hp=CEIL((1+danger*1.8)*powerValue(enemy.tier)*EXP(time*.08*danger/(1+danger)));
+        enemy.max=enemy.hp=scaledHealth(danger,enemy.tier);
         const mutationChance=1-EXP(-(danger*.018+time*.006)*danger/(1+danger));
         if(danger&&rng()<mutationChance){
             enemy.mut=0;while(enemy.mut<6&&rng()<.32)enemy.mut++;
@@ -795,10 +795,10 @@
             enemy.max=enemy.hp=CEIL(enemy.max*(enemy.mut+2));
         }
     }
-    function spawnEnemy(enemy,anchorX=player.x,anchorZ=player.z,minRadius=50,range=25){
+    function spawnEnemy(enemy,anchorX=player.x,anchorZ=player.z,minRadius=35,range=20){
         let angle,radius,valid;
         // Keep new enemies at least 50 units away from active peers.
-        for(let attempts=10;attempts--;){
+        for(let attempts=30;attempts--;){
             angle=rng()*PI*2;
             radius=minRadius+rng()*range;
             enemy.x=anchorX+COS(angle)*radius;
@@ -808,7 +808,7 @@
             valid&=!insideBuilding(enemy.x,enemy.z,.6);
             if(valid)break;
         }
-        enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.hit=0;enemy.h=[];
+        enemy.vx=enemy.vz=enemy.yaw=enemy.anim=0;enemy.h=[];
         enemy.v=++enemyVersion;
         setEnemyPower(enemy);
         return enemy;
@@ -827,8 +827,8 @@
         for(let count=10;count--;)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6]},beacon[0],beacon[1],18,10));
     }
     function startBeacon(beacon){
-        const danger=worldPower(beacon[0],beacon[1]),time=skillTime/60;
-        beacon[3]=1;beacon[4]=beacon[5]=10*CEIL((1+danger*1.8)*powerValue(beacon[2])*EXP(time*.08*danger/(1+danger)));beacon[6]=++beaconEvent;beacon[7]=0;
+        const danger=worldPower(beacon[0],beacon[1]);
+        beacon[3]=1;beacon[4]=beacon[5]=10*scaledHealth(danger,beacon[2]);beacon[6]=++beaconEvent;beacon[7]=0;
         spawnBeaconWave(beacon);playMotif(beacon[0],beacon[1]);
     }
     function activateBeacons(){
@@ -862,11 +862,10 @@
         level=1;
         xp=0;
         choosing=0;
-        orbCounts.length=1;orbCounts[0]=1;
         runStats.defeated=0;
         runStats.dealt=0;
         skillTime=0;
-        boltTimes.length=evolutionQueue.length=0;boltCounts.length=1;boltCounts[0]=1;claimedBeacons.clear();
+        boltTimes.length=evolutionQueue.length=0;orbCounts.length=boltCounts.length=1;orbCounts[0]=boltCounts[0]=1;claimedBeacons.clear();
         damageBonus=healthBonus=0;
         damage=1;
         cooldownPower=0;
@@ -957,7 +956,7 @@
                 if(beacon[3]&&distance<best){best=distance;tx=beacon[0];tz=beacon[1];self=0;targetBeacon=beacon;}
             }
             // Recycle abandoned enemies and never allow a powerful enemy inside the starter zone.
-            if(best>75**2){spawnEnemy(enemy);continue;}
+            if(best>60**2){spawnEnemy(enemy);continue;}
             if(HYPOT(enemy.x,enemy.z)<STARTER_RADIUS&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.scale=1;enemy.max=enemy.hp=1;}
             let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3;
             enemy.vx+=fx*dt;enemy.vz+=fz*dt;
@@ -972,13 +971,12 @@
             if(cityHit&2){enemy.vz=0;enemy.vx=SIGN(enemy.vx||dx||1)*maxSpeed;}
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
-            enemy.hit-=dt;
             if(targetBeacon&&distance<.6+enemy.scale*.6){
                 targetBeacon[4]-=enemy.max;
                 enemy.b?enemies.splice(enemies.indexOf(enemy),1):spawnEnemy(enemy);
                 continue;
             }
-            if(self&&distance<.6+enemy.scale*.6&&enemy.hit<0){
+            if(self&&distance<.6+enemy.scale*.6){
                 //player.x+=dx/d*(2+c.tier*.2); // knockback
                 //player.z+=dz/d*(2+c.tier*.2); // knockback
                 //player.y+=dz/d*(2+c.tier*.2);
@@ -990,14 +988,14 @@
             }
             let hitIndex=0;
             for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){
-                const count=orbCounts[tier+1],angle=orbPhase(skillTime,tier)+i*PI*2/count,radius=tier<0?2.5:4+tier*1.5,ox=player.x+COS(angle)*radius,oz=player.z+SIN(angle)*radius;
+                const count=orbCounts[tier+1],angle=orbPhase(skillTime,tier)+i*PI*2/count,radius=orbRadius(tier),ox=player.x+COS(angle)*radius,oz=player.z+SIN(angle)*radius;
                 if((enemy.h[hitIndex]||0)<skillTime&&(enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){hurt(enemy,damage*(1+damageBonus)*(tier+2),myId);enemy.h[hitIndex]=skillTime+.15;}hitIndex++;
             }
             peers.forEach((peer,id)=>{
                 const hits=peer.oh[enemy.i]||(peer.oh[enemy.i]=[]);
                 let hitIndex=0;
                 if(now-peer.last<15000)for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){
-                    const count=peer.orbs[tier+1],angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/count,radius=tier<0?2.5:4+tier*1.5,ox=peer.x+COS(angle)*radius,oz=peer.z+SIN(angle)*radius;
+                    const count=peer.orbs[tier+1],angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/count,radius=orbRadius(tier),ox=peer.x+COS(angle)*radius,oz=peer.z+SIN(angle)*radius;
                     if((hits[hitIndex]||0)<now&&(enemy.x-ox)**2+(enemy.z-oz)**2<.75**2){hurt(enemy,peer.d*(tier+2),id);hits[hitIndex]=now+150;}hitIndex++;
                 }
             });
@@ -1042,7 +1040,7 @@
             if(!remote&&projectile.t>0)remoteHit:
                 for(const [owner,group] of remoteEnemies)
                     for(const enemy of group.values())
-                        if(!enemy.dead&&(enemy.x-projectile.x)**2+(enemy.z-projectile.z)**2<(.5+radius)**2){
+                        if(!enemy.dead&&(enemy.x-projectile.x)**2+(enemy.z-projectile.z)**2<(.5*enemy.scale+radius)**2){
                             playImpactSound(enemy.x,enemy.z);
                             projectile.t=0;
                             break remoteHit;
@@ -2023,7 +2021,7 @@
         // -- PART: Projectile --
         gl.depthMask(false);
         for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br*1.14,projectile.c<0?WHITE:POWER[projectile.c][1]);
-        for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,.164,projectile.c<0?WHITE:POWER[projectile.c][1]);
+        for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br*1.14,projectile.c<0?WHITE:POWER[projectile.c][1]);
         gl.depthMask(true);
         for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
         for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
@@ -2031,9 +2029,9 @@
         // -- PART: Orb --
         // Local and peer loops intentionally repeat: PPMd compresses them smaller than a shared renderer.
         gl.depthMask(false);
-        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=tier<0?2.5:4+tier*1.5;drawSphere(V,P,player.x+COS(angle)*radius,.7,player.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
+        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(V,P,player.x+COS(angle)*radius,.7,player.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
         gl.depthMask(true);
-        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=tier<0?2.5:4+tier*1.5;drawSphere(V,P,player.x+COS(angle)*radius,.7,player.z+SIN(angle)*radius,.25,BLACK);}
+        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(V,P,player.x+COS(angle)*radius,.7,player.z+SIN(angle)*radius,.25,BLACK);}
         // -- /PART: Orb --
         if(peers.size){
             const now = performance.now(), target = now - 120;
@@ -2043,9 +2041,9 @@
                 drawCat(V, P, sample.x, .6, sample.z, (sample.yaw || 0) + PI, now*.005*MIN(3,peer.speed||0), .1, PEER_COL);
                 // -- PART: Orb --
                 gl.depthMask(false);
-                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=tier<0?2.5:4+tier*1.5;drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
                 gl.depthMask(true);
-                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=tier<0?2.5:4+tier*1.5;drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.ot)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
                 // -- /PART: Orb --
             });
         }

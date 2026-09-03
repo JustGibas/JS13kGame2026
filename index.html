@@ -925,8 +925,8 @@
     function dropReward(x,z,maxHealth){
         const count=MAX(1,1+ROUND(LOG2(maxHealth/3))),width=MIN(7,count);
         for(let i=count;i--;){const roll=rng();items.push({x:x+(i%width-(width-1)/2)*.35,y:.16,z:z+FLOOR(i/width)*.35,r:.4,t:roll<.02?2:roll<.08?1:0});}
-        // while(items.length>1000)items.shift();
-        while(items.length>10000)items.shift();
+        while(items.length>1000)items.shift();
+        // while(items.length>10000)items.shift();
     }
     function damageNumber(x,z,amount){damageNumbers.push({x,y:1.4,z,n:ROUND(amount),t:1});}
     function hurt(enemy,amount,killer){
@@ -968,7 +968,7 @@
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
             if(targetBeacon&&distance<.6+enemy.scale*.6){
-                targetBeacon[4]-=enemy.max;
+                targetBeacon[4]-=enemy.hp;
                 enemy.b?enemies.splice(enemies.indexOf(enemy),1):spawnEnemy(enemy);
                 continue;
             }
@@ -976,7 +976,7 @@
                 //player.x+=dx/d*(2+c.tier*.2); // knockback
                 //player.z+=dz/d*(2+c.tier*.2); // knockback
                 //player.y+=dz/d*(2+c.tier*.2);
-                hp-=enemy.max;
+                hp-=enemy.hp;
                 playHurtSound();
                 spawnEnemy(enemy);
                 if(hp<1){resetRun();return;} // DEAD
@@ -1004,7 +1004,7 @@
             const interpolation=MIN(1,dt*8);enemy.x=lerp(enemy.x,enemy.tx,interpolation);enemy.z=lerp(enemy.z,enemy.tz,interpolation);enemy.yaw=lerpAngle(enemy.yaw||enemy.tyaw,enemy.tyaw,interpolation);enemy.hit-=dt;
             if((player.x-enemy.x)**2+(player.z-enemy.z)**2<(.6+enemy.scale*.6)**2&&enemy.hit<0){
                 // KNOCKBACK disabled: let dx=player.x-enemy.x,dz=player.z-enemy.z,distance=HYPOT(dx,dz)||1;player.x+=dx/distance*(2+enemy.tier*.2);player.z+=dz/distance*(2+enemy.tier*.2);
-                hp-=enemy.max;enemy.hit=1;playHurtSound();
+                hp-=enemy.hp;enemy.hit=1;playHurtSound();
                 sendMMO(`k|${owner}|${enemy.i}|${enemy.v}`);
                 if(hp<1)resetRun();
             }

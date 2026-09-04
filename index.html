@@ -26,7 +26,7 @@
     <!-- <meta name="viewport" content="width=device-width, user-scalable=no"> -->
     <title>Void City Survivors</title>
     <!--meta name="author" content="Justinas Gibas" /-->
-    <!--<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="55%" x="50%" dominant-baseline="middle" text-anchor="middle" font-size="80">🐈‍⬛</text></svg>'>-->
+    <!--<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="55%" x="50%" dominant-baseline="middle" text-anchor="middle" font-size="80">🕳️</text></svg>'>-->
     <style>
         * {
             -webkit-user-select: none;
@@ -136,8 +136,8 @@
     
 
 
-    // Creates a translation and scale matrix
-    function translateScale(x,y,z,sx,sy,sz) { return new F32([sx,0,0,0, 0,sy,0,0, 0,0,sz,0, x,y,z,1]); }
+    // Shared translation/scale scratch matrix: upload or copy before the next call.
+    function translateScale(x,y,z,sx,sy,sz) { M.set([sx,0,0,0, 0,sy,0,0, 0,0,sz,0, x,y,z,1]);return M; }
     // -- /PART: Math --
 
     // -- PART: Runtime --
@@ -1544,7 +1544,7 @@
     // Returns the correct local transform for the HUD based on its visibility state
     function getHudTransform() {
         // translate(X, Y, Z): X=horizontal; Y=open -.05, closed/choices .5; Z=closed VR -1.5m, everything else -1.15m.
-        return new DOMMatrix().translate(0,hudVisible?-.05:.5,xr&&!hudVisible?-1.5:-1.15).toFloat32Array();
+        return translateScale(0,hudVisible?-.05:.5,xr&&!hudVisible?-1.5:-1.15,1,1,1);
     }
 
     // --- HUD Interaction Needs Input-ray ---
@@ -1826,13 +1826,10 @@
     const uS_P = gl.getUniformLocation(PC,'P');
     const uS_Color = gl.getUniformLocation(PC,'col');
 
-    function drawSphere(V,P,x,y,z,radius,color){
-        gl.useProgram(PC);
-        gl.bindVertexArray(sphereVao);
+    // drawWorld binds PC, the eye matrices, and sphereVao before all sphere draws.
+    function drawSphere(x,y,z,radius,color){
         const Msp = translateScale(x,y,z,radius,radius,radius);
         gl.uniformMatrix4fv(uS_M,false,Msp);
-        gl.uniformMatrix4fv(uS_V,false,V);
-        gl.uniformMatrix4fv(uS_P,false,P);
         gl.uniform4f(uS_Color,color[0],color[1],color[2],color[3]??1);
         gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
     }
@@ -1951,7 +1948,7 @@
             const wx = x + (lx*cy + lz*sy)*scale;
             const wz = z + (lz*cy - lx*sy)*scale;
             // Scale around the ground-contact line so large mutants grow upward instead of floating.
-            drawSphere(Vmat, Pmat, wx, .12+(y+ly-.12)*scale, wz, radius*shell*scale, col);
+            drawSphere(wx, .12+(y+ly-.12)*scale, wz, radius*shell*scale, col);
         }
         // Torso: three overlapping spheres from the chest to the rump.
         place(.10,0,0,.25);   // Chest / front of body.
@@ -2018,20 +2015,20 @@
     // -- /PART: Camera --
 
     function drawWorld(V, P, W) {
-        drawCity(V,P);
+        drawCity(V,P);gl.bindVertexArray(sphereVao);
         const now=performance.now(),tt=now*.001,br=.144,live=enemy=>!enemy.dead&&now-enemy.last<15000;
         // -- PART: XP --
         // Mesh and ghost loops intentionally remain separate: a shared pass helper is larger.
-        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,radius=.14+SIN(angle)*.025;item.t===2?(drawSphere(V,P,item.x-.08,item.y,item.z,radius,POWER[0][1]),drawSphere(V,P,item.x+.08,item.y,item.z,radius,POWER[5][1])):drawSphere(V,P,item.x,item.y,item.z,radius,item.t===1?POWER[3][1]:WHITE);}
+        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,radius=.14+SIN(angle)*.025;item.t===2?(drawSphere(item.x-.08,item.y,item.z,radius,POWER[0][1]),drawSphere(item.x+.08,item.y,item.z,radius,POWER[5][1])):drawSphere(item.x,item.y,item.z,radius,item.t===1?POWER[3][1]:WHITE);}
         // -- /PART: XP --
         gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
         // -- PART: XP --
-        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,color=item.t===1?[.05,.8,.12,.2]:item.t===2?[.5,.1,1,.25]:[1,1,1,.08+ABS(SIN(angle))*.18];drawSphere(V,P,item.x+COS(angle)*.06,item.y+.025,item.z+SIN(angle)*.06,.2,color);}
+        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,color=item.t===1?[.05,.8,.12,.2]:item.t===2?[.5,.1,1,.25]:[1,1,1,.08+ABS(SIN(angle))*.18];drawSphere(item.x+COS(angle)*.06,item.y+.025,item.z+SIN(angle)*.06,.2,color);}
         // -- /PART: XP --
         // -- PART: Projectile --
         // Intentional duplication: these similar loops produce a smaller PPMd ZIP than a shared helper.
-        for(const projectile of shots)for(let j=3;j--;){const trailStep=j+1,color=projectile.c<0?WHITE:POWER[projectile.c][1];drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[color[0],color[1],color[2],.2/trailStep]);}
-        for(const projectile of remoteShots)for(let j=3;j--;){const trailStep=j+1,color=projectile.c<0?WHITE:POWER[projectile.c][1];drawSphere(V,P,projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[color[0],color[1],color[2],.2/trailStep]);}
+        for(const projectile of shots)for(let j=3;j--;){const trailStep=j+1,color=projectile.c<0?WHITE:POWER[projectile.c][1];drawSphere(projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[color[0],color[1],color[2],.2/trailStep]);}
+        for(const projectile of remoteShots)for(let j=3;j--;){const trailStep=j+1,color=projectile.c<0?WHITE:POWER[projectile.c][1];drawSphere(projectile.x-projectile.vx*.065*trailStep,projectile.y,projectile.z-projectile.vz*.065*trailStep,br*(1-j*.12),[color[0],color[1],color[2],.2/trailStep]);}
         // -- /PART: Projectile --
         // -- PART: Enemy --
         // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
@@ -2046,18 +2043,18 @@
         // -- /PART: Enemy --
         // -- PART: Projectile --
         gl.depthMask(false);
-        for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br*1.14,projectile.c<0?WHITE:POWER[projectile.c][1]);
-        for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br*1.14,projectile.c<0?WHITE:POWER[projectile.c][1]);
+        for(const projectile of shots)drawSphere(projectile.x,projectile.y,projectile.z,br*1.14,projectile.c<0?WHITE:POWER[projectile.c][1]);
+        for(const projectile of remoteShots)drawSphere(projectile.x,projectile.y,projectile.z,br*1.14,projectile.c<0?WHITE:POWER[projectile.c][1]);
         gl.depthMask(true);
-        for(const projectile of shots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
-        for(const projectile of remoteShots)drawSphere(V,P,projectile.x,projectile.y,projectile.z,br,BLACK);
+        for(const projectile of shots)drawSphere(projectile.x,projectile.y,projectile.z,br,BLACK);
+        for(const projectile of remoteShots)drawSphere(projectile.x,projectile.y,projectile.z,br,BLACK);
         // -- /PART: Projectile --
         // -- PART: Orb --
         // Local and peer loops intentionally repeat: PPMd compresses them smaller than a shared renderer.
         gl.depthMask(false);
-        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(V,P,player.x+COS(angle)*radius,player.y-.9,player.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
+        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(player.x+COS(angle)*radius,player.y-.9,player.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
         gl.depthMask(true);
-        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(V,P,player.x+COS(angle)*radius,player.y-.9,player.z+SIN(angle)*radius,.25,BLACK);}
+        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(player.x+COS(angle)*radius,player.y-.9,player.z+SIN(angle)*radius,.25,BLACK);}
         // -- /PART: Orb --
         if(peers.size){
             const target = now - 120;
@@ -2067,9 +2064,9 @@
                 drawCat(V, P, sample.x, .6, sample.z, (sample.yaw || 0) + PI, now*.005*MIN(3,peer.speed||0), .1, PEER_COL);
                 // -- PART: Orb --
                 gl.depthMask(false);
-                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
                 gl.depthMask(true);
-                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(V,P,sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
                 // -- /PART: Orb --
             });
         }

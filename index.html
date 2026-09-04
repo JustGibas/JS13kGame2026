@@ -29,10 +29,10 @@
     <!--<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="55%" x="50%" dominant-baseline="middle" text-anchor="middle" font-size="80">🐈‍⬛</text></svg>'>-->
     <style>
         * {
-            user-select: none;
-            /* -webkit-user-select: none; */
-            /* -webkit-touch-callout: none; */
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
             /* -webkit-tap-highlight-color: transparent; */
+            user-select: none;
             touch-action: none;
         }
 
@@ -1933,26 +1933,45 @@
     // supplies the headset's real eye views.
     // -- PART: Character-Renderer --
     const PEER_COL = [.7,.7,.8], BLACK=[0,0,0], WHITE=[1,1,1];
+    // Cat made from 15 spheres: 3 body, 1 head, 4 ears, 4 paws, and 3 tail.
+    // x/y/z = world position; yaw = facing; anim = walking phase; amp = paw movement.
+    // col = color for this pass; shell enlarges sphere radii for the outline/aura;
+    // scale changes the whole cat's size, including the spacing between its parts.
     function drawCat(Vmat, Pmat, x, y, z, yaw, anim, amp, col, shell=1, scale=1){
+        // Rotate the model to its world-facing direction, with the existing -20 offset.
         const cy = COS(yaw-20), sy = SIN(yaw-20);
+        // Local coordinates: +lx toward the head, -lx toward the tail; +ly upward;
+        // +lz and -lz are the two sides. radius controls this individual sphere's size.
         function place(lx, ly, lz, radius){
             const wx = x + (lx*cy + lz*sy)*scale;
             const wz = z + (lz*cy - lx*sy)*scale;
             // Scale around the ground-contact line so large mutants grow upward instead of floating.
             drawSphere(Vmat, Pmat, wx, .12+(y+ly-.12)*scale, wz, radius*shell*scale, col);
         }
-        place(.10,0,0,.25); place(-.05,0,0,.25); place(-.20,0,0,.24);
-        place(.38,.18,0,.20);
-        place(.38,.33,.12,.08);place(.38,.4,.16,.04);
-        place(.38,.33,-.12,.08);place(.38,.4,-.16,.04);
+        // Torso: three overlapping spheres from the chest to the rump.
+        place(.10,0,0,.25);   // Chest / front of body.
+        place(-.05,0,0,.25);  // Middle of body.
+        place(-.20,0,0,.24);  // Rump / back of body.
+        place(.38,.18,0,.20); // Head, forward and above the torso.
+
+        // Each ear has a larger base and a smaller tip, above and beside the head.
+        place(.38,.33,.12,.08);  // Ear base on the +z side.
+        place(.38,.4,.16,.04);   // Ear tip on the +z side.
+        place(.38,.33,-.12,.08); // Ear base on the -z side.
+        place(.38,.4,-.16,.04);  // Ear tip on the -z side.
+
+        // Opposite sine phases move diagonal paw pairs together, alternating up/down.
+        // baseY is the paws' resting height relative to the cat's world y position.
         const CYC=phase=>SIN(phase)*amp,cy0=CYC(anim),cy1=CYC(anim+PI),baseY=-.30;
-        place(.15, baseY + cy0, .14, .09);
-        place(.15, baseY + cy1,-.14, .09);
-        place(-.25, baseY + cy1, .15, .09);
-        place(-.25, baseY + cy0,-.15, .09);
-        place(-.40,.15, cy0*.5,.14);
-        place(-.55,.25, 0,.12);
-        place(-.70,.30, cy1*.6,.11);
+        place(.15, baseY + cy0, .14, .09);  // Front paw, +z side.
+        place(.15, baseY + cy1,-.14, .09);  // Front paw, -z side.
+        place(-.25, baseY + cy1, .15, .09); // Rear paw, +z side.
+        place(-.25, baseY + cy0,-.15, .09); // Rear paw, -z side.
+
+        // Tail: three shrinking spheres curving upward behind the rump.
+        place(-.40,.15, cy0*.5,.14); // Tail base; sways sideways with the walk cycle.
+        place(-.55,.25, 0,.12);     // Tail middle; stays centered.
+        place(-.70,.30, cy1*.6,.11); // Tail tip; sways opposite to the base.
     }
     // -- /PART: Character-Renderer --
 

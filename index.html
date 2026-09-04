@@ -1194,9 +1194,10 @@
     
         // -- PART: Joystick --
     // Virtual joystick input
-    const jx = input.joy.L.x;
-    const jy = -input.joy.L.y;
-    const jt = -input.joy.R.x;
+    const moveJoy=input.joy[opts[4]?'R':'L'],turnJoy=input.joy[opts[4]?'L':'R'];
+    const jx = moveJoy.x;
+    const jy = -moveJoy.y;
+    const jt = -turnJoy.x;
         // -- /PART: Joystick --
 
         /* GAMEPAD SUPPORT: Standard handheld controller: left stick moves, right stick turns.

@@ -855,7 +855,9 @@
             }
         }
     }
+    let returning=0;
     function resetRun(){
+        returning=0;player.y=1.6;
         level=1;
         xp=0;
         choosing=0;
@@ -980,8 +982,7 @@
                 hp-=enemy.hp;
                 playHurtSound();
                 spawnEnemy(enemy);
-                // DEAD death window would go somhere about here
-                if(hp<1){resetRun();return;}
+                if(hp<1)return;
                 continue;
             }
             let hitIndex=0;
@@ -1003,13 +1004,12 @@
     function updateRemoteEnemies(dt){
         const now=performance.now();
         remoteEnemies.forEach((group,owner)=>group.forEach(enemy=>{
-            if(now-enemy.last>15000||enemy.dead)return;
+            if(hp<1||now-enemy.last>15000||enemy.dead)return;
             const interpolation=MIN(1,dt*8);enemy.x=lerp(enemy.x,enemy.tx,interpolation);enemy.z=lerp(enemy.z,enemy.tz,interpolation);enemy.yaw=lerpAngle(enemy.yaw||enemy.tyaw,enemy.tyaw,interpolation);enemy.hit-=dt;
             if((player.x-enemy.x)**2+(player.z-enemy.z)**2<(.6+enemy.scale*.6)**2&&enemy.hit<0){
                 // KNOCKBACK disabled: let dx=player.x-enemy.x,dz=player.z-enemy.z,distance=HYPOT(dx,dz)||1;player.x+=dx/distance*(2+enemy.tier*.2);player.z+=dz/distance*(2+enemy.tier*.2);
                 hp-=enemy.hp;enemy.hit=1;playHurtSound();
                 sendMMO(`k|${owner}|${enemy.i}|${enemy.v}`);
-                if(hp<1)resetRun();
             }
         }));
     }
@@ -1272,14 +1272,19 @@
     // -- /MODULE: Movement --
     // -- PART: Update --
     function updateWorld(dt, session, frame) {
-        step(dt, getMove(session,frame));
+        if(hp<1){
+            if(!returning){playMotif(undefined,0,1);hudVisible=true;choosing=0;returning=[player.x,player.z,0];}
+            // Round only the two corners; straight sections keep a constant speed.
+            const flight=returning,t=flight[2]+=dt,d=MAX(1,HYPOT(flight[0],flight[1]-2)/50),bend=v=>v<0?0:v<1?v*v/2:v-.5,a=bend(t-1),b=bend(t-d-1),step=1-(a-b)/d;
+            player.y=1.6+33.4*(t-a-b)/1.5;
+            player.x=flight[0]*step;player.z=2+(flight[1]-2)*step;
+            if(t>=d+3)resetRun();
+        }else step(dt, getMove(session,frame));
         updateCity();
-        activateBeacons();
-        claimRemoteBeacons();
-        updateEnemies(dt);
-        finishBeacons();
-        updateRemoteEnemies(dt);
-        updateShots(dt);
+        if(hp>0){
+            activateBeacons();claimRemoteBeacons();updateEnemies(dt);
+            if(hp>0){finishBeacons();updateRemoteEnemies(dt);if(hp>0)updateShots(dt);}
+        }
         mmoTick(dt);
     }
     // -- /PART: Update --
@@ -2050,9 +2055,9 @@
         // -- PART: Orb --
         // Local and peer loops intentionally repeat: PPMd compresses them smaller than a shared renderer.
         gl.depthMask(false);
-        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(V,P,player.x+COS(angle)*radius,.7,player.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
+        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(V,P,player.x+COS(angle)*radius,player.y-.9,player.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
         gl.depthMask(true);
-        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(V,P,player.x+COS(angle)*radius,.7,player.z+SIN(angle)*radius,.25,BLACK);}
+        for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(V,P,player.x+COS(angle)*radius,player.y-.9,player.z+SIN(angle)*radius,.25,BLACK);}
         // -- /PART: Orb --
         if(peers.size){
             const target = now - 120;
@@ -2211,7 +2216,7 @@
             xrHeight??=1.6-pose.transform.position.y;
             xrHead=ATAN2(pose.transform.matrix[8],pose.transform.matrix[10]);
             const cy=COS(player.yaw),sy=SIN(player.yaw);
-            xrM.set([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, player.x,xrHeight,player.z,1]);
+            xrM.set([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, player.x,xrHeight+player.y-1.6,player.z,1]);
             const headW = MULTMAT4(M4(),xrM,pose.transform.matrix);
             updateAudioListener(headW);
             hudWH = new DOMMatrix(headW).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();

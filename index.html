@@ -110,7 +110,7 @@
     const CROSS=(out,left,right)=>(out[0]=left[1]*right[2]-left[2]*right[1],out[1]=left[2]*right[0]-left[0]*right[2],out[2]=left[0]*right[1]-left[1]*right[0],out);
     const LEN=vector=>HYPOT(vector[0],vector[1],vector[2]);
     const NORM=(out,vector)=>{var length=LEN(vector);return length>0&&(out[0]=vector[0]/length,out[1]=vector[1]/length,out[2]=vector[2]/length),out};
-    const MULTMAT4 = (out,left,right) => (out.set((new DOMMatrix(left)).multiply(new DOMMatrix(right)).toFloat32Array()), out);
+    const MULTMAT4 = (left,right) => (new DOMMatrix(left)).multiply(new DOMMatrix(right)).toFloat32Array();
     const INV = matrix => (new DOMMatrix(matrix)).inverse().toFloat32Array();
     const PERSP = (out,fov,aspect,near,far) => { const scale=1/TAN(fov*D2R/2);out.set([scale/aspect,0,0,0,0,scale,0,0,0,0,(far+near)/(near-far),-1,0,0,(2*far*near)/(near-far),0]);return out; };
     const LOOKAT = (out,eye,center,up) => { SUB(T_V3_A,eye,center);NORM(T_V3_A,T_V3_A);CROSS(T_V3_B,up,T_V3_A);NORM(T_V3_B,T_V3_B);CROSS(T_V3_C,T_V3_A,T_V3_B);out.set([T_V3_B[0],T_V3_C[0],T_V3_A[0],0,T_V3_B[1],T_V3_C[1],T_V3_A[1],0,T_V3_B[2],T_V3_C[2],T_V3_A[2],0,-DOT(T_V3_B,eye),-DOT(T_V3_C,eye),-DOT(T_V3_A,eye),1]);return out; };
@@ -476,8 +476,9 @@
     // -- /PART: Core --
     
     // -- PART: Keyboard-Pointer --
+    const pointerLocked=()=>document.pointerLockElement===canvas;
     // Keyboard event listeners for movement and HUD toggle
-    document.addEventListener('keydown', event => {
+    document.onkeydown=event => {
         // CHAT disabled: if (event.target === chatInput) return;
         initAudio();
         const key=event.code;
@@ -492,41 +493,38 @@
         }
         // KeyH HUD toggle disabled.
         if(!event.repeat&&(key==='Escape'||key==='KeyX')){playClickSound();hudVisible=!hudVisible;} // Escape and X toggle HUD visibility
-        if(hudVisible&&document.pointerLockElement===canvas)document.exitPointerLock();
+        if(hudVisible&&pointerLocked())document.exitPointerLock();
         //if (key === 'KeyF') {playClickSound(); beastMode = !beastMode;} // 'F' key toggles beastMode
-    });
+    };
     document.addEventListener('keyup',event=>input.keys[event.code]=false);
     window.addEventListener('blur',()=>input.keys={});
     // 300ms click blocker
     // let lastTouch=0;document.ontouchend=e=>{if(performance.now()-lastTouch<300)e.preventDefault();lastTouch=performance.now()};
     
+    function updatePointer(event){
+        const locked=pointerLocked(),rect=locked&&canvas.getBoundingClientRect();
+        input.pointer.x=locked?rect.left+rect.width/2:event.clientX;
+        input.pointer.y=locked?rect.top+rect.height/2:event.clientY;return locked;
+    }
     // Pointer event listeners on the canvas for mouse-look and interaction
-    canvas.addEventListener('pointerdown', event => {
+    canvas.onpointerdown=event => {
         initAudio(); // NEW: Initialize audio on first user interaction
         // Start mouse-look on left-click
         if(event.button===0&&input.look.id===null){
             input.look.id=event.pointerId;
             input.look.x=event.clientX;
             input.look.y=event.clientY;
-            if(document.pointerLockElement!==canvas)canvas.setPointerCapture(event.pointerId);
+            if(!pointerLocked())canvas.setPointerCapture(event.pointerId);
         }
         // Always update pointer position for picking
         input.pointer.x=event.clientX;
         input.pointer.y=event.clientY;
-    });
+    };
     
-    canvas.addEventListener('pointermove', event => {
+    canvas.onpointermove=event => {
         // Update pointer position for hover effects
-        input.pointer.x=event.clientX;
-        input.pointer.y=event.clientY;
-        
-        // If we are in mouse-look mode, update camera orientation
-        const locked=document.pointerLockElement===canvas;
-        if(locked){
-            const rect=canvas.getBoundingClientRect();
-            input.pointer.x=rect.left+rect.width/2;
-            input.pointer.y=rect.top+rect.height/2;
-        }
+        const locked=updatePointer(event);
+
         if(locked||event.pointerId===input.look.id){
             const dx=locked?event.movementX:event.clientX-input.look.x;
             const dy=locked?event.movementY:event.clientY-input.look.y;
@@ -535,30 +533,28 @@
             player.yaw -= dx * .002 * (opts[0] ? -1 : 1);
             player.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,player.pitch+dy*.002*(opts[0] ? -1 : 1)));
         }
-    });
+    };
     
-    canvas.addEventListener('pointerup', event => {
+    canvas.onpointerup=event => {
         // Stop mouse-look mode.
         if(event.pointerId===input.look.id){
             input.look.id=null;
         }
         // Update pointer position and trigger an interaction check
-        const rect=canvas.getBoundingClientRect(),locked=document.pointerLockElement===canvas;
-        input.pointer.x=locked?rect.left+rect.width/2:event.clientX;
-        input.pointer.y=locked?rect.top+rect.height/2:event.clientY;
+        updatePointer(event);
         interactDesktopAt(input.pointer.x,input.pointer.y);
-    });
-    document.addEventListener('pointerlockchange',()=>{
-        opts[1]=+(document.pointerLockElement===canvas);
+    };
+    document.onpointerlockchange=()=>{
+        opts[1]=+(pointerLocked());
         input.look.id=null;
         hudVisible=!opts[1];
-    });
+    };
     
-    canvas.addEventListener('pointercancel', event => {
+    canvas.onpointercancel=event => {
         if(event.pointerId===input.look.id){
             input.look.id=null;
         }
-    });
+    };
     // -- /PART: Keyboard-Pointer --
     
     // -- PART: Joystick --
@@ -572,10 +568,10 @@
 
         for (const joystick of joys) {
             const handle = handleSel(joystick.side);
-            joystick.el.addEventListener('pointerdown', event => { initAudio(); joystick.id = event.pointerId; joystick.el.setPointerCapture(event.pointerId); updateJoy(joystick, event, handle); });
-            joystick.el.addEventListener('pointermove', event => { if (event.pointerId === joystick.id) updateJoy(joystick, event, handle); });
-            joystick.el.addEventListener('pointerup', event => { if (event.pointerId === joystick.id) { resetJoy(joystick, handle); } });
-            joystick.el.addEventListener('pointercancel', event => { if (event.pointerId === joystick.id) { resetJoy(joystick, handle); } });
+            joystick.el.onpointerdown=event => { initAudio(); joystick.id = event.pointerId; joystick.el.setPointerCapture(event.pointerId); updateJoy(joystick, event, handle); };
+            joystick.el.onpointermove=event => { if (event.pointerId === joystick.id) updateJoy(joystick, event, handle); };
+            joystick.el.onpointerup=event => { if (event.pointerId === joystick.id) { resetJoy(joystick, handle); } };
+            joystick.el.onpointercancel=event => { if (event.pointerId === joystick.id) { resetJoy(joystick, handle); } };
         }
 
     function updateJoy(joystick, event, handle) {
@@ -686,7 +682,7 @@
     function controllerRay(frame,source) {
         const pose=source.targetRaySpace?frame.getPose(source.targetRaySpace,ref):null;
         if (pose) {
-            const matrix=MULTMAT4(M4(),xrM,pose.transform.matrix);
+            const matrix=MULTMAT4(xrM,pose.transform.matrix);
             return {o:[matrix[12],matrix[13],matrix[14]],d:[-matrix[8],-matrix[9],-matrix[10]]};
         }
         return { o: [0, 0, 0], d: [0, 0, -1] }; // Fallback, ray from Head
@@ -1542,7 +1538,7 @@
         // CHAT disabled: else if (action === 10) sendChat();
         // CHAT disabled: else if (action === 11) setChat(false);
         else if(action===15){
-            if(document.pointerLockElement===canvas)document.exitPointerLock();
+            if(pointerLocked())document.exitPointerLock();
             else if(!xr)canvas.requestPointerLock?.()?.catch(()=>{});
         }
         else if (action>13) opts[action-14]^=1;
@@ -1918,7 +1914,7 @@
     // Reuse the original centre-beacon visual for every generated beacon.
     function drawSpawnBeacons(V,P){
         gl.depthMask(false);gl.enable(gl.BLEND);
-        gl.useProgram(PC);gl.uniformMatrix4fv(uS_V,false,V);gl.uniformMatrix4fv(uS_P,false,P);
+        gl.useProgram(PC);
         gl.useProgram(PDisc);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);
         const visibleBeacons=SPAWN_BEACONS.slice(),now=performance.now();peers.forEach(peer=>{if(now-peer.last<15000)peer.b?.forEach(beacon=>visibleBeacons.push(beacon))});
         for(const beacon of visibleBeacons){
@@ -1956,7 +1952,7 @@
     // x/y/z = world position; yaw = facing; anim = walking phase; amp = paw movement.
     // col = color for this pass; shell enlarges sphere radii for the outline/aura;
     // scale changes the whole cat's size, including the spacing between its parts.
-    function drawCat(Vmat, Pmat, x, y, z, yaw, anim, amp, col, shell=1, scale=1){
+    function drawCat(x, y, z, yaw, anim, amp, col, shell=1, scale=1){
         // Rotate the model to its world-facing direction, with the existing -20 offset.
         const cy = COS(yaw-20), sy = SIN(yaw-20);
         // Local coordinates: +lx toward the head, -lx toward the tail; +ly upward;
@@ -1995,10 +1991,10 @@
     // -- /PART: Character-Renderer --
 
     // -- PART: Damage-Numbers --
-    function drawDamageNumbers(V,P,W){
+    function drawDamageNumbers(W){
         if(!damageNumbers.length)return;
         const masks=[63,6,91,79,102,109,125,7,127,111],pos=[[0,2],[1,1],[1,-1],[0,-2],[-1,-1],[-1,1],[0,0]];
-        gl.useProgram(PC);gl.bindVertexArray(sphereVao);gl.uniformMatrix4fv(uS_V,false,V);gl.uniformMatrix4fv(uS_P,false,P);
+        gl.useProgram(PC);gl.bindVertexArray(sphereVao);
         gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
         for(const number of damageNumbers){
             const text=''+number.n;
@@ -2026,7 +2022,7 @@
         // PERSP(P, 60, canvas.width / canvas.height, .1, 1000.);
         // PERSP(P, 60, canvas.width / canvas.height, .1, 1500.);
         PERSP(P, 60, canvas.width / canvas.height, .2, 3000.);
-        PV = MULTMAT4(M4(), P, V);
+        PV = MULTMAT4(P, V);
         invPV = INV(PV);
     }
     // -- /PART: Camera --
@@ -2049,14 +2045,14 @@
         // -- /PART: Projectile --
         // -- PART: Enemy --
         // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
-        for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
-        remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(V,P,x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
+        for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
+        remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
         gl.disable(gl.BLEND);
-        for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier][1],1.16,enemy.scale);
-        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier][1],1.16,enemy.scale)));
+        for(const enemy of enemies)drawCat(enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier][1],1.16,enemy.scale);
+        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier][1],1.16,enemy.scale)));
         gl.depthMask(true);
-        for(const enemy of enemies)drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
-        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(V,P,enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
+        for(const enemy of enemies)drawCat(enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
+        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
         // -- /PART: Enemy --
         // -- PART: Projectile --
         gl.depthMask(false);
@@ -2078,7 +2074,7 @@
             peers.forEach((peer, id) => {
                 if (id === myId || now - (peer.last || 0) >= 15000) return;
                 const sample = samplePeer(peer, target) || peer;
-                drawCat(V, P, sample.x, .6, sample.z, (sample.yaw || 0) + PI, now*.005*MIN(3,peer.speed||0), .1, PEER_COL);
+                drawCat(sample.x, .6, sample.z, (sample.yaw || 0) + PI, now*.005*MIN(3,peer.speed||0), .1, PEER_COL);
                 // -- PART: Orb --
                 gl.depthMask(false);
                 for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
@@ -2090,7 +2086,7 @@
         // Transparent beacon comes after characters so the existing depth buffer
         // correctly separates enemies in front of it from enemies behind it.
         drawSpawnBeacons(V,P);
-        drawDamageNumbers(V,P,W);
+        drawDamageNumbers(W);
     }
     // -- /MODULE: World-Renderer --
     // -- /FEATURE: Scene --
@@ -2100,14 +2096,15 @@
     // -- VR: Rendering --
     // OPTIONAL VISUALS: remove with its call to hide controller discs and beams; HUD ray clicks still work.
     function drawXRInput(session, frame, V, P, hudWH) {
+        // PC/PDisc retain this eye's camera uniforms from drawCity/drawSpawnBeacons.
         for (const src of session.inputSources || []) {
             const col = WHITE;
             const target = src.targetRaySpace ? frame.getPose(src.targetRaySpace, ref) : null;
             if (target) {
-                const matrix=MULTMAT4(M4(),xrM,target.transform.matrix),scale=.1-.02*(src.gamepad?.buttons[1]?.value||0);
+                const matrix=MULTMAT4(xrM,target.transform.matrix),scale=.1-.02*(src.gamepad?.buttons[1]?.value||0);
                 const ring=new DOMMatrix(matrix).scale(scale,scale*1.73,1).toFloat32Array();
                 gl.useProgram(PDisc); gl.bindVertexArray(vaoH);
-                gl.uniformMatrix4fv(uMDisc,false,ring);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);
+                gl.uniformMatrix4fv(uMDisc,false,ring);
                 gl.uniform4f(uColDisc,col[0],col[1],col[2],.95);
                 gl.uniform1f(uWidthDisc,.2);
                 gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
@@ -2117,7 +2114,7 @@
                 const M=new DOMMatrix([width,0,0,0,0,width,0,0,0,0,-(hit?MIN(3,hit.t):3),0,0,0,0,1]);
                 const beam=new DOMMatrix(matrix).multiply(M).toFloat32Array();
                 gl.useProgram(PC); gl.bindVertexArray(vaoBeam);
-                gl.uniformMatrix4fv(uS_M, false, beam); gl.uniformMatrix4fv(uS_V, false, V); gl.uniformMatrix4fv(uS_P, false, P);
+                gl.uniformMatrix4fv(uS_M, false, beam);
                 gl.uniform4f(uS_Color, col[0], col[1], col[2], .8);
                 gl.drawArrays(gl.TRIANGLES, 0, 6); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
             }
@@ -2231,7 +2228,7 @@
             xrHead=ATAN2(pose.transform.matrix[8],pose.transform.matrix[10]);
             const cy=COS(player.yaw),sy=SIN(player.yaw);
             xrM.set([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, player.x,xrHeight+player.y-1.6,player.z,1]);
-            const headW = MULTMAT4(M4(),xrM,pose.transform.matrix);
+            const headW = MULTMAT4(xrM,pose.transform.matrix);
             updateAudioListener(headW);
             hudWH = new DOMMatrix(headW).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
             HUD_WH_world = hudWH;
@@ -2245,7 +2242,7 @@
             gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
             for (const view of pose.views) {
-                const vp = layer.getViewport(view), eyeW=MULTMAT4(M4(),xrM,view.transform.matrix),Veye=INV(eyeW),Peye=view.projectionMatrix;
+                const vp = layer.getViewport(view), eyeW=MULTMAT4(xrM,view.transform.matrix),Veye=INV(eyeW),Peye=view.projectionMatrix;
                 gl.viewport(vp.x, vp.y, vp.width, vp.height);
                 drawWorld(Veye, Peye, eyeW);
                 drawHud(hudWH, Veye, Peye);

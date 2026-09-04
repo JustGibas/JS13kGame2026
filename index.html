@@ -699,6 +699,7 @@
     const items = [];                  // pickups: t 0 XP, 1 health, 2 magnet
     const CITY_BLOCK = 18;
     let buildings = [],cityX=1e9,cityZ;
+    // Change 43758.5453 below to try different city layouts and choose one that meets our standards.
     const cityHash = (x,z,salt=0) => { const hash=SIN(x*127.1+z*311.7+salt*71.7)*43758.5453;return hash-FLOOR(hash); };
     const buildingAt = (x,z,radius=0) => buildings.find(building=>ABS(x-building.x)<building.w/2+radius&&ABS(z-building.z)<building.d/2+radius);
     const insideBuilding=buildingAt;
@@ -708,7 +709,7 @@
         cityX=cx;cityZ=cz;const next=[];
         for(let z=cz-15;z<=cz+15;z++)for(let x=cx-15;x<=cx+15;x++){
             if(ABS(x)<2&&ABS(z)<2||cityHash(x,z)<.28+HYPOT(x,z)/72)continue;
-            const side=cityHash(x,z,1)>.5,wall=8+10*(HYPOT(x,z)/12|0)+ABS(x-z)%3*.3,width=side?wall:8+cityHash(x,z,1)*4,depth=side?8+cityHash(x,z,2)*4:wall,height=6+cityHash(x,z,3)*26,building={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w:width,d:depth,h:height};
+            const side=cityHash(x,z,1)>.5,wall=8+10*(HYPOT(x,z)/12|0)+ABS(x-z)%3*.4,width=side?wall:8+cityHash(x,z,1)*4,depth=side?8+cityHash(x,z,2)*4:wall,height=6+cityHash(x,z,3)*26,building={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w:width,d:depth,h:height};
             next.push(building);
         }
         if(next.length)buildings=next;
@@ -848,7 +849,8 @@
             if(beacon[3]&&(beacon[4]<1||success)){
                 for(let j=enemies.length;j--;)if(enemies[j].b===beacon[6])enemies.splice(j,1);
                 SPAWN_BEACONS.splice(i,1);if(!beacon[8]||SPAWN_BEACONS.length<4){const replacement=spawnBeacon();if(replacement)SPAWN_BEACONS.push(replacement);}
-                if(success){playMotif(beacon[0],beacon[1]);evolutionQueue.push(beacon[2]);if(choosing<2)rollEvolution(evolutionQueue.shift());}
+                // Preserve any open card offer; beacon rewards wait until it is claimed.
+                if(success){playMotif(beacon[0],beacon[1]);evolutionQueue.push(beacon[2]);if(!choosing)rollChoices(evolutionQueue.shift());}
                 else playMotif(beacon[0],beacon[1],1);
             }
         }
@@ -877,31 +879,28 @@
         resetEnemies();
         // LOG disabled: log(mmoEnabled?'MMO run started':'Run ended');
     }
-    function rollChoices(){
+    function rollChoices(tier){
         const rollTier=()=>{
             let tier=0,cap=MIN(6,1+(level/3|0));
             while(tier<cap&&rng()<.4)tier++;
             return tier;
         };
-        const pool=[0,3,4,5,6,7];
+        const pool=tier===undefined?[0,3,4,5,6,7]:[8,9,10,11];
         choices=[];
         while(choices.length<3){
             const type=pool[rng()*pool.length|0];
-            if(!choices.some(choice=>choice[0]===type))choices.push([type,rollTier()]);
+            if(!choices.some(choice=>choice[0]===type))choices.push([type,tier===undefined?rollTier():tier]);
         }
-        showChoices(1);playMotif(player.x,player.z);
+        showChoices();if(tier===undefined)playMotif(player.x,player.z);
     }
-    function showChoices(mode){
+    function showChoices(){
         for(let i=3;i--;){
             const choice=choices[i];
             UI_LEVEL[i][4]=cardText(choice[0],powerValue(choice[1])*(choice[0]>9?10:1));
             UI_LEVEL[i][6]=choice[1];
         }
-        choosing=mode;
+        choosing=1;
         hudVisible=false;
-    }
-    function rollEvolution(tier){
-        choices=[[8,tier],[9,tier],[rng()<.5?10:11,tier]].sort(()=>rng()-.5);showChoices(2);
     }
     function upgrade(choice){
         const type=choice[0],power=powerValue(choice[1])*(type>9?10:1);
@@ -920,7 +919,7 @@
         else if(type===7)damage+=power;
         if(type<8)xp-=level++*3;
         choosing=0;
-        if(evolutionQueue.length)rollEvolution(evolutionQueue.shift());else if(xp>=level*3)rollChoices();
+        if(evolutionQueue.length)rollChoices(evolutionQueue.shift());else if(xp>=level*3)rollChoices();
     }
     function dropReward(x,z,maxHealth){
         const count=MAX(1,1+ROUND(LOG2(maxHealth/3))),width=MIN(7,count);
@@ -965,7 +964,8 @@
             enemy.x+=enemy.vx*dt;enemy.z+=enemy.vz*dt;
             const wall=resolveCityCollision(enemy,.45,px,pz);
             if(wall){const side=SIGN((wall===1?enemy.vx||dx:enemy.vz||dz)||1)*maxSpeed;enemy.vx=side*(wall===1);enemy.vz=side*(wall<0);}
-            if((enemy.s=HYPOT(enemy.x-px,enemy.z-pz)<dt?enemy.s+dt:0)>1){spawnEnemy(enemy);continue;}
+            // Respawn after one second of closing slower than 2 units/sec.
+            if((enemy.s=distance-HYPOT(tx-enemy.x,tz-enemy.z)<2*dt?enemy.s+dt:0)>1){spawnEnemy(enemy);continue;}
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
             if(targetBeacon&&distance<.6+enemy.scale*.6){
@@ -1290,7 +1290,6 @@
     let audioContext,
         spatialOutput,
         localOutput,
-        lastImpactSound=0,
         notes=[330,494,660],
         // CHAT disabled: opts=[0,0,1,1,1,0];
         opts=[0,0,1,1,0];
@@ -1305,6 +1304,11 @@
                 reverbGain=context.createGain(),
                 spatialBus=context.createGain(),
                 compressor=context.createDynamicsCompressor();
+
+            // Catch bursts quickly and recover without a long dip in the whole mix.
+            compressor.attack.value=0;
+            // compressor.release.value=.08;
+            // compressor.ratio.value=22;
 
             // Fill both impulse-response channels with fading noise for compact synthetic reverb.
             for(let channel=2;channel--;){
@@ -1383,8 +1387,6 @@
         }
     }
     function playImpactSound(x,z,kill){
-        if(!kill&&performance.now()-lastImpactSound<25)return;
-        lastImpactSound=performance.now();
         playSound(kill?260:300,kill?.14:.08,kill?.08:.035,'triangle',kill?90:130,0,.003,x,.6,z);
         if(kill)playSound(900,.035,.025,'square',180,0,.002,x,.6,z);
     }

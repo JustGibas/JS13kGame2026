@@ -418,18 +418,15 @@
     resize(); // Initial resize
 
     // Helper function to compile and link a shader program
-    function prog(vs, fs) {
-        // Always prepend shared header (js13k-friendly, no conditional check)
-        const shaderHeader='#version 300 es\nprecision highp float;';
-        vs=shaderHeader+/*'#define U uniform' )+*/vs;
-        fs=shaderHeader+fs;
+    function prog(vs,fs){
         const program=gl.createProgram();
-        const vertexShader=gl.createShader(gl.VERTEX_SHADER);
-        const fragmentShader=gl.createShader(gl.FRAGMENT_SHADER);
-        gl.shaderSource(vertexShader,vs);gl.compileShader(vertexShader);
-        gl.shaderSource(fragmentShader,fs);gl.compileShader(fragmentShader);
-        gl.attachShader(program,vertexShader);gl.attachShader(program,fragmentShader);gl.linkProgram(program);
-        return program;
+        [vs,fs].forEach((source,i)=>{
+            // WebGL shader types: VERTEX_SHADER=35633, FRAGMENT_SHADER=35632.
+            const shader=gl.createShader(35633-i);
+            gl.shaderSource(shader,'#version 300 es\nprecision highp float;'+source);
+            gl.compileShader(shader);gl.attachShader(program,shader);
+        });
+        gl.linkProgram(program);return program;
     }
     // -- /PART: WebGL --
     // -- /FEATURE: Core --
@@ -1329,7 +1326,7 @@
             for(let channel=2;channel--;){
                 const samples=impulse.getChannelData(channel);
                 for(let sample=samples.length;sample--;)
-                    samples[sample]=(Math.random()*2-1)*(1-sample/samples.length)**2;
+                    samples[sample]=(RANDOM()*2-1)*(1-sample/samples.length)**2;
             }
 
             reverb.buffer=impulse;
@@ -1420,24 +1417,12 @@
         }
     }
     function updateAudioListener(matrix){
-        if(!audioContext)return;
-        const listener=audioContext.listener,
-            x=matrix[12],y=matrix[13],z=matrix[14],
-            forwardX=-matrix[8],forwardY=-matrix[9],forwardZ=-matrix[10],
-            upX=matrix[4],upY=matrix[5],upZ=matrix[6];
-
-        listener.positionX.value=x;
-        listener.positionY.value=y;
-        listener.positionZ.value=z;
-        listener.forwardX.value=forwardX;
-        listener.forwardY.value=forwardY;
-        listener.forwardZ.value=forwardZ;
-        listener.upX.value=upX;
-        listener.upY.value=upY;
-        listener.upZ.value=upZ;
-        // LEGACY fallbacks disabled:
-        // listener.setPosition(x,y,z);
-        // listener.setOrientation(forwardX,forwardY,forwardZ,upX,upY,upZ);
+        if(audioContext)for(let i=3;i--;){
+            const axis='XYZ'[i],listener=audioContext.listener;
+            listener['position'+axis].value=matrix[12+i];
+            listener['forward'+axis].value=-matrix[8+i];
+            listener['up'+axis].value=matrix[4+i];
+        }
     }
     // -- /MODULE: Audio --
 
@@ -2096,7 +2081,7 @@
     // -- PART: Input-Rendering --
     // -- VR: Rendering --
     // OPTIONAL VISUALS: remove with its call to hide controller discs and beams; HUD ray clicks still work.
-    function drawXRInput(session, frame, V, P, hudWH) {
+    function drawXRInput(session, frame, hudWH) {
         // PC/PDisc retain this eye's camera uniforms from drawCity/drawSpawnBeacons.
         for (const src of session.inputSources || []) {
             const col = WHITE;
@@ -2247,7 +2232,7 @@
                 gl.viewport(vp.x, vp.y, vp.width, vp.height);
                 drawWorld(Veye, Peye, eyeW);
                 drawHud(hudWH, Veye, Peye);
-                drawXRInput(session, frame, Veye, Peye, hudWH);
+                drawXRInput(session, frame, hudWH);
             }
         }
         else {

@@ -699,8 +699,8 @@
     const items = [];                  // pickups: t 0 XP, 1 health, 2 magnet
     const CITY_BLOCK = 18;
     let buildings = [],cityX=1e9,cityZ;
-    // Change 43758.5453 below to try different city layouts and choose one that meets our standards.
-    const cityHash = (x,z,salt=0) => { const hash=SIN(x*127.1+z*311.7+salt*71.7)*43758.5453;return hash-FLOOR(hash); };
+    // Change 123321 below to try different city layouts and choose one that meets our standards.
+    const cityHash = (x,z,salt=0) => { const hash=SIN(x*.321+z*.123+salt*.1)*123321;return hash-FLOOR(hash); };
     const buildingAt = (x,z,radius=0) => buildings.find(building=>ABS(x-building.x)<building.w/2+radius&&ABS(z-building.z)<building.d/2+radius);
     const insideBuilding=buildingAt;
     const nearCity=(x,z)=>ABS(ROUND(x/CITY_BLOCK)-cityX)<16&&ABS(ROUND(z/CITY_BLOCK)-cityZ)<16;
@@ -708,8 +708,8 @@
         const cx=ROUND(player.x/CITY_BLOCK),cz=ROUND(player.z/CITY_BLOCK);if(cx===cityX&&cz===cityZ)return;
         cityX=cx;cityZ=cz;const next=[];
         for(let z=cz-15;z<=cz+15;z++)for(let x=cx-15;x<=cx+15;x++){
-            if(ABS(x)<2&&ABS(z)<2||cityHash(x,z)<.28+HYPOT(x,z)/72)continue;
-            const side=cityHash(x,z,1)>.5,wall=8+10*(HYPOT(x,z)/12|0)+ABS(x-z)%3*.4,width=side?wall:8+cityHash(x,z,1)*4,depth=side?8+cityHash(x,z,2)*4:wall,height=6+cityHash(x,z,3)*26,building={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w:width,d:depth,h:height};
+            if(ABS(x)<2&&ABS(z)<2||cityHash(x,z)<.3+HYPOT(x,z)/80)continue;
+            const side=cityHash(x,z,1)>.5,wall=3+10*(HYPOT(x,z)/12|0)+ABS(x-z)%4*.4,width=side?wall:3+cityHash(x,z,1)*4,depth=side?3+cityHash(x,z,2)*4:wall,height=6+cityHash(x,z,3)*26,building={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w:width,d:depth,h:height};
             next.push(building);
         }
         if(next.length)buildings=next;
@@ -1986,6 +1986,7 @@
         LOOKAT(V, eye, center, [0, 1, 0]);
         // Build the perspective projection matrix for the camera. NEAR and FAR clipping planes
         // PERSP(P, 60, canvas.width / canvas.height, .1, 1000.);
+        // PERSP(P, 60, canvas.width / canvas.height, .1, 1500.);
         PERSP(P, 60, canvas.width / canvas.height, .2, 3000.);
         PV = MULTMAT4(M4(), P, V);
         invPV = INV(PV);
@@ -2115,6 +2116,8 @@
             // OPTIONAL compatibility disabled: await gl.makeXRCompatible();
             // Set up the XRWebGLLayer for the session
             // xr.updateRenderState({ baseLayer: new XRWebGLLayer(xr, gl)});
+            // xr.updateRenderState({baseLayer:new XRWebGLLayer(xr,gl),depthNear:.1,depthFar:1000}); // vr depth range
+            // xr.updateRenderState({baseLayer:new XRWebGLLayer(xr,gl),depthNear:.1,depthFar:1500}); // vr depth range
             xr.updateRenderState({baseLayer:new XRWebGLLayer(xr,gl),depthNear:.2,depthFar:3000}); // vr depth range
             try{ref=await xr.requestReferenceSpace('local-floor')}catch(_){ref=await xr.requestReferenceSpace('local')}
 

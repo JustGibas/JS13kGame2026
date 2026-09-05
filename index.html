@@ -279,7 +279,7 @@
                     const now = performance.now();
                     if(!nearCity(x,z)){if(peers.has(id))forgetPeer(id);return;}
                     pushPeerSample(peer,x,z,yaw,now);
-                    peer.orbs=parts[5].split(',').slice(0,8).map(value=>MIN(9,+value));
+                    peer.orbs=parts[5].split(',').slice(0,8).map(Number);
                     peer.op=+parts[6];
                     peer.d=+parts[7];
                     const group=[],fields=parts[8].split(',').map(Number);
@@ -395,7 +395,7 @@
                         '|' + player.yaw.toFixed(3)+
                         '|'+orbCounts.join(',')+
                         '|'+skillTime.toFixed(2)+
-                        '|'+damage*(1+damageBonus)+
+                        '|'+damage+
                         '|'+SPAWN_BEACONS.slice(1,5).flatMap(beacon=>[beacon[0],beacon[1],beacon[3]?(beacon[4]/beacon[5]).toFixed(2):-1]);
             sendMMO(message);
             sendMMO('e|'+myId+'|'+enemies.map(enemy=>[enemy.i,enemy.v,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
@@ -751,7 +751,6 @@
     let enemyVersion=0,enemyId=0;
     let beaconEvent=0;
     const orbCounts=[1],boltCounts=[1],boltTimes=[],evolutionQueue=[],claimedBeacons=new Set;
-    let damageBonus=0;
     let cooldownPower=0;
     let shotId=0;
     let damage=1;
@@ -871,7 +870,6 @@
         runStats.dealt=0;
         skillTime=0;
         boltTimes.length=evolutionQueue.length=0;orbCounts.length=boltCounts.length=1;orbCounts[0]=boltCounts[0]=1;claimedBeacons.clear();
-        damageBonus=0;
         damage=1;
         cooldownPower=0;
         movePower=0;
@@ -914,16 +912,12 @@
         const type=choice[0],power=powerValue(choice[1])*(type>9?10:1);
         if(type===8)orbCounts[choice[1]+1]=(orbCounts[choice[1]+1]||0)+1;
         else if(type===9)boltCounts[choice[1]+1]=(boltCounts[choice[1]+1]||0)+1;
-        else if(type===10)damageBonus+=power/100;
-        else if(type===11){const added=maxHp*power/100;maxHp+=added;hp+=added;}
+        else if(type===10)damage+=ROUND(damage*power/100);
+        else if(type===11||type===6){const added=type===6?power*20:ROUND(maxHp*power/100);maxHp+=added;hp+=added;}
         else if(type===0)orbCounts[0]+=power;
         else if(type===3)boltCounts[0]+=power;
         else if(type===4)movePower+=power;
         else if(type===5)cooldownPower+=power;
-        else if(type===6){
-            const added=power*20;maxHp+=added;
-            hp=MIN(maxHp,hp+added);
-        }
         else if(type===7)damage+=power;
         if(type<8)xp-=level++*3;
         choosing=0;
@@ -938,7 +932,7 @@
     function damageNumber(x,z,amount){damageNumbers.push({x,y:1.4,z,n:ROUND(amount),t:1});}
     function hurt(enemy,amount,killer){
         if(enemy.dead)return;
-        amount=MIN(enemy.hp,MAX(1,amount|0));enemy.hp-=amount;damageNumber(enemy.x,enemy.z,amount);
+        amount=MIN(enemy.hp,MAX(1,FLOOR(amount)));enemy.hp-=amount;damageNumber(enemy.x,enemy.z,amount);
         if(!myId||killer===myId)runStats.dealt+=amount; // damage addition
         else sendMMO(`a|${killer}|${amount}`);
         if(enemy.hp<1)defeat(enemy,amount,killer);else playImpactSound(enemy.x,enemy.z);
@@ -985,7 +979,7 @@
                 //player.x+=dx/d*(2+c.tier*.2); // knockback
                 //player.z+=dz/d*(2+c.tier*.2); // knockback
                 //player.y+=dz/d*(2+c.tier*.2);
-                hp-=enemy.hp;
+                hp=MAX(0,hp-enemy.hp);
                 playHurtSound();
                 spawnEnemy(enemy);
                 if(hp<1)return;
@@ -994,7 +988,7 @@
             let hitIndex=0;
             for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){
                 const count=orbCounts[tier+1],angle=orbPhase(skillTime,tier)+i*PI*2/count,radius=orbRadius(tier),ox=player.x+COS(angle)*radius,oz=player.z+SIN(angle)*radius;
-                if((enemy.h[hitIndex]||0)<skillTime&&(enemy.x-ox)**2+(enemy.z-oz)**2<(.25+.5*enemy.scale)**2){hurt(enemy,damage*(1+damageBonus)*(tier+2),myId);enemy.h[hitIndex]=skillTime+.15;}hitIndex++;
+                if((enemy.h[hitIndex]||0)<skillTime&&(enemy.x-ox)**2+(enemy.z-oz)**2<(.25+.5*enemy.scale)**2){hurt(enemy,damage*(tier+2),myId);enemy.h[hitIndex]=skillTime+.15;}hitIndex++;
             }
             peers.forEach((peer,id)=>{
                 const hits=peer.oh[enemy.i]||(peer.oh[enemy.i]=[]);
@@ -1014,7 +1008,7 @@
             const interpolation=MIN(1,dt*8);enemy.x=lerp(enemy.x,enemy.tx,interpolation);enemy.z=lerp(enemy.z,enemy.tz,interpolation);enemy.yaw=lerpAngle(enemy.yaw||enemy.tyaw,enemy.tyaw,interpolation);enemy.hit-=dt;
             if((player.x-enemy.x)**2+(player.z-enemy.z)**2<(.6+enemy.scale*.6)**2&&enemy.hit<0){
                 // KNOCKBACK disabled: let dx=player.x-enemy.x,dz=player.z-enemy.z,distance=HYPOT(dx,dz)||1;player.x+=dx/distance*(2+enemy.tier*.2);player.z+=dz/distance*(2+enemy.tier*.2);
-                hp-=enemy.hp;enemy.hit=1;playHurtSound();
+                hp=MAX(0,hp-enemy.hp);enemy.hit=1;playHurtSound();
                 sendMMO(`k|${owner}|${enemy.i}|${enemy.v}`);
             }
         }));
@@ -1062,14 +1056,14 @@
         if(!target)return;
         const aim=ATAN2(target.x-player.x,target.z-player.z);
         for(let i=count;i--;){
-            const angle=aim+(i-(count-1)/2)*.18,projectile={x:player.x,y:.7,z:player.z,vx:SIN(angle)*10,vz:COS(angle)*10,d:damage*(1+damageBonus)*(tier+2),i:++shotId,t:3,c:tier};
+            const angle=aim+(i-(count-1)/2)*.18,projectile={x:player.x,y:.7,z:player.z,vx:SIN(angle)*10,vz:COS(angle)*10,d:damage*(tier+2),i:++shotId,t:3,c:tier};
             shots.push(projectile);
             if(myId)sendMMO(`s|${myId}|${projectile.x.toFixed(2)}|${projectile.z.toFixed(2)}|${projectile.vx.toFixed(2)}|${projectile.vz.toFixed(2)}|${projectile.d}|${projectile.i}|${tier}`);
         }
         playShotSound();
     }
     function updateShots(dt){
-        for(let tier=-1;tier<7;tier++){const index=tier+1,count=boltCounts[index];if(count&&((boltTimes[index]=(boltTimes[index]||0)-dt)<0)){boltTimes[index]=cooldown(cooldownPower);fireBolts(tier,count);}}
+        for(let tier=-1;tier<7;tier++){const index=tier+1,count=boltCounts[index];if(count&&((boltTimes[index]=(boltTimes[index]||0)-dt)<0)){boltTimes[index]+=cooldown(cooldownPower);fireBolts(tier,count);}}
         updateProjectiles(shots,dt,0);
         updateProjectiles(remoteShots,dt,1);
         for(let i=damageNumbers.length;i--;){
@@ -1417,11 +1411,11 @@
         }
     }
     function updateAudioListener(matrix){
-        if(audioContext)for(let i=3;i--;){
-            const axis='XYZ'[i],listener=audioContext.listener;
-            listener['position'+axis].value=matrix[12+i];
-            listener['forward'+axis].value=-matrix[8+i];
-            listener['up'+axis].value=matrix[4+i];
+        // Use the shared legacy API for compact Firefox-compatible listener updates.
+        if(audioContext){
+            const listener=audioContext.listener;
+            listener.setPosition(matrix[12],matrix[13],matrix[14]);
+            listener.setOrientation(-matrix[8],-matrix[9],-matrix[10],matrix[4],matrix[5],matrix[6]);
         }
     }
     // -- /MODULE: Audio --
@@ -1480,8 +1474,8 @@
         if(type===0)return `+${power} ORB`;
         if(type===8)return '+1 EVO ORB';
         if(type===9)return '+1 EVO BOLT';
-        if(type===10)return `+${power}% DMG (${ROUND(damage*power)/100})`;
-        if(type===11)return `+${power}% HP (${ROUND(maxHp*power)/100})`;
+        if(type===10)return `+${power}% DMG (${ROUND(damage*power/100)})`;
+        if(type===11)return `+${power}% HP (${ROUND(maxHp*power/100)})`;
         if(type===3)return `+${power} BOLT`;
         if(type===4)return `+${(.35*(SQRT(movePower+power)-SQRT(movePower))).toFixed(2)} MOVE`;
         if(type===5)return `+${(1/cooldown(cooldownPower+power)-1/cooldown(cooldownPower)).toFixed(2)} RATE`;

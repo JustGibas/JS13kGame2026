@@ -1216,18 +1216,19 @@
             for (const source of session.inputSources) {
                 // CHAT disabled: const left=source.handedness===(opts[5]?'right':'left'),handMove=handPointMove(frame,source);
                 const left=source.handedness===(opts[4]?'right':'left'),handMove=handPointMove(frame,source);
-                if (handMove) {
-                    if (left) vt=-handMove.x;
-                    else { vx=handMove.x;vy=handMove.y; }
-                    continue;
+                let x,y;
+                if (handMove) { x=handMove.x;y=-handMove.y; }
+                else {
+                    const axes=source.gamepad?.axes;
+                    if(!axes||axes.length<2)continue;
+                    // OPTIONAL COMPATIBILITY: Meta Quest uses 2/3; fallback also supports compact 0/1-axis gamepads.
+                    const axisOffset=axes.length>=4?2:0;
+                    x=deadzone(axes[axisOffset]||0);y=deadzone(axes[axisOffset+1]||0);
                 }
-                const axes=source.gamepad?.axes;
-                if(!axes||axes.length<2)continue;
-                // OPTIONAL COMPATIBILITY: Meta Quest uses 2/3; fallback also supports compact 0/1-axis gamepads.
-                const axisOffset=axes.length>=4?2:0,x=deadzone(axes[axisOffset]||0),y=deadzone(axes[axisOffset+1]||0);
                 
+                // Sticks and hand gestures share mobile's move/turn sides, including the swap option.
                 if (left) { vx = x; vy = -y; }
-                else if(source.handedness){vt=-x;}
+                else if(handMove||source.handedness){vt=-x;}
                 // OPTIONAL COMPATIBILITY: Meta Quest normally reports left/right handedness.
                 else if (!vx && !vy) { vx = x; vy = -y; } // Fallback for undefined handedness
             }

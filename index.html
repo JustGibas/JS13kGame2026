@@ -280,7 +280,7 @@
                     peer.op=+parts[6];
                     peer.d=+parts[7];
                     const group=[],fields=parts[8].split(',').map(Number);
-                    for(let i=0;i<MIN(12,fields.length);i+=3){const x=fields[i],z=fields[i+1],tier=beaconTier(x,z),health=MIN(1,MAX(-1,fields[i+2])),beacon=[x,z,tier,health>=0,MAX(0,health),1];group.push(beacon);}
+                    for(let i=0;i<MIN(16,fields.length);i+=4){const x=fields[i],z=fields[i+1],tier=fields[i+2],health=MIN(1,MAX(-1,fields[i+3])),beacon=[x,z,tier,health>=0,MAX(0,health),1];group.push(beacon);}
                     peer.b=group;
                     peers.set(id, peer);
                 }
@@ -333,7 +333,7 @@
         }
         if(command==='k'){
             const parts=payload.split('|'),enemy=parts[1]===myId&&enemies.find(enemy=>enemy.i===+parts[2]);
-            if(enemy&&enemy.v===+parts[3])spawnEnemy(enemy);
+            if(enemy&&enemy.v===+parts[3])enemy.mut>6?enemy.dead=1:spawnEnemy(enemy);
         }
         if(command==='d'){
             const parts=payload.split('|'),
@@ -392,7 +392,7 @@
                         '|'+orbCounts.join(',')+
                         '|'+skillTime.toFixed(2)+
                         '|'+damage+
-                        '|'+SPAWN_BEACONS.slice(1,5).flatMap(beacon=>[beacon[0],beacon[1],beacon[3]?(beacon[4]/beacon[5]).toFixed(2):-1]);
+                        '|'+SPAWN_BEACONS.slice(1,5).flatMap(beacon=>[beacon[0],beacon[1],beacon[2],beacon[3]?(beacon[4]/beacon[5]).toFixed(2):-1]);
             sendMMO(message);
             sendMMO('e|'+myId+'|'+enemies.map(enemy=>[enemy.i,enemy.v,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
         }
@@ -737,8 +737,7 @@
         ['#43a047',[.05,.65,.12]],
         ['#00acc1',[.02,.65,.8]],
         ['#2979ff',[.04,.2,1]],
-        ['#8e24aa',[.55,.04,.75]],
-        []
+        ['#8e24aa',[.55,.04,.75]]
     ];
     const powerValue=tier=>tier+1;
     let skillTime=0;
@@ -746,7 +745,7 @@
     let xp=0;
     let choosing=0;
     let enemyVersion=0,enemyId=0;
-    let beaconEvent=0;
+    let beaconEvent=0,bossProgress=0;
     const orbCounts=[1],boltCounts=[1],boltTimes=[],evolutionQueue=[],claimedBeacons=new Set;
     let cooldownPower=0;
     let shotId=0;
@@ -759,7 +758,7 @@
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
     const orbitPhase=time=>2.5*(15-ABS(time%30-15)),orbPhase=(time,tier)=>orbitPhase(time)*(1+(tier+1)*.08)+(tier+1)*1.7,orbRadius=tier=>tier<0?2.5:4+tier*1.5,cooldown=power=>MAX(.15,1/(1/3+.15*SQRT(power)));
     // Only HP above the normal spawn baseline adds size, in half-size doubling steps.
-    const STARTER_RADIUS=50,worldPower=(x,z)=>HYPOT(x,z)/100|0,beaconTier=(x,z)=>{const cap=MIN(6,worldPower(x,z)),roll=cityHash(x,z);return cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):cityHash(x,z,1)*(cap+1)|0):0},enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3,scaledHealth=(danger,tier)=>CEIL((1+danger*1.8)*powerValue(tier)*EXP(skillTime/60*.08*danger/(1+danger))),sizeEnemy=(enemy,dt)=>enemy.scale=lerp(enemy.scale,enemy.tier>6?6:1+MAX(0,CEIL(LOG2(enemy.hp*(enemy.mut+2)/enemy.max)))/2,MIN(1,dt*4));
+    const STARTER_RADIUS=50,worldPower=(x,z)=>HYPOT(x,z)/100|0,beaconTier=(x,z)=>{const cap=MIN(6,worldPower(x,z)),roll=cityHash(x,z);return cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):cityHash(x,z,1)*(cap+1)|0):0},enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3,scaledHealth=(danger,tier)=>CEIL((1+danger*1.8)*powerValue(tier)*EXP(skillTime/60*.08*danger/(1+danger))),sizeEnemy=(enemy,dt)=>enemy.scale=lerp(enemy.scale,enemy.mut>6?1:enemy.tier>6?6:1+MAX(0,CEIL(LOG2(enemy.hp*(enemy.mut+2)/enemy.max)))/2,MIN(1,dt*4));
     function makeBeacon(x,z){x=ROUND(x*10)/10;z=ROUND(z*10)/10;return [x,z,beaconTier(x,z)];}
     function spawnBeacon(){
         let fallback;
@@ -790,7 +789,7 @@
     }
     function spawnEnemy(enemy){
         const beacon=enemy.b&&SPAWN_BEACONS.find(beacon=>beacon[6]===enemy.b),anchorX=beacon?beacon[0]:player.x,anchorZ=beacon?beacon[1]:player.z;
-        if(enemy.b&&!beacon){enemy.dead=1;return;}
+        if(enemy.b&&!beacon&&enemy.mut<7){enemy.dead=1;return;}
         let angle,radius,x,z,valid;
         // Keep new enemies at least 50 units away from active peers.
         for(let attempts=100;attempts--;){
@@ -807,7 +806,7 @@
         enemy.x=x;enemy.z=z;
         enemy.scale=enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.s=enemy.dead=0;enemy.h=[];
         enemy.v=++enemyVersion;
-        if(enemy.tier>6)enemy.mut=-1,enemy.max=enemy.hp=100000;else setEnemyPower(enemy);
+        if(enemy.tier>6)enemy.mut=-1,enemy.max=enemy.hp=100000*(enemy.tier-6);else if(enemy.mut>6)enemy.max=enemy.hp=scaledHealth(worldPower(enemy.x,enemy.z),enemy.tier);else setEnemyPower(enemy);
         return enemy;
     }
     function resetEnemies(){
@@ -826,14 +825,16 @@
     function startBeacon(beacon){
         const danger=worldPower(beacon[0],beacon[1]);
         beacon[3]=1;beacon[4]=beacon[5]=10*scaledHealth(danger,beacon[2]);beacon[6]=++beaconEvent;beacon[7]=0;
-        if(beacon[9])enemies.push(spawnEnemy({i:++enemyId,b:beacon[6],tier:7}));
+        if(beacon[2]>6)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6],tier:beacon[2]})),SPAWN_BEACONS.splice(SPAWN_BEACONS.indexOf(beacon),1);
         else spawnBeaconWave(beacon);
         playMotif(beacon[0],beacon[1]);
     }
     function activateBeacons(){
+        const tier=MIN(7,HYPOT(player.x,player.z)/1000|0);
+        if(tier>bossProgress&&!enemies.some(enemy=>enemy.tier>6)&&SPAWN_BEACONS.length<5){const beacon=spawnBeacon();if(beacon)beacon[2]=++bossProgress+6,SPAWN_BEACONS.push(beacon),playMotif(beacon[0],beacon[1]);}
         for(let i=1;i<SPAWN_BEACONS.length;i++){
             const beacon=SPAWN_BEACONS[i];
-            if(!beacon[3]&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<.55**2)startBeacon(beacon);
+            if(!beacon[3]&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<(.55*(beacon[2]>6?5:1))**2)startBeacon(beacon);
         }
     }
     function claimRemoteBeacons(){
@@ -866,7 +867,7 @@
         choosing=0;
         runStats.defeated=0;
         runStats.dealt=0;
-        skillTime=0;
+        skillTime=bossProgress=0;
         boltTimes.length=evolutionQueue.length=0;orbCounts.length=boltCounts.length=1;orbCounts[0]=boltCounts[0]=1;claimedBeacons.clear();
         damage=1;
         cooldownPower=0;
@@ -929,7 +930,7 @@
     }
     function damageNumber(x,z,amount){damageNumbers.push({x,y:1.4,z,n:ROUND(amount),t:1});}
     function hurt(enemy,amount,killer){
-        if(enemy.dead)return;
+        if(enemy.dead||enemy.mut>6)return;
         amount=MIN(enemy.hp,MAX(1,FLOOR(amount)));enemy.hp-=amount;damageNumber(enemy.x,enemy.z,amount);
         if(!myId||killer===myId)runStats.dealt+=amount; // damage addition
         else sendMMO(`a|${killer}|${amount}`);
@@ -938,7 +939,7 @@
     function defeat(enemy,amount,killer){
         const x=enemy.x,z=enemy.z,version=enemy.v,tier=enemy.tier,mutation=enemy.mut;
         if(!myId||killer===myId){
-            if(++runStats.defeated===1000){const beacon=spawnBeacon();if(beacon)beacon[9]=1,SPAWN_BEACONS.push(beacon),playMotif(beacon[0],beacon[1]);}
+            runStats.defeated++;
             playImpactSound(x,z,1);dropReward(x,z,enemy.max);
         }
         if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
@@ -950,30 +951,31 @@
         for(const enemy of enemies){
             if(enemy.dead)continue;
             sizeEnemy(enemy,dt);
+            const projectile=enemy.mut>6,boss=enemy.tier>6;
             let tx=player.x,tz=player.z,best=(tx-enemy.x)**2+(tz-enemy.z)**2,now=performance.now(),self=1,targetBeacon;
             peers.forEach(peer=>{const distance=(peer.x-enemy.x)**2+(peer.z-enemy.z)**2;if(now-peer.last<15000&&distance<best){best=distance;tx=peer.x;tz=peer.z;self=0;}});
-            for(let i=1;enemy.tier<7&&i<SPAWN_BEACONS.length;i++){
+            for(let i=1;!boss&&!projectile&&i<SPAWN_BEACONS.length;i++){
                 const beacon=SPAWN_BEACONS[i],distance=(beacon[0]-enemy.x)**2+(beacon[1]-enemy.z)**2;
                 if(beacon[3]&&distance<best){best=distance;tx=beacon[0];tz=beacon[1];self=0;targetBeacon=beacon;}
             }
             // Recycle abandoned enemies and never allow a powerful enemy inside the starter zone.
-            if(best>60**2){spawnEnemy(enemy);continue;}
+            if(!boss&&best>60**2){projectile?enemy.dead=1:spawnEnemy(enemy);continue;}
             if(HYPOT(enemy.x,enemy.z)<STARTER_RADIUS&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.max=enemy.hp=1;}
-            let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3;
-            enemy.vx+=fx*dt;enemy.vz+=fz*dt;
+            let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=boss?2.35:projectile?20:2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3;
+            if(!projectile)enemy.vx+=fx*dt,enemy.vz+=fz*dt;
             // HP drives movement speed logarithmically, including mutation HP.
             let speed=HYPOT(enemy.vx,enemy.vz)||1;
             if(speed>maxSpeed){enemy.vx*=maxSpeed/speed;enemy.vz*=maxSpeed/speed;speed=maxSpeed;}
             const px=enemy.x,pz=enemy.z;
             enemy.x+=enemy.vx*dt;enemy.z+=enemy.vz*dt;
-            const wall=resolveCityCollision(enemy,.45*enemy.scale,px,pz);
+            const wall=!projectile&&resolveCityCollision(enemy,.45*enemy.scale,px,pz);
             if(wall){const side=SIGN((wall===1?enemy.vx||dx:enemy.vz||dz)||1)*maxSpeed;enemy.vx=side*(wall===1);enemy.vz=side*(wall<0);}
             // Respawn after one second of closing slower than 2 units/sec.
-            if((enemy.s=distance-HYPOT(tx-enemy.x,tz-enemy.z)<2*dt?enemy.s+dt:0)>1){spawnEnemy(enemy);continue;}
-            enemy.vx*=1-dt;enemy.vz*=1-dt;
+            if(!boss&&(enemy.s=distance-HYPOT(tx-enemy.x,tz-enemy.z)<2*dt?enemy.s+dt:0)>1){projectile?enemy.dead=1:spawnEnemy(enemy);continue;}
+            if(!projectile)enemy.vx*=1-dt,enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
-            if(enemy.tier>6&&(enemy.fire=(enemy.fire||0)-dt)<0){
-                enemy.fire=.5;enemies.push(spawnEnemy({i:++enemyId,b:enemy.b}));
+            if(boss&&(enemy.fire=(enemy.fire||0)-dt)<0){
+                enemy.fire=1;const shot=spawnEnemy({i:++enemyId,b:enemy.b,tier:enemy.tier%7,mut:enemy.tier});shot.x=enemy.x;shot.z=enemy.z;shot.vx=dx/distance*20;shot.vz=dz/distance*20;enemies.push(shot);
             }
             if(targetBeacon&&distance<.6+enemy.scale*.6){
                 targetBeacon[4]-=enemy.hp;
@@ -986,7 +988,7 @@
                 //player.y+=dz/d*(2+c.tier*.2);
                 hp=MAX(0,hp-enemy.hp);
                 playHurtSound();
-                spawnEnemy(enemy);
+                projectile?enemy.dead=1:spawnEnemy(enemy);
                 if(hp<1)return;
                 continue;
             }
@@ -1905,7 +1907,7 @@
         gl.useProgram(PDisc);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);
         const visibleBeacons=SPAWN_BEACONS.slice(),now=performance.now();peers.forEach(peer=>{if(now-peer.last<15000)peer.b?.forEach(beacon=>visibleBeacons.push(beacon))});
         for(const beacon of visibleBeacons){
-            const x=beacon[0],z=beacon[1],color=beacon[9]?POWER[7][1]:beacon.length>2?POWER[beacon[2]][1]:WHITE,health=beacon[3]?MAX(0,beacon[4])/beacon[5]:1,visual=beacon[3]? .2+.8*SQRT(health):1,width=4*visual,height=beacon.length<3?300:beacon[3]?20+280*health:180,length=HYPOT(player.x-x,player.z-z)||1,dx=(player.z-z)/length,dz=(x-player.x)/length;
+            const x=beacon[0],z=beacon[1],color=beacon.length>2?POWER[beacon[2]%7][1]:WHITE,health=beacon[3]?MAX(0,beacon[4])/beacon[5]:1,visual=(beacon[2]>6?5:1)*(beacon[3]? .2+.8*SQRT(health):1),width=4*visual,height=beacon.length<3?300:beacon[3]?20+280*health:180,length=HYPOT(player.x-x,player.z-z)||1,dx=(player.z-z)/length,dz=(x-player.x)/length;
             // outer beam
             gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.useProgram(PC);gl.bindVertexArray(vaoBeam);gl.uniform4f(uS_Color,color[0],color[1],color[2],.2);
             gl.uniformMatrix4fv(uS_M,false,new F32([dx*width,0,dz*width,0, 0,1,0,0, 0,height,0,0, x-dx*width/2,-.1,z-dz*width/2,1]));gl.drawArrays(gl.TRIANGLES,0,6);
@@ -2015,7 +2017,7 @@
     // -- /PART: Camera --
 
     function drawWorld(V, P, W) {
-        const now=performance.now(),tt=now*.001,br=.144,live=enemy=>!enemy.dead&&now-enemy.last<15000;POWER[7][1]=POWER[tt*10%7|0][1];
+        const now=performance.now(),tt=now*.001,br=.144,live=enemy=>!enemy.dead&&now-enemy.last<15000;
         drawCity(V,P);gl.bindVertexArray(sphereVao);
         // -- PART: XP --
         // Mesh and ghost loops intentionally remain separate: a shared pass helper is larger.
@@ -2032,11 +2034,11 @@
         // -- /PART: Projectile --
         // -- PART: Enemy --
         // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
-        for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
-        remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[enemy.mut<0?enemy.tier:enemy.mut][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
+        for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[(enemy.mut<0?enemy.tier:enemy.mut)%7][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
+        remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[(enemy.mut<0?enemy.tier:enemy.mut)%7][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
         gl.disable(gl.BLEND);
-        for(const enemy of enemies)drawCat(enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier][1],1.16,enemy.scale);
-        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier][1],1.16,enemy.scale)));
+        for(const enemy of enemies)drawCat(enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier%7][1],1.16,enemy.scale);
+        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier%7][1],1.16,enemy.scale)));
         gl.depthMask(true);
         for(const enemy of enemies)drawCat(enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
         remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));

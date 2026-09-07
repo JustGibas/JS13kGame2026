@@ -179,7 +179,6 @@
 
     // Peer interpolation delay (ms). Higher = smoother but more laggy. 120ms is a good balance.
     function pushPeerSample(peer, x, z, yaw, now){
-        if (!peer.hist) peer.hist = [];
         peer.speed = peer.last ? HYPOT(x-peer.x,z-peer.z)*1000/(now-peer.last||1) : 0;
         peer.hist.push({ t: now, x, z, yaw });
         peer.last = now;
@@ -190,9 +189,8 @@
         peer.x = x; peer.z = z; peer.yaw = yaw;
     }
     function samplePeer(peer, targetT){
-        const history=peer.hist;if(!history||history.length===0)return null;
-        // if only one sample or target before first -> use first/last
-        if(history.length===1)return history[0];
+        const history=peer.hist;if(!history.length)return null;
+        // The first boundary also handles a one-sample history.
         if(targetT<=history[0].t)return history[0];
         const count=history.length;
         if(targetT>=history[count-1].t)return history[count-1];
@@ -254,7 +252,6 @@
         switch(command){
             // LOG disabled: case '@':myId=message.slice(1);logMMO('my id: '+myId);return;
             case '@':myId=message.slice(1);return;
-            case '+':{const id=message.slice(1);if(!peers.has(id))peers.set(id,{x:0,z:0,last:0,hist:[],oh:[]});return;}
             case '-':forgetPeer(message.slice(1));return;
         }
         /* DIRECT MMO compatibility disabled to save bytes.

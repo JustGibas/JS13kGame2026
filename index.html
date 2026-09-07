@@ -789,7 +789,7 @@
     }
     function spawnEnemy(enemy){
         const beacon=enemy.b&&SPAWN_BEACONS.find(beacon=>beacon[6]===enemy.b),anchorX=beacon?beacon[0]:player.x,anchorZ=beacon?beacon[1]:player.z;
-        if(enemy.b&&!beacon&&enemy.mut<7){enemy.dead=1;return;}
+        if(enemy.b&&!beacon&&enemy.mut<7){enemy.dead=1;if(hp>0&&enemy.tier>6)playMotif(undefined,0,1);return;}
         let angle,radius,x,z,valid;
         // Keep new enemies at least 50 units away from active peers.
         for(let attempts=100;attempts--;){
@@ -831,7 +831,7 @@
     }
     function activateBeacons(){
         const tier=MIN(7,HYPOT(player.x,player.z)/1000|0);
-        if(tier>bossProgress&&!enemies.some(enemy=>enemy.tier>6)&&SPAWN_BEACONS.length<5){const beacon=spawnBeacon();if(beacon)beacon[2]=++bossProgress+6,SPAWN_BEACONS.push(beacon),playMotif(beacon[0],beacon[1]);}
+        if(tier>bossProgress&&!enemies.some(enemy=>enemy.tier>6)&&SPAWN_BEACONS.length<5){const beacon=spawnBeacon();if(beacon)beacon[2]=++bossProgress+6,SPAWN_BEACONS.push(beacon),playMotif();}
         for(let i=1;i<SPAWN_BEACONS.length;i++){
             const beacon=SPAWN_BEACONS[i];
             if(!beacon[3]&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<(.55*(beacon[2]>6?5:1))**2)startBeacon(beacon);
@@ -943,7 +943,7 @@
             runStats.defeated++;
             playImpactSound(x,z,1);dropReward(x,z,enemy.max);
         }
-        if(tier>6){evolutionQueue.push(6-tier);if(!choosing)rollChoices(evolutionQueue.shift());}
+        if(tier>6){playMotif();evolutionQueue.push(6-tier);if(!choosing)rollChoices(evolutionQueue.shift());}
         if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
         enemy.b?enemy.dead=1:spawnEnemy(enemy);
     }

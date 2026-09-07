@@ -737,7 +737,8 @@
         ['#43a047',[.05,.65,.12]],
         ['#00acc1',[.02,.65,.8]],
         ['#2979ff',[.04,.2,1]],
-        ['#8e24aa',[.55,.04,.75]]
+        ['#8e24aa',[.55,.04,.75]],
+        []
     ];
     const powerValue=tier=>tier+1;
     let skillTime=0;
@@ -758,7 +759,7 @@
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
     const orbitPhase=time=>2.5*(15-ABS(time%30-15)),orbPhase=(time,tier)=>orbitPhase(time)*(1+(tier+1)*.08)+(tier+1)*1.7,orbRadius=tier=>tier<0?2.5:4+tier*1.5,cooldown=power=>MAX(.15,1/(1/3+.15*SQRT(power)));
     // Only HP above the normal spawn baseline adds size, in half-size doubling steps.
-    const STARTER_RADIUS=50,worldPower=(x,z)=>HYPOT(x,z)/100|0,beaconTier=(x,z)=>{const cap=MIN(6,worldPower(x,z)),roll=cityHash(x,z);return cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):cityHash(x,z,1)*(cap+1)|0):0},enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3,scaledHealth=(danger,tier)=>CEIL((1+danger*1.8)*powerValue(tier)*EXP(skillTime/60*.08*danger/(1+danger))),sizeEnemy=(enemy,dt)=>enemy.scale=lerp(enemy.scale,1+MAX(0,CEIL(LOG2(enemy.hp*(enemy.mut+2)/enemy.max)))/2,MIN(1,dt*4));
+    const STARTER_RADIUS=50,worldPower=(x,z)=>HYPOT(x,z)/100|0,beaconTier=(x,z)=>{const cap=MIN(6,worldPower(x,z)),roll=cityHash(x,z);return cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):cityHash(x,z,1)*(cap+1)|0):0},enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3,scaledHealth=(danger,tier)=>CEIL((1+danger*1.8)*powerValue(tier)*EXP(skillTime/60*.08*danger/(1+danger))),sizeEnemy=(enemy,dt)=>enemy.scale=lerp(enemy.scale,enemy.tier>6?6:1+MAX(0,CEIL(LOG2(enemy.hp*(enemy.mut+2)/enemy.max)))/2,MIN(1,dt*4));
     function makeBeacon(x,z){x=ROUND(x*10)/10;z=ROUND(z*10)/10;return [x,z,beaconTier(x,z)];}
     function spawnBeacon(){
         let fallback;
@@ -806,7 +807,7 @@
         enemy.x=x;enemy.z=z;
         enemy.scale=enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.s=enemy.dead=0;enemy.h=[];
         enemy.v=++enemyVersion;
-        setEnemyPower(enemy);
+        if(enemy.tier>6)enemy.mut=-1,enemy.max=enemy.hp=100000;else setEnemyPower(enemy);
         return enemy;
     }
     function resetEnemies(){
@@ -825,7 +826,9 @@
     function startBeacon(beacon){
         const danger=worldPower(beacon[0],beacon[1]);
         beacon[3]=1;beacon[4]=beacon[5]=10*scaledHealth(danger,beacon[2]);beacon[6]=++beaconEvent;beacon[7]=0;
-        spawnBeaconWave(beacon);playMotif(beacon[0],beacon[1]);
+        if(beacon[9])enemies.push(spawnEnemy({i:++enemyId,b:beacon[6],tier:7}));
+        else spawnBeaconWave(beacon);
+        playMotif(beacon[0],beacon[1]);
     }
     function activateBeacons(){
         for(let i=1;i<SPAWN_BEACONS.length;i++){
@@ -934,7 +937,10 @@
     }
     function defeat(enemy,amount,killer){
         const x=enemy.x,z=enemy.z,version=enemy.v,tier=enemy.tier,mutation=enemy.mut;
-        if(!myId||killer===myId){runStats.defeated++;playImpactSound(x,z,1);dropReward(x,z,enemy.max);}
+        if(!myId||killer===myId){
+            if(++runStats.defeated===1000){const beacon=spawnBeacon();if(beacon)beacon[9]=1,SPAWN_BEACONS.push(beacon),playMotif(beacon[0],beacon[1]);}
+            playImpactSound(x,z,1);dropReward(x,z,enemy.max);
+        }
         if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
         enemy.b?enemy.dead=1:spawnEnemy(enemy);
     }
@@ -946,7 +952,7 @@
             sizeEnemy(enemy,dt);
             let tx=player.x,tz=player.z,best=(tx-enemy.x)**2+(tz-enemy.z)**2,now=performance.now(),self=1,targetBeacon;
             peers.forEach(peer=>{const distance=(peer.x-enemy.x)**2+(peer.z-enemy.z)**2;if(now-peer.last<15000&&distance<best){best=distance;tx=peer.x;tz=peer.z;self=0;}});
-            for(let i=1;i<SPAWN_BEACONS.length;i++){
+            for(let i=1;enemy.tier<7&&i<SPAWN_BEACONS.length;i++){
                 const beacon=SPAWN_BEACONS[i],distance=(beacon[0]-enemy.x)**2+(beacon[1]-enemy.z)**2;
                 if(beacon[3]&&distance<best){best=distance;tx=beacon[0];tz=beacon[1];self=0;targetBeacon=beacon;}
             }
@@ -966,6 +972,9 @@
             if((enemy.s=distance-HYPOT(tx-enemy.x,tz-enemy.z)<2*dt?enemy.s+dt:0)>1){spawnEnemy(enemy);continue;}
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
+            if(enemy.tier>6&&(enemy.fire=(enemy.fire||0)-dt)<0){
+                enemy.fire=.5;enemies.push(spawnEnemy({i:++enemyId,b:enemy.b}));
+            }
             if(targetBeacon&&distance<.6+enemy.scale*.6){
                 targetBeacon[4]-=enemy.hp;
                 enemy.b?enemy.dead=1:spawnEnemy(enemy);
@@ -1896,7 +1905,7 @@
         gl.useProgram(PDisc);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);
         const visibleBeacons=SPAWN_BEACONS.slice(),now=performance.now();peers.forEach(peer=>{if(now-peer.last<15000)peer.b?.forEach(beacon=>visibleBeacons.push(beacon))});
         for(const beacon of visibleBeacons){
-            const x=beacon[0],z=beacon[1],color=beacon.length>2?POWER[beacon[2]][1]:WHITE,health=beacon[3]?MAX(0,beacon[4])/beacon[5]:1,visual=beacon[3]? .2+.8*SQRT(health):1,width=4*visual,height=beacon.length<3?300:beacon[3]?20+280*health:180,length=HYPOT(player.x-x,player.z-z)||1,dx=(player.z-z)/length,dz=(x-player.x)/length;
+            const x=beacon[0],z=beacon[1],color=beacon[9]?POWER[7][1]:beacon.length>2?POWER[beacon[2]][1]:WHITE,health=beacon[3]?MAX(0,beacon[4])/beacon[5]:1,visual=beacon[3]? .2+.8*SQRT(health):1,width=4*visual,height=beacon.length<3?300:beacon[3]?20+280*health:180,length=HYPOT(player.x-x,player.z-z)||1,dx=(player.z-z)/length,dz=(x-player.x)/length;
             // outer beam
             gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.useProgram(PC);gl.bindVertexArray(vaoBeam);gl.uniform4f(uS_Color,color[0],color[1],color[2],.2);
             gl.uniformMatrix4fv(uS_M,false,new F32([dx*width,0,dz*width,0, 0,1,0,0, 0,height,0,0, x-dx*width/2,-.1,z-dz*width/2,1]));gl.drawArrays(gl.TRIANGLES,0,6);
@@ -2006,7 +2015,7 @@
     // -- /PART: Camera --
 
     function drawWorld(V, P, W) {
-        const now=performance.now(),tt=now*.001,br=.144,live=enemy=>!enemy.dead&&now-enemy.last<15000;
+        const now=performance.now(),tt=now*.001,br=.144,live=enemy=>!enemy.dead&&now-enemy.last<15000;POWER[7][1]=POWER[tt*10%7|0][1];
         drawCity(V,P);gl.bindVertexArray(sphereVao);
         // -- PART: XP --
         // Mesh and ghost loops intentionally remain separate: a shared pass helper is larger.

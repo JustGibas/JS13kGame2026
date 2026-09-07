@@ -361,7 +361,7 @@
             const parts=payload.split('|');
             if(parts[1]!==myId&&peers.has(parts[1])&&nearCity(+parts[2],+parts[3])){
                 remoteShots.push({o:parts[1],x:+parts[2],y:.7,z:+parts[3],vx:+parts[4],vz:+parts[5],d:+parts[6],i:+parts[7],t:3,c:MIN(6,MAX(-1,+parts[8]))});
-                playShotSound(+parts[2],+parts[3]);
+                +parts[6]>0&&playShotSound(+parts[2],+parts[3]);
             }
         }
         if(command==='x'){
@@ -750,7 +750,7 @@
     let cooldownPower=0;
     let shotId=0;
     let damage=1;
-    let movePower=0;
+    let movePower=30;
     let choices=[];
     let seed=Date.now()|0;
     let hp=100;
@@ -838,7 +838,7 @@
         }
     }
     function claimRemoteBeacons(){
-        peers.forEach((peer,owner)=>peer.b?.forEach(beacon=>{const claim=owner+','+beacon[0]+','+beacon[1];if(!beacon[3]&&!claimedBeacons.has(claim)&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<.55**2){claimedBeacons.add(claim);acceptBeaconClaim(beacon);sendMMO(`v|${owner}|${beacon[0]}|${beacon[1]}`);}}));
+        peers.forEach((peer,owner)=>peer.b?.forEach(beacon=>{const claim=owner+','+beacon[0]+','+beacon[1];if(!beacon[3]&&!claimedBeacons.has(claim)&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<(.55*(beacon[2]>6?5:1))**2){claimedBeacons.add(claim);acceptBeaconClaim(beacon);sendMMO(`v|${owner}|${beacon[0]}|${beacon[1]}`);}}));
     }
     function acceptBeaconClaim(remote){
         if(SPAWN_BEACONS.length>4){let oldest=-1;for(let i=1;i<SPAWN_BEACONS.length;i++)if(SPAWN_BEACONS[i][3]&&(oldest<0||SPAWN_BEACONS[i][6]<SPAWN_BEACONS[oldest][6]))oldest=i;if(oldest>0){const removed=SPAWN_BEACONS.splice(oldest,1)[0];for(let i=enemies.length;i--;)if(enemies[i].b===removed[6])enemies.splice(i,1);}}
@@ -871,7 +871,7 @@
         boltTimes.length=evolutionQueue.length=0;orbCounts.length=boltCounts.length=1;orbCounts[0]=boltCounts[0]=1;claimedBeacons.clear();
         damage=1;
         cooldownPower=0;
-        movePower=0;
+        movePower=30;
         maxHp=100;
         hp=100;
         items.length=0;
@@ -890,7 +890,7 @@
             while(tier<cap&&rng()<.4)tier++;
             return tier;
         };
-        const pool=tier===undefined?[0,3,4,5,6,7]:[8,9,10,11];
+        const pool=tier<0?(tier=~tier,[10,11,14]):tier===undefined?[0,3,4,5,6,7]:[8,9,12,13];
         choices=[];
         while(choices.length<3){
             const type=pool[rng()*pool.length|0];
@@ -901,21 +901,22 @@
     function showChoices(){
         for(let i=3;i--;){
             const choice=choices[i];
-            UI_LEVEL[i][4]=cardText(choice[0],powerValue(choice[1])*(choice[0]>9?10:1));
+            UI_LEVEL[i][4]=cardText(choice[0],powerValue(choice[1]));
             UI_LEVEL[i][6]=choice[1];
         }
         choosing=1;
         hudVisible=false;
     }
     function upgrade(choice){
-        const type=choice[0],power=powerValue(choice[1])*(type>9?10:1);
+        const type=choice[0],power=powerValue(choice[1]);
         if(type===8)orbCounts[choice[1]+1]=(orbCounts[choice[1]+1]||0)+1;
         else if(type===9)boltCounts[choice[1]+1]=(boltCounts[choice[1]+1]||0)+1;
-        else if(type===10)damage+=ROUND(damage*power/100);
-        else if(type===11||type===6){const added=type===6?power*20:ROUND(maxHp*power/100);maxHp+=added;hp+=added;}
+        else if(type===10)damage+=ROUND(damage*power/10);
+        else if(type===12)damage+=power*10;
+        else if(type===11||type===13||type===6){const added=type===6?power*20:type===13?power*100:ROUND(maxHp*power/10);maxHp+=added;hp+=added;}
         else if(type===0)orbCounts[0]+=power;
         else if(type===3)boltCounts[0]+=power;
-        else if(type===4)movePower+=power;
+        else if(type%10===4)movePower+=type>9?ROUND(movePower*power/10):power;
         else if(type===5)cooldownPower+=power;
         else if(type===7)damage+=power;
         if(type<8)xp-=level++*3;
@@ -942,6 +943,7 @@
             runStats.defeated++;
             playImpactSound(x,z,1);dropReward(x,z,enemy.max);
         }
+        if(tier>6){evolutionQueue.push(6-tier);if(!choosing)rollChoices(evolutionQueue.shift());}
         if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
         enemy.b?enemy.dead=1:spawnEnemy(enemy);
     }
@@ -975,7 +977,7 @@
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
             if(boss&&(enemy.fire=(enemy.fire||0)-dt)<0){
-                enemy.fire=1;fireShot({x:enemy.x,y:.7,z:enemy.z,vx:dx/distance*20,vz:dz/distance*20,d:-100,i:++shotId,t:3,c:enemy.tier%7});
+                enemy.fire=7/enemy.tier;fireVolley(enemy.x,enemy.z,ATAN2(dx,dz),-1,enemy.tier*2-13,(6-enemy.tier)*100);
             }
             if(targetBeacon&&distance<.6+enemy.scale*.6){
                 targetBeacon[4]-=enemy.hp;
@@ -1067,16 +1069,16 @@
         shots.push(projectile);
         if(myId)sendMMO(`s|${myId}|${projectile.x.toFixed(2)}|${projectile.z.toFixed(2)}|${projectile.vx.toFixed(2)}|${projectile.vz.toFixed(2)}|${projectile.d}|${projectile.i}|${projectile.c}`);
     }
+    function fireVolley(x,z,aim,tier,count,d){
+        for(let i=count;i--;){const angle=aim+(i-(count-1)/2)*.18;fireShot({x,y:.7,z,vx:SIN(angle)*10,vz:COS(angle)*10,d,i:++shotId,t:3,c:tier});}
+    }
     function fireBolts(tier,count){
         let target=enemies[0],best=1e9;
         for(const enemy of enemies){const distance=HYPOT(enemy.x-player.x,enemy.z-player.z);if(distance<best){best=distance;target=enemy;}}
         remoteEnemies.forEach(group=>group.forEach(enemy=>{const distance=HYPOT(enemy.x-player.x,enemy.z-player.z);if(!enemy.dead&&performance.now()-enemy.last<15000&&distance<best){best=distance;target=enemy;}}));
         if(!target)return;
         const aim=ATAN2(target.x-player.x,target.z-player.z);
-        for(let i=count;i--;){
-            const angle=aim+(i-(count-1)/2)*.18,projectile={x:player.x,y:.7,z:player.z,vx:SIN(angle)*10,vz:COS(angle)*10,d:damage*(tier+2),i:++shotId,t:3,c:tier};
-            fireShot(projectile);
-        }
+        fireVolley(player.x,player.z,aim,tier,count,damage*(tier+2));
         playShotSound();
     }
     function updateShots(dt){
@@ -1264,7 +1266,7 @@
     // Updates the user's position and orientation based on movement input and delta time
     function step(dt, movement) {
         // New movement logic
-        const speed=3+.35*SQRT(movePower);
+        const speed=movePower/10;
         // Apply movement
     player.yaw += movement.t * 2/*TURNS*/ * dt; // Apply turning
         
@@ -1492,10 +1494,12 @@
         if(type===0)return `+${power} ORB`;
         if(type===8)return '+1 EVO ORB';
         if(type===9)return '+1 EVO BOLT';
-        if(type===10)return `+${power}% DMG (${ROUND(damage*power/100)})`;
-        if(type===11)return `+${power}% HP (${ROUND(maxHp*power/100)})`;
+        if(type===10)return `+${ROUND(damage*power/10)} DMG`;
+        if(type===11)return `+${ROUND(maxHp*power/10)} HP`;
+        if(type===12)return `+${power}0 DMG`;
+        if(type===13)return `+${power}00 HP`;
         if(type===3)return `+${power} BOLT`;
-        if(type===4)return `+${(.35*(SQRT(movePower+power)-SQRT(movePower))).toFixed(2)} MOVE`;
+        if(type%10===4)return `+${(type>9?ROUND(movePower*power/10):power)/10} MOVE`;
         if(type===5)return `+${(1/cooldown(cooldownPower+power)-1/cooldown(cooldownPower)).toFixed(2)} RATE`;
         if(type===6)return `+${power*20} HP`;
         return `+${power} DMG`;
@@ -2054,8 +2058,8 @@
         // -- /PART: Enemy --
         // -- PART: Projectile --
         gl.depthMask(false);
-        for(const projectile of shots)drawSphere(projectile.x,projectile.y,projectile.z,br*1.14,projectile.c<0?WHITE:POWER[projectile.c][1]);
-        for(const projectile of remoteShots)drawSphere(projectile.x,projectile.y,projectile.z,br*1.14,projectile.c<0?WHITE:POWER[projectile.c][1]);
+        for(const projectile of shots)drawSphere(projectile.x,projectile.y,projectile.z,br*(1.14+(projectile.d<0)),projectile.c<0?WHITE:POWER[projectile.c][1]);
+        for(const projectile of remoteShots)drawSphere(projectile.x,projectile.y,projectile.z,br*(1.14+(projectile.d<0)),projectile.c<0?WHITE:POWER[projectile.c][1]);
         gl.depthMask(true);
         for(const projectile of shots)drawSphere(projectile.x,projectile.y,projectile.z,br,BLACK);
         for(const projectile of remoteShots)drawSphere(projectile.x,projectile.y,projectile.z,br,BLACK);

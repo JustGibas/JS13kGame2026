@@ -306,16 +306,17 @@
                 for(const row of parts[2].split(';'))if(row){
                     const fields=row.split(',').map(Number),
                         id=fields[0];
-                    if(!nearCity(fields[2],fields[3]))continue;
+                    if(!nearCity(fields[1],fields[2]))continue;
                     let enemy=group.get(id);
-                    if(!enemy||enemy.v!==fields[1]){
-                        enemy={i:id,v:fields[1],x:fields[2],z:fields[3],hit:0,scale:0};
+                    if(!enemy){
+                        enemy={i:id,x:fields[1],z:fields[2],y:fields[3],hit:0,scale:0};
                     }else if(fields[6]<enemy.hp){
                         damageNumber(enemy.x,enemy.z,enemy.hp-fields[6]);
                     }
 
-                    enemy.tx=fields[2];
-                    enemy.tz=fields[3];
+                    enemy.tx=fields[1];
+                    enemy.tz=fields[2];
+                    enemy.ty=fields[3];
                     enemy.tyaw=fields[4];
                     enemy.tier=fields[5];
                     enemy.hp=fields[6];
@@ -333,7 +334,7 @@
         }
         if(command==='k'){
             const parts=payload.split('|'),enemy=parts[1]===myId&&enemies.find(enemy=>enemy.i===+parts[2]);
-            if(enemy&&enemy.v===+parts[3])spawnEnemy(enemy);
+            if(enemy)enemy.dead=1;
         }
         if(command==='d'){
             const parts=payload.split('|'),
@@ -341,18 +342,15 @@
                 enemy=group&&group.get(+parts[2]);
 
             if(parts[1]!==myId){
-                if(parts[8]===myId){
+                if(parts[7]===myId){
                     runStats.defeated++;
-                    playImpactSound(+parts[4],+parts[5],1);
-                    dropReward(+parts[4],+parts[5],+parts[10]);
+                    playImpactSound(+parts[3],+parts[4],1);
+                    dropReward(+parts[3],+parts[4],+parts[9]);
                 }
-                if(+parts[7])damageNumber(+parts[4],+parts[5],+parts[7]);
+                if(+parts[6])damageNumber(+parts[3],+parts[4],+parts[6]);
             }
 
-            if(enemy&&enemy.v===+parts[3]){
-                enemy.v++;
-                enemy.dead=1;
-            }
+            if(enemy)enemy.dead=1;
         }
         if(command==='a'){
             const parts=payload.split('|');if(parts[1]===myId)runStats.dealt+=+parts[2];
@@ -394,7 +392,7 @@
                         '|'+damage+
                         '|'+SPAWN_BEACONS.slice(1).flatMap(beacon=>[beacon[0],beacon[1],beacon[2],beacon[3]?(beacon[4]/beacon[5]).toFixed(2):-1]);
             sendMMO(message);
-            sendMMO('e|'+myId+'|'+enemies.map(enemy=>[enemy.i,enemy.v,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
+            sendMMO('e|'+myId+'|'+enemies.map(enemy=>[enemy.i,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.y.toFixed(1),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
         }
     }
     // -- /PART: Sync --
@@ -714,7 +712,7 @@
             const side=cityHash(x,z,1)>.5,wall=3+10*(HYPOT(x,z)/12|0)+ABS(x-z)%4*.4,width=side?wall:3+cityHash(x,z,1)*4,depth=side?3+cityHash(x,z,2)*4:wall,height=6+cityHash(x,z,3)*26,building={x:x*CITY_BLOCK,z:z*CITY_BLOCK,w:width,d:depth,h:height};
             next.push(building);
         }
-        if(next.length)buildings=next;
+        if(next.length)buildings=next.sort((a,b)=>b.h-a.h);
     }
     // Player capsule constants (smaller than an object w/ props)
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
@@ -744,7 +742,7 @@
     let level=1;
     let xp=0;
     let choosing=0;
-    let enemyVersion=0,enemyId=0;
+    let enemyId=0;
     let beaconEvent=0;
     const orbCounts=[1],boltCounts=[1],boltTimes=[],evolutionQueue=[],claimedBeacons=new Set;
     let cooldownPower=0;
@@ -788,22 +786,10 @@
     function spawnEnemy(enemy){
         const beacon=enemy.b&&SPAWN_BEACONS.find(beacon=>beacon[6]===enemy.b),anchorX=beacon?beacon[0]:player.x,anchorZ=beacon?beacon[1]:player.z;
         if(enemy.b&&!beacon&&enemy.mut<7){enemy.dead=1;if(hp>0&&enemy.tier>6)playMotif(undefined,0,1);return;}
-        let angle,radius,x,z,valid;
-        // Keep new enemies at least 20 units away from active peers.
-        for(let attempts=100;attempts--;){
-            angle=rng()*PI*2;
-            radius=beacon?20+rng()*10:35+rng()*20;
-            x=anchorX+COS(angle)*radius;
-            z=anchorZ+SIN(angle)*radius;
-            valid=1;
-            peers.forEach(peer=>valid&=HYPOT(peer.x-x,peer.z-z)>=20);
-            valid&=!insideBuilding(x,z,.6);
-            if(valid)break;
-        }
-        // If every attempt fails, keep the last candidate; the stuck timer retries.
+        const angle=rng()*PI*2,radius=beacon?20+rng()*10:35+rng()*20,x=anchorX+COS(angle)*radius,z=anchorZ+SIN(angle)*radius;
+        // Accept the first street or rooftop position; climbing makes either valid.
         enemy.x=x;enemy.z=z;
-        enemy.scale=enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.s=enemy.dead=0;enemy.h=[];
-        enemy.v=++enemyVersion;
+        enemy.scale=enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.dead=0;enemy.y=(buildingAt(x,z,.6)?.h||0)+.6;enemy.h=[];
         if(enemy.tier>6)enemy.mut=-1,enemy.max=enemy.hp=1000000*(enemy.tier-6);else setEnemyPower(enemy);
         return enemy;
     }
@@ -812,7 +798,7 @@
         for(let i=enemyPopulationTarget();i--;)enemies.push(spawnEnemy({i:++enemyId}));
     }
     function syncEnemyPopulation(){
-        const target=enemyPopulationTarget();let ordinary=enemies.filter(enemy=>!enemy.b).length;
+        const target=enemyPopulationTarget();let ordinary=enemies.filter(enemy=>!enemy.b&&!enemy.dead).length;
         while(ordinary<target){enemies.push(spawnEnemy({i:++enemyId}));ordinary++;}
         // Keep one ring's three-enemy population as hysteresis when moving inward.
         if(ordinary>target+3)for(let i=enemies.length;i--&&ordinary>target;)if(!enemies[i].b){enemies.splice(i,1);ordinary--;}
@@ -934,14 +920,14 @@
         if(enemy.hp<1)defeat(enemy,amount,killer);else playImpactSound(enemy.x,enemy.z);
     }
     function defeat(enemy,amount,killer){
-        const x=enemy.x,z=enemy.z,version=enemy.v,tier=enemy.tier,mutation=enemy.mut;
+        const x=enemy.x,z=enemy.z,tier=enemy.tier,mutation=enemy.mut;
         if(!myId||killer===myId){
             runStats.defeated++;
             playImpactSound(x,z,1);dropReward(x,z,enemy.max);
         }
         if(tier>6){playMotif();evolutionQueue.push(6-tier);if(!choosing)rollChoices(evolutionQueue.shift());}
-        if(myId)sendMMO(`d|${myId}|${enemy.i}|${version}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
-        enemy.b?enemy.dead=1:spawnEnemy(enemy);
+        if(myId)sendMMO(`d|${myId}|${enemy.i}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
+        enemy.dead=1;
     }
     function updateEnemies(dt){
         skillTime+=dt;
@@ -957,7 +943,7 @@
                 if(beacon[3]&&distance<best){best=distance;tx=beacon[0];tz=beacon[1];self=0;targetBeacon=beacon;}
             }
             // Recycle abandoned enemies and never allow a powerful enemy inside the starter zone.
-            if(!boss&&best>60**2){spawnEnemy(enemy);continue;}
+            if(!boss&&best>60**2){enemy.dead=1;continue;}
             if(HYPOT(enemy.x,enemy.z)<STARTER_RADIUS&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.max=enemy.hp=1;}
             let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=boss?2.35:2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3;
             enemy.vx+=fx*dt;enemy.vz+=fz*dt;
@@ -966,10 +952,8 @@
             if(speed>maxSpeed){enemy.vx*=maxSpeed/speed;enemy.vz*=maxSpeed/speed;speed=maxSpeed;}
             const px=enemy.x,pz=enemy.z;
             enemy.x+=enemy.vx*dt;enemy.z+=enemy.vz*dt;
-            const wall=resolveCityCollision(enemy,.45*enemy.scale,px,pz);
-            if(wall){const side=SIGN((wall===1?enemy.vx||dx:enemy.vz||dz)||1)*maxSpeed;enemy.vx=side*(wall===1);enemy.vz=side*(wall<0);}
-            // Respawn after one second of closing slower than 2 units/sec.
-            if(!boss&&(enemy.s=distance-HYPOT(tx-enemy.x,tz-enemy.z)<2*dt?enemy.s+dt:0)>1){spawnEnemy(enemy);continue;}
+            const building=buildingAt(enemy.x,enemy.z,.45*enemy.scale),roof=(building?.h||0)+.6,wall=building&&enemy.y<roof&&resolveCityCollision(enemy,.45*enemy.scale,px,pz);
+            if(wall){enemy.vx=(enemy.x-px)/dt;enemy.vz=(enemy.z-pz)/dt;enemy.y+=dt*maxSpeed}else enemy.y=MAX(roof,enemy.y-dt*maxSpeed*2);
             enemy.vx*=1-dt;enemy.vz*=1-dt;
             enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
             if(boss&&(enemy.fire=(enemy.fire||0)-dt)<0){
@@ -977,7 +961,7 @@
             }
             if(targetBeacon&&distance<.6+enemy.scale*.6){
                 targetBeacon[4]-=enemy.hp;
-                enemy.b?enemy.dead=1:spawnEnemy(enemy);
+                enemy.dead=1;
                 continue;
             }
             if(self&&distance<.6+enemy.scale*.6){
@@ -986,7 +970,7 @@
                 //player.y+=dz/d*(2+c.tier*.2);
                 hp=MAX(0,hp-enemy.hp);
                 playHurtSound();
-                spawnEnemy(enemy);
+                enemy.dead=1;
                 if(hp<1)return;
                 continue;
             }
@@ -1011,11 +995,11 @@
         remoteEnemies.forEach((group,owner)=>group.forEach(enemy=>{
             if(hp<1||now-enemy.last>15000||enemy.dead)return;
             sizeEnemy(enemy,dt);
-            const interpolation=MIN(1,dt*8);enemy.x=lerp(enemy.x,enemy.tx,interpolation);enemy.z=lerp(enemy.z,enemy.tz,interpolation);enemy.yaw=lerpAngle(enemy.yaw||enemy.tyaw,enemy.tyaw,interpolation);enemy.hit-=dt;
+            const interpolation=MIN(1,dt*8);enemy.x=lerp(enemy.x,enemy.tx,interpolation);enemy.z=lerp(enemy.z,enemy.tz,interpolation);enemy.y=lerp(enemy.y,enemy.ty,interpolation);enemy.yaw=lerpAngle(enemy.yaw||enemy.tyaw,enemy.tyaw,interpolation);enemy.hit-=dt;
             if((player.x-enemy.x)**2+(player.z-enemy.z)**2<(.6+enemy.scale*.6)**2&&enemy.hit<0){
                 // KNOCKBACK disabled: let dx=player.x-enemy.x,dz=player.z-enemy.z,distance=HYPOT(dx,dz)||1;player.x+=dx/distance*(2+enemy.tier*.2);player.z+=dz/distance*(2+enemy.tier*.2);
                 hp=MAX(0,hp-enemy.hp);enemy.hit=1;playHurtSound();
-                sendMMO(`k|${owner}|${enemy.i}|${enemy.v}`);
+                sendMMO(`k|${owner}|${enemy.i}`);
             }
         }));
     }
@@ -1959,7 +1943,7 @@
             const wx = x + (lx*cy + lz*sy)*scale;
             const wz = z + (lz*cy - lx*sy)*scale;
             // Scale around the ground-contact line so large mutants grow upward instead of floating.
-            drawSphere(wx, .12+(y+ly-.12)*scale, wz, radius*shell*scale, col);
+            drawSphere(wx, y-.48+(.48+ly)*scale, wz, radius*shell*scale, col);
         }
         // Torso: three overlapping spheres from the chest to the rump.
         place(.10,0,0,.25);   // Chest / front of body.
@@ -2043,14 +2027,14 @@
         // -- /PART: Projectile --
         // -- PART: Enemy --
         // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
-        for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[(enemy.mut<0?enemy.tier:enemy.mut)%7][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
-        remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,.6,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[(enemy.mut<0?enemy.tier:enemy.mut)%7][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
+        for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,enemy.y,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[(enemy.mut<0?enemy.tier:enemy.mut)%7][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
+        remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,enemy.y,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[(enemy.mut<0?enemy.tier:enemy.mut)%7][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
         gl.disable(gl.BLEND);
-        for(const enemy of enemies)drawCat(enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier%7][1],1.16,enemy.scale);
-        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier%7][1],1.16,enemy.scale)));
+        for(const enemy of enemies)drawCat(enemy.x,enemy.y,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier%7][1],1.16,enemy.scale);
+        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(enemy.x,enemy.y,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier%7][1],1.16,enemy.scale)));
         gl.depthMask(true);
-        for(const enemy of enemies)drawCat(enemy.x,.6,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
-        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(enemy.x,.6,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
+        for(const enemy of enemies)drawCat(enemy.x,enemy.y,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
+        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(enemy.x,enemy.y,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
         // -- /PART: Enemy --
         // -- PART: Projectile --
         gl.depthMask(false);

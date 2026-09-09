@@ -16,7 +16,7 @@
 
 
 <!doctype html>
-<html lang="en">
+<html>
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
@@ -51,7 +51,6 @@
             border-radius: 50%;
             background: rgba(255, 255, 255, .2);
             border: 2px solid rgba(255, 255, 255, .5);
-            z-index: 10;
             display: none; /* Hidden by default, shown for touch devices */
         }
 
@@ -431,12 +430,8 @@
     // OPTIONAL: detects touch-style coarse pointers; CSS currently handles joystick visibility alone.
     //const isMobile=matchMedia('(pointer:coarse)').matches;
     // Unified input state object for keyboard, joysticks, pointer-look, and pointer coordinates
-    const input = {
-        keys: {},
-        joy: { L: { x: 0, y: 0, id: null }, R: { x: 0, y: 0, id: null } }, // 
-        look: { id: null, x: 0, y: 0 },
-        pointer: { x: 0, y: 0 }
-    };
+    let keys={};
+    const joy={L:{x:0,y:0},R:{x:0,y:0}},look={id:null,x:0,y:0};
     const DZ = .1;    // Deadzone for joystick/gamepad axes to prevent drift
     // GAMEPAD SUPPORT: let gamepadButtons=0;
     // -- VR: Input --
@@ -473,7 +468,7 @@
         // CHAT disabled: if (event.target === chatInput) return;
         initAudio();
         const key=event.code;
-        input.keys[key]=true;
+        keys[key]=true;
         // if(key.startsWith('Arrow'))event.preventDefault();
         // CHAT disabled: if(!event.repeat&&key==='Enter'){event.preventDefault();setChat(true);return;}
         // INVENTORY HUD disabled: if (!event.repeat && key === 'KeyF') { hudVisible=true;hudPage=2;return; }
@@ -487,63 +482,64 @@
         if(hudVisible&&pointerLocked())document.exitPointerLock();
         //if (key === 'KeyF') {playClickSound(); beastMode = !beastMode;} // 'F' key toggles beastMode
     };
-    document.addEventListener('keyup',event=>input.keys[event.code]=false);
-    window.addEventListener('blur',()=>input.keys={});
+    document.addEventListener('keyup',event=>keys[event.code]=false);
+    window.addEventListener('blur',()=>keys={});
     // 300ms click blocker
     // let lastTouch=0;document.ontouchend=e=>{if(performance.now()-lastTouch<300)e.preventDefault();lastTouch=performance.now()};
     
     function updatePointer(event){
         const locked=pointerLocked(),rect=locked&&canvas.getBoundingClientRect();
-        input.pointer.x=locked?rect.left+rect.width/2:event.clientX;
-        input.pointer.y=locked?rect.top+rect.height/2:event.clientY;return locked;
+        look.x=locked?rect.left+rect.width/2:event.clientX;
+        look.y=locked?rect.top+rect.height/2:event.clientY;return locked;
     }
     // Pointer event listeners on the canvas for mouse-look and interaction
     canvas.onpointerdown=event => {
         initAudio(); // NEW: Initialize audio on first user interaction
         // Start mouse-look on left-click
-        if(event.button===0&&input.look.id===null){
-            input.look.id=event.pointerId;
-            input.look.x=event.clientX;
-            input.look.y=event.clientY;
+        if(event.button===0&&look.id===null){
+            look.id=event.pointerId;
+            look.x=event.clientX;
+            look.y=event.clientY;
             if(!pointerLocked())canvas.setPointerCapture(event.pointerId);
         }
         // Always update pointer position for picking
-        input.pointer.x=event.clientX;
-        input.pointer.y=event.clientY;
+        look.x=event.clientX;
+        look.y=event.clientY;
     };
     
     canvas.onpointermove=event => {
         // Update pointer position for hover effects
-        const locked=updatePointer(event);
+        const locked=pointerLocked();
 
-        if(locked||event.pointerId===input.look.id){
-            const dx=locked?event.movementX:event.clientX-input.look.x;
-            const dy=locked?event.movementY:event.clientY-input.look.y;
-            input.look.x=event.clientX;
-            input.look.y=event.clientY;
+        if(locked||event.pointerId===look.id){
+            const dx=locked?event.movementX:event.clientX-look.x;
+            const dy=locked?event.movementY:event.clientY-look.y;
+            look.x=event.clientX;
+            look.y=event.clientY;
             player.yaw -= dx * .002 * (opts[0] ? -1 : 1);
             player.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,player.pitch+dy*.002*(opts[0] ? -1 : 1)));
         }
+        updatePointer(event);
     };
     
     canvas.onpointerup=event => {
         // Stop mouse-look mode.
-        if(event.pointerId===input.look.id){
-            input.look.id=null;
+        if(event.pointerId===look.id){
+            look.id=null;
         }
         // Update pointer position and trigger an interaction check
         updatePointer(event);
-        interactDesktopAt(input.pointer.x,input.pointer.y);
+        interactDesktopAt(look.x,look.y);
     };
     document.onpointerlockchange=()=>{
         opts[1]=+(pointerLocked());
-        input.look.id=null;
+        look.id=null;
         hudVisible=!opts[1];
     };
     
     canvas.onpointercancel=event => {
-        if(event.pointerId===input.look.id){
-            input.look.id=null;
+        if(event.pointerId===look.id){
+            look.id=null;
         }
     };
     // -- /PART: Keyboard-Pointer --
@@ -561,8 +557,7 @@
             const handle = handleSel(joystick.side);
             joystick.el.onpointerdown=event => { initAudio(); joystick.id = event.pointerId; joystick.el.setPointerCapture(event.pointerId); updateJoy(joystick, event, handle); };
             joystick.el.onpointermove=event => { if (event.pointerId === joystick.id) updateJoy(joystick, event, handle); };
-            joystick.el.onpointerup=event => { if (event.pointerId === joystick.id) { resetJoy(joystick, handle); } };
-            joystick.el.onpointercancel=event => { if (event.pointerId === joystick.id) { resetJoy(joystick, handle); } };
+            joystick.el.onpointerup=joystick.el.onpointercancel=event => { if (event.pointerId === joystick.id) { resetJoy(joystick, handle); } };
         }
 
     function updateJoy(joystick, event, handle) {
@@ -579,16 +574,16 @@
             const x=distance>DZ*30?distance/maxRadius*COS(angle):0;
             const y=distance>DZ*30?distance/maxRadius*SIN(angle):0;
 
-            input.joy[joystick.side].x = x;
-            input.joy[joystick.side].y = y;
+            joy[joystick.side].x = x;
+            joy[joystick.side].y = y;
 
             // Update handle's visual position
             handle.style.transform=`translate(calc(-50% + ${x*maxRadius}px), calc(-50% + ${y*maxRadius}px))`;
         }
 
         function resetJoy(joystick, handle) {
-            input.joy[joystick.side].x = 0;
-            input.joy[joystick.side].y = 0;
+            joy[joystick.side].x = 0;
+            joy[joystick.side].y = 0;
             handle.style.transform = 'translate(-50%, -50%)';
             joystick.id = null;
         }
@@ -729,13 +724,13 @@
     // One shared power language for enemies, levels, loot, and upgrade rarity.
     // Index order is always weakest (red) to strongest (violet).
     const POWER=[
-        ['#e53935',[.9,.04,.03]],
-        ['#fb8c00',[1,.25,.01]],
-        ['#fdd835',[1,.7,.02]],
-        ['#43a047',[.05,.65,.12]],
-        ['#00acc1',[.02,.65,.8]],
-        ['#2979ff',[.04,.2,1]],
-        ['#8e24aa',[.55,.04,.75]]
+        ['#e43',[.9,.04,.03]],
+        ['#f80',[1,.25,.01]],
+        ['#fd3',[1,.7,.02]],
+        ['#4a4',[.05,.65,.12]],
+        ['#0ac',[.02,.65,.8]],
+        ['#28f',[.04,.2,1]],
+        ['#82a',[.55,.04,.75]]
     ];
     const powerValue=tier=>tier+1;
     let skillTime=0;
@@ -1178,14 +1173,14 @@
         const deadzone=value=>ABS(value)>DZ?value:0;
         // -- PART: Keyboard --
         // Keyboard input (WASD for move, QE or arrows for move/turn)
-    const kx = (+!!input.keys['KeyD']) - (+!!input.keys['KeyA']);
-    const ky = +!!(input.keys['KeyW']||input.keys['ArrowUp']) - +!!(input.keys['KeyS']||input.keys['ArrowDown']);
-    const kt = +!!(input.keys['KeyQ']||input.keys['ArrowLeft']) - +!!(input.keys['KeyE']||input.keys['ArrowRight']);
+    const kx = (+!!keys['KeyD']) - (+!!keys['KeyA']);
+    const ky = +!!(keys['KeyW']||keys['ArrowUp']) - +!!(keys['KeyS']||keys['ArrowDown']);
+    const kt = +!!(keys['KeyQ']||keys['ArrowLeft']) - +!!(keys['KeyE']||keys['ArrowRight']);
         // -- /PART: Keyboard --
     
         // -- PART: Joystick --
     // Virtual joystick input
-    const moveJoy=input.joy[opts[4]?'R':'L'],turnJoy=input.joy[opts[4]?'L':'R'];
+    const moveJoy=joy[opts[4]?'R':'L'],turnJoy=joy[opts[4]?'L':'R'];
     const jx = moveJoy.x;
     const jy = -moveJoy.y;
     const jt = -turnJoy.x;
@@ -2215,8 +2210,8 @@
             hudWH = new DOMMatrix(W).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
             HUD_WH_world = hudWH;
             hoverBtn = null;
-            if (input.look.id === null) {
-                const hit = HUD_pick(hudWH, rayFromScreen(input.pointer.x, input.pointer.y));
+            if (look.id === null) {
+                const hit = HUD_pick(hudWH, rayFromScreen(look.x, look.y));
                 if (hit && hit.button) hoverBtn = hit.button;
             }
             drawHUDCanvas();

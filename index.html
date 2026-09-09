@@ -280,7 +280,7 @@
                     peer.op=+parts[6];
                     peer.d=+parts[7];
                     const group=[],fields=parts[8].split(',').map(Number);
-                    for(let i=0;i<fields.length;i+=4){const x=fields[i],z=fields[i+1],tier=fields[i+2],health=MIN(1,MAX(-1,fields[i+3])),beacon=[x,z,tier,health>=0,MAX(0,health),1];group.push(beacon);}
+                    for(let i=0;i<fields.length-3;i+=4){const x=fields[i],z=fields[i+1],tier=fields[i+2],health=MIN(1,MAX(-1,fields[i+3])),beacon=[x,z,tier,health>=0,MAX(0,health),1];group.push(beacon);}
                     peer.b=group;
                     peers.set(id, peer);
                 }
@@ -762,7 +762,7 @@
         for(let attempts=100;attempts--;){
             const angle=rng()*PI*2,radius=100+rng()*30,x=player.x+COS(angle)*radius,z=player.z+SIN(angle)*radius;
             let valid=SPAWN_BEACONS.every(beacon=>HYPOT(beacon[0]-x,beacon[1]-z)>=30)&&!buildings.some(building=>ABS(x-building.x)<building.w/2+6&&ABS(z-building.z)<building.d/2+6),now=performance.now();
-            peers.forEach(peer=>valid&=now-peer.last>15000||HYPOT(peer.x-x,peer.z-z)>=50);
+            peers.forEach(peer=>valid&=now-peer.last>15000||HYPOT(peer.x-x,peer.z-z)>=50&&peer.b.every(beacon=>HYPOT(beacon[0]-x,beacon[1]-z)>=30));
             if(valid&&HYPOT(x,z)>=HYPOT(player.x,player.z)-20)return makeBeacon(x,z);
         }
     }
@@ -786,7 +786,8 @@
     function spawnEnemy(enemy){
         const beacon=enemy.b&&SPAWN_BEACONS.find(beacon=>beacon[6]===enemy.b),anchorX=beacon?beacon[0]:player.x,anchorZ=beacon?beacon[1]:player.z;
         if(enemy.b&&!beacon&&enemy.mut<7){enemy.dead=1;if(hp>0&&enemy.tier>6)playMotif(undefined,0,1);return;}
-        const angle=rng()*PI*2,radius=beacon?20+rng()*10:35+rng()*20,x=anchorX+COS(angle)*radius,z=anchorZ+SIN(angle)*radius;
+        let angle,radius,x,z,valid,attempts=100,now=performance.now();
+        do{angle=rng()*PI*2;radius=beacon?20+rng()*10:35+rng()*20;x=anchorX+COS(angle)*radius;z=anchorZ+SIN(angle)*radius;valid=1;peers.forEach(peer=>valid&=now-peer.last>15000||HYPOT(peer.x-x,peer.z-z)>=20);}while(--attempts&&!valid);
         // Accept the first street or rooftop position; climbing makes either valid.
         enemy.x=x;enemy.z=z;
         enemy.scale=enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.dead=0;enemy.y=(buildingAt(x,z,.6)?.h||0)+.6;enemy.h=[];
@@ -1822,8 +1823,8 @@
     const uS_Color = gl.getUniformLocation(PC,'col');
 
     // drawWorld binds PC, the eye matrices, and sphereVao before all sphere draws.
-    function drawSphere(x,y,z,radius,color){
-        const Msp = translateScale(x,y,z,radius,radius,radius);
+    function drawSphere(x,y,z,radius,color,height=radius){
+        const Msp=translateScale(x,y,z,radius,height,radius);
         gl.uniformMatrix4fv(uS_M,false,Msp);
         gl.uniform4f(uS_Color,color[0],color[1],color[2],color[3]??1);
         gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
@@ -1929,46 +1930,22 @@
     // Shared scene renderer. Desktop supplies one synthetic head view; WebXR
     // supplies the headset's real eye views.
     // -- PART: Character-Renderer --
-    const PEER_COL = [.7,.7,.8], BLACK=[0,0,0], WHITE=[1,1,1];
-    // Cat made from 15 spheres: 3 body, 1 head, 4 ears, 4 paws, and 3 tail.
-    // x/y/z = world position; yaw = facing; anim = walking phase; amp = paw movement.
-    // col = color for this pass; shell enlarges sphere radii for the outline/aura;
-    // scale changes the whole cat's size, including the spacing between its parts.
+    const PEER_COL = [.3,.3,.2], BLACK=[0,0,0], WHITE=[1,1,1];
+    // Armer 2 made from the existing sphere primitive to keep the packed build small.
     function drawCat(x, y, z, yaw, anim, amp, col, shell=1, scale=1){
-        // Rotate the model to its world-facing direction, with the existing -20 offset.
-        const cy = COS(yaw-20), sy = SIN(yaw-20);
-        // Local coordinates: +lx toward the head, -lx toward the tail; +ly upward;
-        // +lz and -lz are the two sides. radius controls this individual sphere's size.
-        function place(lx, ly, lz, radius){
-            const wx = x + (lx*cy + lz*sy)*scale;
-            const wz = z + (lz*cy - lx*sy)*scale;
-            // Scale around the ground-contact line so large mutants grow upward instead of floating.
-            drawSphere(wx, y-.48+(.48+ly)*scale, wz, radius*shell*scale, col);
+        const cy=COS(yaw),sy=SIN(yaw);
+        function place(lx,ly,lz,radius,color=col,height){
+            drawSphere(x+(lx*cy+lz*sy)*scale,y-.4+(.4+ly)*scale,z+(lz*cy-lx*sy)*scale,radius*shell*scale,color,height&&height*shell*scale);
         }
-        // Torso: three overlapping spheres from the chest to the rump.
-        place(.10,0,0,.25);   // Chest / front of body.
-        place(-.05,0,0,.25);  // Middle of body.
-        place(-.20,0,0,.24);  // Rump / back of body.
-        place(.38,.18,0,.20); // Head, forward and above the torso.
-
-        // Each ear has a larger base and a smaller tip, above and beside the head.
-        place(.38,.33,.12,.08);  // Ear base on the +z side.
-        place(.38,.4,.16,.04);   // Ear tip on the +z side.
-        place(.38,.33,-.12,.08); // Ear base on the -z side.
-        place(.38,.4,-.16,.04);  // Ear tip on the -z side.
-
-        // Opposite sine phases move diagonal paw pairs together, alternating up/down.
-        // baseY is the paws' resting height relative to the cat's world y position.
-        const CYC=phase=>SIN(phase)*amp,cy0=CYC(anim),cy1=CYC(anim+PI),baseY=-.30;
-        place(.15, baseY + cy0, .14, .09);  // Front paw, +z side.
-        place(.15, baseY + cy1,-.14, .09);  // Front paw, -z side.
-        place(-.25, baseY + cy1, .15, .09); // Rear paw, +z side.
-        place(-.25, baseY + cy0,-.15, .09); // Rear paw, -z side.
-
-        // Tail: three shrinking spheres curving upward behind the rump.
-        place(-.40,.15, cy0*.5,.14); // Tail base; sways sideways with the walk cycle.
-        place(-.55,.25, 0,.12);     // Tail middle; stays centered.
-        place(-.70,.30, cy1*.6,.11); // Tail tip; sways opposite to the base.
+        place(0,.08,0,.35);
+        for(const side of[-1,1]){
+            place(side*.2,.06,0,.25);
+            place(side*.1,.2,.3,.05,shell==1?col==PEER_COL?BLACK:WHITE:col);
+            const step=SIN(anim+(side<0)*PI)*amp,lift=MAX(0,step);
+            place(side*.25,-.3+lift,step,.09);
+            place(side*.24,-.17+lift/2,step/2,.12,col,.2);
+            place(side/3,.1,.1,.15);
+        }
     }
     // -- /PART: Character-Renderer --
 

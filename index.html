@@ -949,11 +949,11 @@
             const px=enemy.x,pz=enemy.z;
             enemy.x+=enemy.vx*dt;enemy.z+=enemy.vz*dt;
             const building=buildingAt(enemy.x,enemy.z,.45*enemy.scale),roof=(building?.h||0)+.6,wall=building&&enemy.y<roof&&resolveCityCollision(enemy,.45*enemy.scale,px,pz);
-            if(wall){enemy.vx=(enemy.x-px)/dt;enemy.vz=(enemy.z-pz)/dt;enemy.y+=dt*maxSpeed}else enemy.y=MAX(roof,enemy.y-dt*maxSpeed*2);
+            if(wall)enemy.y+=dt*maxSpeed;else enemy.y=MAX(roof,enemy.y-dt*maxSpeed*3);
             enemy.vx*=1-dt;enemy.vz*=1-dt;
-            enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(enemy.vx,enemy.vz);
+            enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(dx,dz);
             if(boss&&(enemy.fire=(enemy.fire||0)-dt)<0){
-                enemy.fire=7/enemy.tier;fireVolley(enemy.x,enemy.z,ATAN2(dx,dz),-1,enemy.tier*2-13,(6-enemy.tier)*100);
+                enemy.fire=7/enemy.tier;fireVolley(enemy.x,enemy.z,enemy.yaw,-1,enemy.tier*2-13,(6-enemy.tier)*100);
             }
             if(targetBeacon&&distance<.6+enemy.scale*.6){
                 targetBeacon[4]-=enemy.hp;
@@ -1094,7 +1094,7 @@
             if(HYPOT(dx,dy,dz)<item.r+.5){
                 item.r=0; // mark consumed
                 if(item.t===1){
-                    hp=MIN(maxHp,hp+10);
+                    hp<maxHp?hp=MIN(maxHp,hp+ROUND(maxHp/100)):hp=++maxHp;
                     playSound(330,.25,.08,'sine',660);
                 }else if(item.t===2){
                     for(const pickup of items)if(!pickup.t&&pickup.r>0)pickup.m=1;
@@ -1116,12 +1116,12 @@
 
     // Reject blocked axes against all footprints; preserve the free sliding axis.
     function resolveCityCollision(entity,radius,prevX,prevZ){
-        const x=entity.x,z=entity.z;if(!buildingAt(x,z,radius))return 0;
+        const x=entity.x,z=entity.z;if(!buildingAt(x,z,radius))return;
         entity.z=prevZ;
         if(!buildingAt(x,prevZ,radius))return 1;
         entity.x=prevX;entity.z=z;
-        if(!buildingAt(prevX,z,radius))return -1;
-        entity.z=prevZ;return 2;
+        if(!buildingAt(prevX,z,radius))return 1;
+        entity.z=prevZ;return 1;
     }
     // -- /MODULE: World --
 
@@ -1327,9 +1327,10 @@
             filter.connect(compressor).connect(context.destination);
             spatialBus.connect(filter);
             spatialBus.connect(reverb).connect(reverbGain).connect(filter);
-            spatialOutput=spatialBus;
+            spatialOutput=localOutput=spatialBus;
+            // Schumann resonance shifted up three octaves into the audible range.
+            playSound(62.64,1e6,.006);
             localOutput=filter;
-            playSound(38,1e6,.001);
         }
         audioContext.resume();
     }

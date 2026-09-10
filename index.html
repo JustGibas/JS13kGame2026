@@ -1422,7 +1422,7 @@
     // UI_PANEL: large panel/chat background. UI_BUTTON: every button/card background.
     // UI_HOVER: hovered button/card. UI_TEXT: primary text/borders.
     // MUTED TEXT disabled: const UI_PANEL='#000d',UI_BUTTON='#333',UI_HOVER='#666',UI_TEXT='#fff',UI_MUTED='#999';
-    const UI_PANEL='#000d',UI_BUTTON='#333',UI_HOVER='#666',UI_TEXT='#fff';
+    const UI_PANEL='#000d',UI_BUTTON='#333',UI_HOVER='#222',UI_TEXT='#fff';
     // Bar accents: HP is green and XP is yellow; their empty tracks stay black.
     // Upgrade card borders and titles separately use their POWER tier color below.
     const HP_COLOR='#2a2',HP_BACK='#252',XP_COLOR='#aa2',XP_BACK='#552';
@@ -1560,13 +1560,13 @@
     // -- PART: Canvas-Drawing --
     // --- HUD Drawing ---
     function drawBars(barY){
-        const barX=hudVisible?20:130,width=380;
+        const barX=hudVisible?20:120,width=400;
         // Bar entries: current value, maximum value, label, filled color, empty color.
         for(const bar of [[hp,maxHp,'HP',HP_COLOR,HP_BACK],[xp,level*3,'XP',XP_COLOR,XP_BACK]]){
-            hudCtx.fillStyle=bar[4];hudCtx.fillRect(barX,barY,width,20);
-            hudCtx.fillStyle=bar[3];hudCtx.fillRect(barX,barY,width*MIN(1,bar[0]/bar[1]),20);
-            hudCtx.fillStyle=UI_TEXT;hudCtx.font='13px system-ui';hudCtx.textAlign='left';hudCtx.textBaseline='middle';
-            hudCtx.fillText(`${bar[2]} ${ROUND(bar[0])}/${bar[1]}`,barX+8,barY+10);barY+=24;
+            hudCtx.fillStyle=bar[4];hudCtx.fillRect(barX,barY,width,22);
+            hudCtx.fillStyle=bar[3];hudCtx.fillRect(barX,barY,width*MIN(1,bar[0]/bar[1]),22);
+            hudCtx.fillStyle=UI_TEXT;hudCtx.font='17px system-ui';hudCtx.textAlign='left';hudCtx.textBaseline='middle';
+            hudCtx.fillText(`${bar[2]} ${ROUND(bar[0])}/${bar[1]}`,barX+8,barY+11);barY+=23;
         }
         hudCtx.textBaseline='alphabetic';
     }
@@ -1586,10 +1586,12 @@
             hudCtx.fillStyle = hoverBtn === button ? UI_HOVER : UI_BUTTON;
             hudCtx.fillRect(buttonX,buttonY,width,height);
             hudCtx.fillStyle = UI_TEXT;
-            hudCtx.font = '16px system-ui';
+            hudCtx.font = '18px system-ui';
             hudCtx.textAlign = 'center';
             hudCtx.textBaseline = 'middle';
             hudCtx.fillText('MENU',buttonX+width/2,buttonY+height/2);
+            const data=[`${FLOOR(skillTime/6)/10}m`,`LVL ${level}`,`X ${ROUND(player.x)}`,`Y ${ROUND(player.z)}`];
+            for(let i=4;i--;){hudCtx.textAlign=i<2?'right':'left';hudCtx.fillText(data[i],buttonX+(i<2?-10:width+10),buttonY+10+i%2*18)}
             drawBars(44);
 
             if(choosing){
@@ -1598,7 +1600,7 @@
                     // Level-up card background, hover, border, title, and description colors.
                     hudCtx.fillStyle=hoverBtn===button?UI_HOVER:UI_BUTTON;hudCtx.fillRect(buttonX,buttonY,width,height);
                     hudCtx.strokeStyle=hudCtx.fillStyle=POWER[button[6]][0];hudCtx.lineWidth=5;hudCtx.strokeRect(buttonX+2,buttonY+2,width-4,height-4);
-                    hudCtx.font='bold 16px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';hudCtx.fillText(button[4],buttonX+width/2,buttonY+height/2);
+                    hudCtx.font='bold 22px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';hudCtx.fillText(button[4],buttonX+width/2,buttonY+height/2);
                 }
             }
 
@@ -1930,7 +1932,7 @@
             place(side*.2,.06,0,.25); // Left/right head-and-shoulder mass.
             place(side*.1,.2,.3,.05,shell==1?col==WHITE?BLACK:WHITE:col); // Eye on the forward face.
             anim+=PI;const step=SIN(anim)*amp*2,lift=MAX(0,step);
-            place(side*.2,-.17+lift/2,step/2,.12,col,.2); // Amplified Armer2 midpoint motion beneath the shoulders.
+            place(side*.18,-.17+lift/2,step/2,.12,col,.2); // Amplified Armer2 midpoint motion beneath the shoulders.
             place(side/3,.1,.1,.15); // Arm/hand sphere beside the upper body.
         }
     }

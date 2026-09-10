@@ -1721,6 +1721,7 @@
                 hudCtx.textAlign = 'center';
                 hudCtx.textBaseline = 'middle';
                 hudCtx.fillText(
+                    action === 1 ? 'VR ' + (xr ? 'ON' : 'OFF') :
                     action === 2 ? 'MMO ' + (mmoEnabled ? 'ON' : 'OFF') :
                     action>13 ? button[4]+' '+(opts[action-14]?'ON':'OFF') :
                     button[4],

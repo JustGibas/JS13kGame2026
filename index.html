@@ -180,10 +180,10 @@
         peer.last = now;
         // trim old samples
         const cutoff = now - 2000;
-        while (peer.hist.length && peer.hist[0].t < cutoff) peer.hist.shift();
+        while(peer.hist[0].t<cutoff)peer.hist.shift();
     }
     function samplePeer(peer, targetT){
-        const history=peer.hist;if(!history.length)return null;
+        const history=peer.hist;
         // The first boundary also handles a one-sample history.
         if(targetT<=history[0].t)return history[0];
         const count=history.length;
@@ -192,7 +192,7 @@
         for(let i=0;i<count-1;i++){
             const before=history[i],after=history[i+1];
             if(before.t<=targetT&&targetT<=after.t){
-                const duration=(after.t-before.t)||1;
+                const duration=after.t-before.t;
                 const amount=(targetT-before.t)/duration;
                 return {
                     t: targetT,
@@ -202,7 +202,6 @@
                 };
             }
         }
-        return history[count-1];
     }
 
     // LOG disabled: function logMMO(message){ log('MMO: '+message); }
@@ -266,7 +265,7 @@
                     const x=+parts[2];
                     const z=+parts[3];
                     const yaw=+parts[4];
-                    const peer = peers.get(id) || {x,z,last:0,hist:[],oh:[]};
+                    const peer = peers.get(id) || {x,z,last:0,hist:[],oh:[],anim:0};
                     const now = performance.now();
                     if(!nearCity(x,z)){if(peers.has(id))forgetPeer(id);return;}
                     pushPeerSample(peer,x,z,yaw,now);
@@ -293,7 +292,7 @@
             const parts=payload.split('|'),
                 owner=parts[1];
 
-            if(owner!==myId&&peers.has(owner)){
+            if(peers.has(owner)){
                 const group=remoteEnemies.get(owner)||new Map(),
                     now=performance.now();
 
@@ -351,7 +350,7 @@
         }
         if(command==='s'){
             const parts=payload.split('|');
-            if(parts[1]!==myId&&peers.has(parts[1])&&nearCity(+parts[2],+parts[3])){
+            if(peers.has(parts[1])&&nearCity(+parts[2],+parts[3])){
                 remoteShots.push({o:parts[1],x:+parts[2],y:.7,z:+parts[3],vx:+parts[4],vz:+parts[5],d:+parts[6],i:+parts[7],t:3,c:MIN(6,MAX(-1,+parts[8]))});
                 +parts[6]>0&&playShotSound(+parts[2],+parts[3]);
             }
@@ -735,7 +734,7 @@
     let shotId=0;
     let damage=1;
     let movePower=30;
-    let choices=[],banner=[];
+    let choices=[],bannerText,bannerTime=0;
     let seed=Date.now()|0;
     let hp=100;
     let maxHp=100;
@@ -795,7 +794,7 @@
     }
     function startBeacon(beacon){
         const danger=worldPower(beacon[0],beacon[1]);
-        banner=[beacon[2]>6?'BOSS':'DEFEND',performance.now()+4e3];
+        bannerText=beacon[2]>6?'BOSS':'DEFEND';bannerTime=performance.now()+4e3;
         beacon[3]=1;beacon[4]=beacon[5]=10*scaledHealth(danger,beacon[2]);beacon[6]=++beaconEvent;beacon[7]=0;
         if(beacon[2]>6)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6],tier:beacon[2]})),SPAWN_BEACONS.splice(SPAWN_BEACONS.indexOf(beacon),1);
         else spawnBeaconWave(beacon);
@@ -821,7 +820,7 @@
             if(cleared&&beacon[4]>0&&beacon[7]<beacon[2]){beacon[7]++;spawnBeaconWave(beacon);continue;}
             const success=cleared&&beacon[4]>0;
             if(beacon[3]&&(beacon[4]<1||success)){
-                banner=[success?'CLEARED':'FAILED',performance.now()+4e3];
+                bannerText=success?'CLEARED':'FAILED';bannerTime=performance.now()+4e3;
                 for(let j=enemies.length;j--;)if(enemies[j].b===beacon[6])enemies.splice(j,1);
                 SPAWN_BEACONS.splice(i,1);
                 // Preserve any open card offer; beacon rewards wait until it is claimed.
@@ -1128,7 +1127,7 @@
     // -- VR: Input --
     // OPTIONAL: remove this whole function and hand-tracking session feature for controller-only VR.
     function handPointMove(frame, source) {
-        if (!frame || !source.hand) return null;
+        if(!source.hand)return null;
         const base = ref;
         const pose = name => {
             const joint = source.hand.get(name);
@@ -1241,16 +1240,14 @@
         
         // Calculate forward and right vectors based on current yaw
     const yaw=player.yaw+(xr?xrHead:0),cy=COS(yaw),sy=SIN(yaw);
-        T_V3_A[0] = -sy; T_V3_A[1] = 0; T_V3_A[2] = -cy; // 'f' vector
-        T_V3_B[0] = cy;  T_V3_B[1] = 0; T_V3_B[2] = -sy;  // 'r' vector
         //const sp = MOVES * dt;
         const sp = speed * dt;
         // collision resolution
     const prevX = player.x, prevZ = player.z;
 
         // Apply movement along forward and right vectors
-        player.x += (T_V3_B[0] * movement.x + T_V3_A[0] * movement.y) * sp;
-        player.z += (T_V3_B[2] * movement.x + T_V3_A[2] * movement.y) * sp;
+        player.x+=(cy*movement.x-sy*movement.y)*sp;
+        player.z+=(-sy*movement.x-cy*movement.y)*sp;
     // OPTIONAL: update the unused predictive-pursuit velocity declared near player state.
     //userVelX=(player.x-prevUserX)/dt;userVelZ=(player.z-prevUserZ)/dt;prevUserX=player.x;prevUserZ=player.z;
         // Resolve collisions with obstacles
@@ -1606,10 +1603,10 @@
                     hudCtx.font='bold 22px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';hudCtx.fillText(button[4],buttonX+width/2,buttonY+height/2);
                 }
             }
-            if(banner[1]>performance.now()){
+            if(bannerTime>performance.now()){
                 hudCtx.font='bold 48px system-ui';hudCtx.textAlign='center';hudCtx.fillStyle=UI_TEXT;
-                hudCtx.strokeStyle=UI_PANEL;hudCtx.lineWidth=14;hudCtx.strokeText(banner[0],320,240);
-                hudCtx.fillText(banner[0],320,240);
+                hudCtx.strokeStyle=UI_PANEL;hudCtx.lineWidth=14;hudCtx.strokeText(bannerText,320,240);
+                hudCtx.fillText(bannerText,320,240);
             }
 
             /* CLOSED CHAT UI disabled:
@@ -1687,12 +1684,12 @@
                 hudCtx.font = '14px monospace';
                 hudCtx.fillText('Items and equipment', 20, 112);
             } */
-            let peerCount=0,now=performance.now(),y=62;
+            let peerCount=1,now=performance.now(),y=62;
             peers.forEach(peer =>
                 now-peer.last<15000&&peerCount++
             );
 
-                for(const text of [`LVL ${level}`,`MOBS ${defeated}`,`DMG ${dealt}`,`TIME ${FLOOR(skillTime/6)/10}m`,`MMO ${mmoEnabled?'ON':'OFF'}`,`PPL ${peerCount+1}`,`X ${ROUND(player.x)}`,`Y ${ROUND(player.z)}`])hudCtx.fillText(text,28,y+=24);
+                for(const text of [`LVL ${level}`,`MOBS ${defeated}`,`DMG ${dealt}`,`TIME ${FLOOR(skillTime/6)/10}m`,`MMO ${mmoEnabled?'ON':'OFF'}`,`PPL ${peerCount}`,`X ${ROUND(player.x)}`,`Y ${ROUND(player.z)}`])hudCtx.fillText(text,28,y+=24);
                 // LOG/MUTED TEXT disabled: hudCtx.fillStyle = UI_MUTED;
                 // LOG disabled: hudCtx.font = '14px monospace';
 
@@ -1734,8 +1731,6 @@
         }
 
         // Upload the canvas content to the WebGL texture
-        gl.bindTexture(gl.TEXTURE_2D, hudTex);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hudCan);
     }
     // -- /PART: Canvas-Drawing --
@@ -1771,7 +1766,7 @@
     gl.bindVertexArray(vaoH);
     gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());
     // Vertex data for the HUD quad (position and UV coordinates).
-    gl.bufferData(gl.ARRAY_BUFFER, new F32([-.26,.15,0, 0,1,  .26,.15,0, 1,1,  .26,-.15,0, 1,0,  -.26,.15,0, 0,1,  .26,-.15,0, 1,0,  -.26,-.15,0, 0,0]), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, new F32([-.26,.15,0, 0,0,  .26,.15,0, 1,0,  .26,-.15,0, 1,1,  -.26,.15,0, 0,0,  .26,-.15,0, 1,1,  -.26,-.15,0, 0,1]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0); 
     gl.vertexAttribPointer(0, 3, 
     gl.FLOAT, false, 20, 0);
@@ -1779,7 +1774,7 @@
     gl.vertexAttribPointer(1, 2, 
     gl.FLOAT, false, 20, 12);
     function drawHud(M,V,P) {
-        gl.useProgram(PH);gl.bindVertexArray(vaoH);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,hudTex);
+        gl.useProgram(PH);gl.bindVertexArray(vaoH);
         gl.uniformMatrix4fv(uMH,false,M);gl.uniformMatrix4fv(uVH,false,V);gl.uniformMatrix4fv(uPH,false,P);
         gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.drawArrays(gl.TRIANGLES,0,6);gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
     }
@@ -1895,7 +1890,6 @@
     // Reuse the original centre-beacon visual for every generated beacon.
     function drawSpawnBeacons(V,P){
         gl.depthMask(false);gl.enable(gl.BLEND);
-        gl.useProgram(PC);
         gl.useProgram(PDisc);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);
         const visibleBeacons=SPAWN_BEACONS.slice(),now=performance.now();peers.forEach(peer=>{if(now-peer.last<15000)peer.b.forEach(beacon=>visibleBeacons.push(beacon))});
         for(const beacon of visibleBeacons){
@@ -1910,10 +1904,10 @@
             const inner=visual;gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.useProgram(PC);gl.bindVertexArray(vaoBeam);gl.uniform4f(uS_Color,color[0],color[1],color[2],.35);
             gl.uniformMatrix4fv(uS_M,false,new F32([dx*inner,0,dz*inner,0, 0,1,0,0, 0,height,0,0, x-dx*inner/2,0,z-dz*inner/2,1]));gl.drawArrays(gl.TRIANGLES,0,6);
             // inner filled disc
-            gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(PDisc);gl.bindVertexArray(vaoH);gl.uniform1f(uWidthDisc,1);gl.uniform4f(uColDisc,color[0]*.55,color[1]*.55,color[2]*.55,1);
+            gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(PDisc);gl.bindVertexArray(vaoH);gl.uniform4f(uColDisc,color[0]*.55,color[1]*.55,color[2]*.55,1);
             radius=.5*visual;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
             // outer accent ring
-            gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(PDisc);gl.bindVertexArray(vaoH);gl.uniform1f(uWidthDisc,.115);gl.uniform4f(uColDisc,color[0],color[1],color[2],1);
+            gl.uniform1f(uWidthDisc,.115);gl.uniform4f(uColDisc,color[0],color[1],color[2],1);
             radius=2.15*visual;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
             // inner accent ring
             // gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.uniform1f(uWidthDisc,.1);gl.uniform4f(uColDisc,color[0],color[1],color[2],.99);
@@ -2026,11 +2020,11 @@
         for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){const angle=orbPhase(skillTime,tier)+i*PI*2/orbCounts[tier+1],radius=orbRadius(tier);drawSphere(player.x+COS(angle)*radius,player.y-.9,player.z+SIN(angle)*radius,.25,BLACK);}
         // -- /PART: Orb --
         if(peers.size){
-            const target = now - 120;
-            peers.forEach((peer, id) => {
-                if (id === myId || now-peer.last>=15000) return;
+            const target=now-120;
+            peers.forEach(peer=>{
+                if(now-peer.last>=15000)return;
                 const sample=samplePeer(peer,target);
-                peer.anim=(peer.anim||0)+HYPOT(sample.x-peer.x,sample.z-peer.z)*3;peer.x=sample.x;peer.z=sample.z;
+                peer.anim+=HYPOT(sample.x-peer.x,sample.z-peer.z)*3;peer.x=sample.x;peer.z=sample.z;
                 drawModel(sample.x,.6,sample.z,sample.yaw+PI,peer.anim,.1,WHITE);
                 // -- PART: Orb --
                 gl.depthMask(false);

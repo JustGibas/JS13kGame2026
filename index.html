@@ -735,7 +735,7 @@
     let shotId=0;
     let damage=1;
     let movePower=30;
-    let choices=[];
+    let choices=[],banner=[];
     let seed=Date.now()|0;
     let hp=100;
     let maxHp=100;
@@ -795,6 +795,7 @@
     }
     function startBeacon(beacon){
         const danger=worldPower(beacon[0],beacon[1]);
+        banner=[beacon[2]>6?'BOSS':'DEFEND',performance.now()+4e3];
         beacon[3]=1;beacon[4]=beacon[5]=10*scaledHealth(danger,beacon[2]);beacon[6]=++beaconEvent;beacon[7]=0;
         if(beacon[2]>6)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6],tier:beacon[2]})),SPAWN_BEACONS.splice(SPAWN_BEACONS.indexOf(beacon),1);
         else spawnBeaconWave(beacon);
@@ -820,6 +821,7 @@
             if(cleared&&beacon[4]>0&&beacon[7]<beacon[2]){beacon[7]++;spawnBeaconWave(beacon);continue;}
             const success=cleared&&beacon[4]>0;
             if(beacon[3]&&(beacon[4]<1||success)){
+                banner=[success?'CLEARED':'FAILED',performance.now()+4e3];
                 for(let j=enemies.length;j--;)if(enemies[j].b===beacon[6])enemies.splice(j,1);
                 SPAWN_BEACONS.splice(i,1);
                 // Preserve any open card offer; beacon rewards wait until it is claimed.
@@ -1059,7 +1061,7 @@
     }
     // -- /MODULE: Combat --
 
-    function tryPickupItems(dt){
+    function tryPickupItems(dt,collected){
         // Closest point on capsule segment (vertical)
         const baseY=player.y-1.6,
             topY=baseY+1.6;
@@ -1091,11 +1093,12 @@
                     playSound(180,.5,.09,'sawtooth',900);
                 }else{
                     xp++;
-                    playXPSound();
+                    collected=1;
                     if(xp>=level*3&&!choosing)rollChoices();
                 }
             }
         }
+        collected&&playXPSound();
     }
 
     function resolveCollisions(prevX, prevZ){
@@ -1298,7 +1301,7 @@
                 compressor=context.createDynamicsCompressor();
 
             // Catch bursts quickly and recover without a long dip in the whole mix.
-            compressor.attack.value=0;
+            // compressor.attack.value=0;
             // compressor.release.value=.08;
             // compressor.ratio.value=22;
 
@@ -1456,9 +1459,9 @@
         [.04,.82,.32,.94,'',2],[.34,.82,.62,.94,'VR',1],
         [.66,.82,.96,.94,'CLOSE',6]
     ], UI_TAB = [[.4,0,.6,.12,'',7]], UI_LEVEL=[
-        [.025,.28,.325,.56,'',20],
-        [.35,.28,.65,.56,'',21],
-        [.675,.28,.975,.56,'',22]
+        [.025,.32,.325,.60,'',20],
+        [.35,.32,.65,.60,'',21],
+        [.675,.32,.975,.60,'',22]
     ];
     function cardText(type,power){
         if(type===0)return `+${power} ORB`;
@@ -1529,7 +1532,7 @@
     // Returns the correct local transform for the HUD based on its visibility state
     function getHudTransform() {
         // translate(X, Y, Z): X=horizontal; Y=open -.05, closed/choices .5; Z=closed VR -1.5m, everything else -1.15m.
-        return translateScale(0,hudVisible?-.05:.5,xr&&!hudVisible?-1.5:-1.15,1,1,1);
+        return translateScale(0,hudVisible?-.05:xr?.4:.5,xr&&!hudVisible?-1.5:-1.15,1,1,1);
     }
 
     // --- HUD Interaction Needs Input-ray ---
@@ -1602,6 +1605,11 @@
                     hudCtx.strokeStyle=hudCtx.fillStyle=POWER[button[6]][0];hudCtx.lineWidth=5;hudCtx.strokeRect(buttonX+2,buttonY+2,width-4,height-4);
                     hudCtx.font='bold 22px system-ui';hudCtx.textAlign='center';hudCtx.textBaseline='middle';hudCtx.fillText(button[4],buttonX+width/2,buttonY+height/2);
                 }
+            }
+            if(banner[1]>performance.now()){
+                hudCtx.font='bold 48px system-ui';hudCtx.textAlign='center';hudCtx.fillStyle=UI_TEXT;
+                hudCtx.strokeStyle=UI_PANEL;hudCtx.lineWidth=14;hudCtx.strokeText(banner[0],320,240);
+                hudCtx.fillText(banner[0],320,240);
             }
 
             /* CLOSED CHAT UI disabled:

@@ -96,7 +96,8 @@
     // Expose Math functions to global scope
     Object.getOwnPropertyNames(Math).forEach(name => window[name.toUpperCase()] = Math[name]);
     // --- Math Library ---
-    const D2R = 0.0174532925 // or PI / 180;
+    // const D2R = 0.0174532925 // or PI / 180;
+    const D2R = .01745 // PI / 180 to five significant figures
     //const D2R = PI / 180;
     const F32 = Float32Array;
     const M4 = values => new F32(values || [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
@@ -117,11 +118,8 @@
     const M = M4(), V = M4(), P = M4(); // Model, View, Projection
     let PV = M4(), invPV = M4(); // Combined and inverse matrices for picking
 
-    // Multiplies a 3D point (w=1) by a 4x4 matrix
-    function mulPoint(matrix,point) { const x=point[0],y=point[1],z=point[2];return [matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12],matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13],matrix[2]*x+matrix[6]*y+matrix[10]*z+matrix[14]]; }
-
-    // Multiplies a 3D direction (w=0) by a 4x4 matrix
-    function mulDir(matrix,direction) { const x=direction[0],y=direction[1],z=direction[2];return [matrix[0]*x+matrix[4]*y+matrix[8]*z,matrix[1]*x+matrix[5]*y+matrix[9]*z,matrix[2]*x+matrix[6]*y+matrix[10]*z]; }
+    // Multiplies a 3D point or direction by a 4x4 matrix (w=1 or 0).
+    function mulPoint(matrix,point,w) { const x=point[0],y=point[1],z=point[2];return [matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12]*w,matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13]*w,matrix[2]*x+matrix[6]*y+matrix[10]*z+matrix[14]*w]; }
 
     //function mul4(m, v) { return [m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3], m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3], m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3], m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]]; }
     const mul4 = (out,matrix,vector) => {
@@ -178,14 +176,11 @@
 
     // Peer interpolation delay (ms). Higher = smoother but more laggy. 120ms is a good balance.
     function pushPeerSample(peer, x, z, yaw, now){
-        peer.speed = peer.last ? HYPOT(x-peer.x,z-peer.z)*1000/(now-peer.last||1) : 0;
         peer.hist.push({ t: now, x, z, yaw });
         peer.last = now;
         // trim old samples
         const cutoff = now - 2000;
         while (peer.hist.length && peer.hist[0].t < cutoff) peer.hist.shift();
-        // also keep a compact last-known for quick fallback
-        peer.x = x; peer.z = z; peer.yaw = yaw;
     }
     function samplePeer(peer, targetT){
         const history=peer.hist;if(!history.length)return null;
@@ -271,7 +266,7 @@
                     const x=+parts[2];
                     const z=+parts[3];
                     const yaw=+parts[4];
-                    const peer = peers.get(id) || {x:0,z:0,last:0,hist:[],oh:[]};
+                    const peer = peers.get(id) || {x,z,last:0,hist:[],oh:[]};
                     const now = performance.now();
                     if(!nearCity(x,z)){if(peers.has(id))forgetPeer(id);return;}
                     pushPeerSample(peer,x,z,yaw,now);
@@ -342,7 +337,7 @@
 
             if(parts[1]!==myId){
                 if(parts[7]===myId){
-                    runStats.defeated++;
+                    defeated++;
                     playImpactSound(+parts[3],+parts[4],1);
                     dropReward(+parts[3],+parts[4],+parts[9]);
                 }
@@ -352,7 +347,7 @@
             if(enemy)enemy.dead=1;
         }
         if(command==='a'){
-            const parts=payload.split('|');if(parts[1]===myId)runStats.dealt+=+parts[2];
+            const parts=payload.split('|');if(parts[1]===myId)dealt+=+parts[2];
         }
         if(command==='s'){
             const parts=payload.split('|');
@@ -431,7 +426,7 @@
     //const isMobile=matchMedia('(pointer:coarse)').matches;
     // Unified input state object for keyboard, joysticks, pointer-look, and pointer coordinates
     let keys={};
-    const joy={L:{x:0,y:0},R:{x:0,y:0}},look={id:null,x:0,y:0};
+    const joy={L:{x:0,y:0},R:{x:0,y:0}};let lookId=null,lookX=0,lookY=0;
     const DZ = .1;    // Deadzone for joystick/gamepad axes to prevent drift
     // GAMEPAD SUPPORT: let gamepadButtons=0;
     // -- VR: Input --
@@ -489,33 +484,29 @@
     
     function updatePointer(event){
         const locked=pointerLocked(),rect=locked&&canvas.getBoundingClientRect();
-        look.x=locked?rect.left+rect.width/2:event.clientX;
-        look.y=locked?rect.top+rect.height/2:event.clientY;return locked;
+        lookX=locked?rect.left+rect.width/2:event.clientX;
+        lookY=locked?rect.top+rect.height/2:event.clientY;return locked;
     }
     // Pointer event listeners on the canvas for mouse-look and interaction
     canvas.onpointerdown=event => {
         initAudio(); // NEW: Initialize audio on first user interaction
         // Start mouse-look on left-click
-        if(event.button===0&&look.id===null){
-            look.id=event.pointerId;
-            look.x=event.clientX;
-            look.y=event.clientY;
+        if(event.button===0&&lookId===null){
+            lookId=event.pointerId;
             if(!pointerLocked())canvas.setPointerCapture(event.pointerId);
         }
         // Always update pointer position for picking
-        look.x=event.clientX;
-        look.y=event.clientY;
+        lookX=event.clientX;
+        lookY=event.clientY;
     };
     
     canvas.onpointermove=event => {
         // Update pointer position for hover effects
         const locked=pointerLocked();
 
-        if(locked||event.pointerId===look.id){
-            const dx=locked?event.movementX:event.clientX-look.x;
-            const dy=locked?event.movementY:event.clientY-look.y;
-            look.x=event.clientX;
-            look.y=event.clientY;
+        if(locked||event.pointerId===lookId){
+            const dx=locked?event.movementX:event.clientX-lookX;
+            const dy=locked?event.movementY:event.clientY-lookY;
             player.yaw -= dx * .002 * (opts[0] ? -1 : 1);
             player.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,player.pitch+dy*.002*(opts[0] ? -1 : 1)));
         }
@@ -524,22 +515,22 @@
     
     canvas.onpointerup=event => {
         // Stop mouse-look mode.
-        if(event.pointerId===look.id){
-            look.id=null;
+        if(event.pointerId===lookId){
+            lookId=null;
         }
         // Update pointer position and trigger an interaction check
         updatePointer(event);
-        interactDesktopAt(look.x,look.y);
+        interactDesktopAt(lookX,lookY);
     };
     document.onpointerlockchange=()=>{
         opts[1]=+(pointerLocked());
-        look.id=null;
+        lookId=null;
         hudVisible=!opts[1];
     };
     
     canvas.onpointercancel=event => {
-        if(event.pointerId===look.id){
-            look.id=null;
+        if(event.pointerId===lookId){
+            lookId=null;
         }
     };
     // -- /PART: Keyboard-Pointer --
@@ -714,7 +705,7 @@
 
     // -- MODULE: Combat --
     // const runStats={defeated:0};
-    const runStats={defeated:0,dealt:0};
+    let defeated=0,dealt=0;
     // Enemies seek, skills hit automatically, and XP drops fuel upgrades.
     const enemies=[];
     // Keep the original centre beacon and append three local gameplay beacons.
@@ -785,7 +776,7 @@
         do{angle=rng()*PI*2;radius=beacon?20+rng()*10:35+rng()*20;x=anchorX+COS(angle)*radius;z=anchorZ+SIN(angle)*radius;valid=1;peers.forEach(peer=>valid&=now-peer.last>15000||HYPOT(peer.x-x,peer.z-z)>=20);}while(--attempts&&!valid);
         // Accept the first street or rooftop position; climbing makes either valid.
         enemy.x=x;enemy.z=z;
-        enemy.scale=enemy.vx=enemy.vz=enemy.yaw=enemy.anim=enemy.dead=0;enemy.y=(buildingAt(x,z,.6)?.h||0)+.6;enemy.h=[];
+        enemy.scale=enemy.vx=enemy.vz=enemy.yaw=enemy.anim=0;enemy.y=(buildingAt(x,z,.6)?.h||0)+.6;enemy.h=[];
         if(enemy.tier>6)enemy.mut=-1,enemy.max=enemy.hp=1000000*(enemy.tier-6);else setEnemyPower(enemy);
         return enemy;
     }
@@ -817,10 +808,10 @@
         }
     }
     function claimRemoteBeacons(){
-        peers.forEach((peer,owner)=>peer.b?.forEach(beacon=>{const claim=owner+','+beacon[0]+','+beacon[1];if(!beacon[3]&&!claimedBeacons.has(claim)&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<(.55*(beacon[2]>6?5:1))**2){claimedBeacons.add(claim);acceptBeaconClaim(beacon);sendMMO(`v|${owner}|${beacon[0]}|${beacon[1]}`);}}));
+        peers.forEach((peer,owner)=>peer.b.forEach(beacon=>{const claim=owner+','+beacon[0]+','+beacon[1];if(!beacon[3]&&!claimedBeacons.has(claim)&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<(.55*(beacon[2]>6?5:1))**2){claimedBeacons.add(claim);acceptBeaconClaim(beacon);sendMMO(`v|${owner}|${beacon[0]}|${beacon[1]}`);}}));
     }
     function acceptBeaconClaim(remote){
-        const beacon=[remote[0],remote[1],remote[2],0,0,0,0,0,1];SPAWN_BEACONS.push(beacon);startBeacon(beacon);
+        const beacon=[remote[0],remote[1],remote[2],0,0,0,0,0];SPAWN_BEACONS.push(beacon);startBeacon(beacon);
     }
     function finishBeacons(){
         for(let i=SPAWN_BEACONS.length;i-->1;){
@@ -843,8 +834,7 @@
         level=1;
         xp=0;
         choosing=0;
-        runStats.defeated=0;
-        runStats.dealt=0;
+        defeated=dealt=0;
         skillTime=0;
         boltTimes.length=evolutionQueue.length=0;orbCounts.length=boltCounts.length=1;orbCounts[0]=boltCounts[0]=1;claimedBeacons.clear();
         damage=1;
@@ -911,14 +901,14 @@
     function hurt(enemy,amount,killer){
         if(enemy.dead)return;
         amount=MIN(enemy.hp,MAX(1,FLOOR(amount)));enemy.hp-=amount;damageNumber(enemy.x,enemy.z,amount);
-        if(!myId||killer===myId)runStats.dealt+=amount; // damage addition
+        if(!myId||killer===myId)dealt+=amount; // damage addition
         else sendMMO(`a|${killer}|${amount}`);
         if(enemy.hp<1)defeat(enemy,amount,killer);else playImpactSound(enemy.x,enemy.z);
     }
     function defeat(enemy,amount,killer){
         const x=enemy.x,z=enemy.z,tier=enemy.tier,mutation=enemy.mut;
         if(!myId||killer===myId){
-            runStats.defeated++;
+            defeated++;
             playImpactSound(x,z,1);dropReward(x,z,enemy.max);
         }
         if(tier>6){playMotif();evolutionQueue.push(6-tier);if(!choosing)rollChoices(evolutionQueue.shift());}
@@ -978,7 +968,7 @@
             peers.forEach((peer,id)=>{
                 const hits=peer.oh[enemy.i]||(peer.oh[enemy.i]=[]);
                 let hitIndex=0;
-                if(now-peer.last<15000)for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){
+                if(now-peer.last<15000)for(let tier=-1;tier<7;tier++)for(let i=peer.orbs[tier+1]||0;i--;){
                     const count=peer.orbs[tier+1],angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/count,radius=orbRadius(tier),ox=peer.x+COS(angle)*radius,oz=peer.z+SIN(angle)*radius;
                     if((hits[hitIndex]||0)<now&&(enemy.x-ox)**2+(enemy.z-oz)**2<(.25+.5*enemy.scale)**2){hurt(enemy,peer.d*(tier+2),id);hits[hitIndex]=now+150;}hitIndex++;
                 }
@@ -1465,8 +1455,8 @@
         [.66,.66,.96,.76,'LOCK',15],
         [.04,.82,.32,.94,'',2],[.34,.82,.62,.94,'VR',1],
         [.66,.82,.96,.94,'CLOSE',6]
-    ], UI_TAB = [[.4,0,.6,.12,'MENU',7]], UI_LEVEL=[
-        [.025,.28,.325,.56,'+ ORB',20],
+    ], UI_TAB = [[.4,0,.6,.12,'',7]], UI_LEVEL=[
+        [.025,.28,.325,.56,'',20],
         [.35,.28,.65,.56,'',21],
         [.675,.28,.975,.56,'',22]
     ];
@@ -1546,8 +1536,8 @@
     function HUD_pick(WH, ray) {
         const ui=currentUI();
         const inv = INV(WH);
-        const origin=mulPoint(inv,ray.o); // Transform ray to HUD's local space
-        const direction=mulDir(inv,ray.d);
+        const origin=mulPoint(inv,ray.o,1); // Transform ray to HUD's local space
+        const direction=mulPoint(inv,ray.d,0);
         const distance=-origin[2]/direction[2]; // Intersect with the Z=0 plane
         if(distance<=0)return null;
 
@@ -1582,7 +1572,6 @@
     }
     // Draws the entire HUD onto the 2D canvas
     function drawHUDCanvas() {
-        const ui = currentUI();
         hudCtx.clearRect(0, 0, hudCan.width, hudCan.height);
 
         // Draw the compact menu tab while the main HUD is closed.
@@ -1690,10 +1679,10 @@
             } */
             let peerCount=0,now=performance.now(),y=82;
             peers.forEach(peer =>
-                now - (peer.last || 0) < 15000 && peerCount++
+                now-peer.last<15000&&peerCount++
             );
 
-                for(const text of [`LVL ${level}`,`MOBS ${runStats.defeated}`,`DMG ${runStats.dealt}`,`TIME ${FLOOR(skillTime/6)/10}m`,`MMO ${mmoEnabled?'ON':'OFF'}`,`PPL ${peerCount+1}`,`X ${ROUND(player.x)}`,`Y ${ROUND(player.z)}`])hudCtx.fillText(text,28,y+=18);
+                for(const text of [`LVL ${level}`,`MOBS ${defeated}`,`DMG ${dealt}`,`TIME ${FLOOR(skillTime/6)/10}m`,`MMO ${mmoEnabled?'ON':'OFF'}`,`PPL ${peerCount+1}`,`X ${ROUND(player.x)}`,`Y ${ROUND(player.z)}`])hudCtx.fillText(text,28,y+=18);
                 // LOG/MUTED TEXT disabled: hudCtx.fillStyle = UI_MUTED;
                 // LOG disabled: hudCtx.font = '14px monospace';
 
@@ -1705,7 +1694,7 @@
                 );
                 */
             // Draw every button belonging to the active page.
-            for (const button of ui) {
+            for (const button of UI_MAIN) {
                 const buttonX=button[0]*640;
                 const buttonY=button[1]*320;
                 const width=(button[2]-button[0])*640;
@@ -1898,7 +1887,7 @@
         gl.depthMask(false);gl.enable(gl.BLEND);
         gl.useProgram(PC);
         gl.useProgram(PDisc);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);
-        const visibleBeacons=SPAWN_BEACONS.slice(),now=performance.now();peers.forEach(peer=>{if(now-peer.last<15000)peer.b?.forEach(beacon=>visibleBeacons.push(beacon))});
+        const visibleBeacons=SPAWN_BEACONS.slice(),now=performance.now();peers.forEach(peer=>{if(now-peer.last<15000)peer.b.forEach(beacon=>visibleBeacons.push(beacon))});
         for(const beacon of visibleBeacons){
             const x=beacon[0],z=beacon[1],color=beacon.length>2?POWER[beacon[2]%7][1]:WHITE,health=beacon[3]?MAX(0,beacon[4])/beacon[5]:1,visual=(beacon[2]>6?5:1)*(beacon[3]? .2+.8*SQRT(health):1),width=4*visual,height=beacon.length<3?300:beacon[3]?20+280*health:180,length=HYPOT(player.x-x,player.z-z)||1,dx=(player.z-z)/length,dz=(x-player.x)/length;
             // outer beam
@@ -1929,21 +1918,21 @@
     // Shared scene renderer. Desktop supplies one synthetic head view; WebXR
     // supplies the headset's real eye views.
     // -- PART: Character-Renderer --
-    const PEER_COL = [.3,.3,.2], BLACK=[0,0,0], WHITE=[1,1,1];
+    const BLACK=[0,0,0], WHITE=[1,1,1];
     // Armer 2 made from the existing sphere primitive to keep the packed build small.
-    function drawCat(x, y, z, yaw, anim, amp, col, shell=1, scale=1){
+    function drawModel(x, y, z, yaw, anim, amp, col, shell=1, scale=1){
         const cy=COS(yaw),sy=SIN(yaw);
         function place(lx,ly,lz,radius,color=col,height){
             drawSphere(x+(lx*cy+lz*sy)*scale,y-.4+(.4+ly)*scale,z+(lz*cy-lx*sy)*scale,radius*shell*scale,color,height&&height*shell*scale);
         }
-        place(0,.08,0,.35);
+        place(0,.08,0,.35); // Torso: the large central body sphere.
         for(const side of[-1,1]){
-            place(side*.2,.06,0,.25);
-            place(side*.1,.2,.3,.05,shell==1?col==PEER_COL?BLACK:WHITE:col);
-            const step=SIN(anim+(side<0)*PI)*amp,lift=MAX(0,step);
-            place(side*.25,-.3+lift,step,.09);
-            place(side*.24,-.17+lift/2,step/2,.12,col,.2);
-            place(side/3,.1,.1,.15);
+            place(side*.2,.06,0,.25); // Left/right head-and-shoulder mass.
+            place(side*.1,.2,.3,.05,shell==1?col==WHITE?BLACK:WHITE:col); // Eye on the forward face.
+            anim+=PI;const step=-COS(anim)*amp,lift=MAX(0,SIN(anim))*amp*1.5;
+            place(side*.25,-.3+lift,step,.09); // Foot: follows the full walk step and lift.
+            place(side*.24,-.17+lift/2,step/2,.12,col,.2); // Leg: a taller ellipsoid moving half as far as the foot.
+            place(side/3,.1,.1,.15); // Arm/hand sphere beside the upper body.
         }
     }
     // -- /PART: Character-Renderer --
@@ -2003,14 +1992,14 @@
         // -- /PART: Projectile --
         // -- PART: Enemy --
         // Local/remote passes and ghost offsets intentionally repeat: both shared helpers made the PPMd ZIP larger.
-        for(const enemy of enemies){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,enemy.y,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[(enemy.mut<0?enemy.tier:enemy.mut)%7][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
-        remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+(enemy.i||0))*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawCat(x,enemy.y,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[(enemy.mut<0?enemy.tier:enemy.mut)%7][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
+        for(const enemy of enemies){const sway=SIN(tt*10+enemy.i)*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawModel(x,enemy.y,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[(enemy.mut<0?enemy.tier:enemy.mut)%7][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}
+        remoteEnemies.forEach(group=>group.forEach(enemy=>{if(live(enemy)){const sway=SIN(tt*10+enemy.i)*.2,x=enemy.x-SIN(enemy.yaw)*.2+COS(enemy.yaw)*sway,z=enemy.z-COS(enemy.yaw)*.2-SIN(enemy.yaw)*sway;drawModel(x,enemy.y,z,enemy.yaw,enemy.anim||tt*8,.08,[...POWER[(enemy.mut<0?enemy.tier:enemy.mut)%7][1],.2],enemy.mut<0?1.12:1.4,enemy.scale);}}));
         gl.disable(gl.BLEND);
-        for(const enemy of enemies)drawCat(enemy.x,enemy.y,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier%7][1],1.16,enemy.scale);
-        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(enemy.x,enemy.y,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier%7][1],1.16,enemy.scale)));
+        for(const enemy of enemies)drawModel(enemy.x,enemy.y,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,POWER[enemy.tier%7][1],1.16,enemy.scale);
+        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawModel(enemy.x,enemy.y,enemy.z,enemy.yaw,now*.008,.1,POWER[enemy.tier%7][1],1.16,enemy.scale)));
         gl.depthMask(true);
-        for(const enemy of enemies)drawCat(enemy.x,enemy.y,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
-        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawCat(enemy.x,enemy.y,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
+        for(const enemy of enemies)drawModel(enemy.x,enemy.y,enemy.z,enemy.yaw,enemy.anim,.08+enemy.tier*.01,BLACK,1,enemy.scale);
+        remoteEnemies.forEach(group=>group.forEach(enemy=>live(enemy)&&drawModel(enemy.x,enemy.y,enemy.z,enemy.yaw,now*.008,.1,BLACK,1,enemy.scale)));
         // -- /PART: Enemy --
         // -- PART: Projectile --
         gl.depthMask(false);
@@ -2030,14 +2019,15 @@
         if(peers.size){
             const target = now - 120;
             peers.forEach((peer, id) => {
-                if (id === myId || now - (peer.last || 0) >= 15000) return;
-                const sample = samplePeer(peer, target) || peer;
-                drawCat(sample.x, .6, sample.z, (sample.yaw || 0) + PI, now*.005*MIN(3,peer.speed||0), .1, PEER_COL);
+                if (id === myId || now-peer.last>=15000) return;
+                const sample=samplePeer(peer,target);
+                peer.anim=(peer.anim||0)+HYPOT(sample.x-peer.x,sample.z-peer.z)*2;peer.x=sample.x;peer.z=sample.z;
+                drawModel(sample.x,.6,sample.z,sample.yaw+PI,peer.anim,.1,WHITE);
                 // -- PART: Orb --
                 gl.depthMask(false);
-                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
                 gl.depthMask(true);
-                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs?.[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
                 // -- /PART: Orb --
             });
         }
@@ -2214,8 +2204,8 @@
             hudWH = new DOMMatrix(W).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
             HUD_WH_world = hudWH;
             hoverBtn = null;
-            if (look.id === null) {
-                const hit = HUD_pick(hudWH, rayFromScreen(look.x, look.y));
+            if (lookId === null) {
+                const hit = HUD_pick(hudWH, rayFromScreen(lookX, lookY));
                 if (hit && hit.button) hoverBtn = hit.button;
             }
             drawHUDCanvas();

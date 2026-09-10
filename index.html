@@ -24,7 +24,7 @@
     <!-- <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" /> -->
     <!-- <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"> -->
     <!-- <meta name="viewport" content="width=device-width, user-scalable=no"> -->
-    <title>Void City Survivors</title>
+    <title>MawLight</title>
     <!--meta name="author" content="Justinas Gibas" /-->
     <!--<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="55%" x="50%" dominant-baseline="middle" text-anchor="middle" font-size="80">🕳️</text></svg>'>-->
     <style>
@@ -165,7 +165,7 @@
     // -- FEATURE: MMO --
     // -- PART: Connection --
     // Minimal MMO support using JS13k relay. Toggle via HUD. Other players use the shared character mesh.
-    const MMO_URL = 'wss://relay.js13kgames.com/void-city-survivors'; // append subpaths to shard into rooms if desired
+    const MMO_URL = 'wss://relay.js13kgames.com/mawlight'; // append subpaths to shard into rooms if desired
     let mmoEnabled = false;
     let ws = null;
     let myId = null;
@@ -1631,7 +1631,7 @@
                 hudPage === 1 ? 'CHAT' :
                 // hudPage === 2 ? 'INVENTORY' : // INVENTORY HUD disabled
                 hudPage === 3 ? 'SETTINGS' :
-                'VOID CITY SURVIVORS',
+                'MAWLIGHT',
                 20,
                 34
             );

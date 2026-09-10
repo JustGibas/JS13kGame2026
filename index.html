@@ -881,12 +881,12 @@
         const type=choice[0],power=powerValue(choice[1]);
         if(type===8)orbCounts[choice[1]+1]=(orbCounts[choice[1]+1]||0)+1;
         else if(type===9)boltCounts[choice[1]+1]=(boltCounts[choice[1]+1]||0)+1;
-        else if(type===10)damage+=power**2*100;
+        else if(type===10)damage+=power*500;
         else if(type===12)damage+=power*10;
-        else if(type===11||type===13||type===6){const added=type===6?power*20:type===13?power*100:power**2*1e3;maxHp+=added;hp+=added;}
+        else if(type===11||type===13||type===6){const added=type===6?power*20:type===13?power*100:power*5e3;maxHp+=added;hp+=added;}
         else if(type===0)orbCounts[0]+=power;
         else if(type===3)boltCounts[0]+=power;
-        else if(type%10===4)movePower+=power*(type>9?2:1);
+        else if(type%10===4)movePower+=power*(type>9?5:1);
         else if(type===5)cooldownPower+=power;
         else if(type===7)damage+=power;
         if(type<8)xp-=level++*3;
@@ -1467,12 +1467,12 @@
         if(type===0)return `+${power} ORB`;
         if(type===8)return '+1 EVO ORB';
         if(type===9)return '+1 EVO BOLT';
-        if(type===10)return `+${power**2*100} DMG`;
-        if(type===11)return `+${power**2*1e3} HP`;
+        if(type===10)return `+${power*500} DMG`;
+        if(type===11)return `+${power*5e3} HP`;
         if(type===12)return `+${power}0 DMG`;
         if(type===13)return `+${power}00 HP`;
         if(type===3)return `+${power} BOLT`;
-        if(type%10===4)return `+${power*(type>9?2:1)/10} MOVE`;
+        if(type%10===4)return `+${power*(type>9?5:1)/10} MOVE`;
         if(type===5)return `+${(1/cooldown(cooldownPower+power)-1/cooldown(cooldownPower)).toFixed(2)} RATE`;
         if(type===6)return `+${power*20} HP`;
         return `+${power} DMG`;

@@ -941,7 +941,7 @@
             const building=buildingAt(enemy.x,enemy.z,.45*enemy.scale),roof=(building?.h||0)+.6,wall=building&&enemy.y<roof&&resolveCityCollision(enemy,.45*enemy.scale,px,pz);
             if(wall)enemy.y+=dt*maxSpeed;else enemy.y=MAX(roof,enemy.y-dt*maxSpeed*3);
             enemy.vx*=1-dt;enemy.vz*=1-dt;
-            enemy.anim+=speed*dt*3.5;enemy.yaw=ATAN2(dx,dz);
+            enemy.anim+=speed*dt*3;enemy.yaw=ATAN2(dx,dz);
             if(boss&&(enemy.fire=(enemy.fire||0)-dt)<0){
                 enemy.fire=7/enemy.tier;fireVolley(enemy.x,enemy.z,enemy.yaw,-1,enemy.tier*2-13,(6-enemy.tier)*100);
             }
@@ -1925,13 +1925,12 @@
         function place(lx,ly,lz,radius,color=col,height){
             drawSphere(x+(lx*cy+lz*sy)*scale,y-.4+(.4+ly)*scale,z+(lz*cy-lx*sy)*scale,radius*shell*scale,color,height&&height*shell*scale);
         }
-        place(0,.08,0,.35); // Torso: the large central body sphere.
+        place(0,.08,0,.34); // Torso: the large central body sphere.
         for(const side of[-1,1]){
             place(side*.2,.06,0,.25); // Left/right head-and-shoulder mass.
             place(side*.1,.2,.3,.05,shell==1?col==WHITE?BLACK:WHITE:col); // Eye on the forward face.
-            anim+=PI;const step=-COS(anim)*amp,lift=MAX(0,SIN(anim))*amp*1.5;
-            place(side*.25,-.3+lift,step,.09); // Foot: follows the full walk step and lift.
-            place(side*.24,-.17+lift/2,step/2,.12,col,.2); // Leg: a taller ellipsoid moving half as far as the foot.
+            anim+=PI;const step=SIN(anim)*amp*2,lift=MAX(0,step);
+            place(side*.2,-.17+lift/2,step/2,.12,col,.2); // Amplified Armer2 midpoint motion beneath the shoulders.
             place(side/3,.1,.1,.15); // Arm/hand sphere beside the upper body.
         }
     }
@@ -2021,7 +2020,7 @@
             peers.forEach((peer, id) => {
                 if (id === myId || now-peer.last>=15000) return;
                 const sample=samplePeer(peer,target);
-                peer.anim=(peer.anim||0)+HYPOT(sample.x-peer.x,sample.z-peer.z)*2;peer.x=sample.x;peer.z=sample.z;
+                peer.anim=(peer.anim||0)+HYPOT(sample.x-peer.x,sample.z-peer.z)*3;peer.x=sample.x;peer.z=sample.z;
                 drawModel(sample.x,.6,sample.z,sample.yaw+PI,peer.anim,.1,WHITE);
                 // -- PART: Orb --
                 gl.depthMask(false);

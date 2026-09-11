@@ -912,7 +912,7 @@
             defeated++;
             playImpactSound(x,z,1);dropReward(x,z,enemy.max);
         }
-        if(tier>6){playMotif();evolutionQueue.push(6-tier);if(!choosing)rollChoices(evolutionQueue.shift());}
+        if(tier>6){bannerText='CLEARED';bannerTime=performance.now()+4e3;playMotif();evolutionQueue.push(6-tier);if(!choosing)rollChoices(evolutionQueue.shift());}
         if(myId)sendMMO(`d|${myId}|${enemy.i}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
         enemy.dead=1;
     }
@@ -1260,7 +1260,7 @@
     // -- PART: Update --
     function updateWorld(dt, session, frame) {
         if(hp<1){
-            if(!returning){playMotif(undefined,0,1);hudVisible=true;choosing=0;returning=[player.x,player.z,0];}
+            if(!returning){const boss=enemies.some(enemy=>enemy.tier>6);playMotif(undefined,0,1);hudVisible=!boss;choosing=0;returning=[player.x,player.z,0];if(boss){bannerText='FAILED';bannerTime=performance.now()+4e3;}}
             // Round only the two corners; straight sections keep a constant speed.
             const flight=returning,t=flight[2]+=dt,d=MAX(1,HYPOT(flight[0],flight[1]-2)/50),bend=v=>v<0?0:v<1?v*v/2:v-.5,a=bend(t-1),b=bend(t-d-1),step=1-(a-b)/d;
             player.y=1.6+33.4*(t-a-b)/1.5;
@@ -1894,7 +1894,7 @@
         gl.useProgram(PDisc);gl.uniformMatrix4fv(uVDisc,false,V);gl.uniformMatrix4fv(uPDisc,false,P);
         const visibleBeacons=SPAWN_BEACONS.slice(),now=performance.now();peers.forEach(peer=>{if(now-peer.last<15000)peer.b.forEach(beacon=>visibleBeacons.push(beacon))});
         for(const beacon of visibleBeacons){
-            const x=beacon[0],z=beacon[1],color=beacon.length>2?POWER[beacon[2]%7][1]:WHITE,health=beacon[3]?MAX(0,beacon[4])/beacon[5]:1,visual=(beacon[2]>6?5:1)*(beacon[3]? .2+.8*SQRT(health):1),width=4*visual,height=beacon.length<3?300:beacon[3]?20+280*health:180,length=HYPOT(player.x-x,player.z-z)||1,dx=(player.z-z)/length,dz=(x-player.x)/length;
+            const x=beacon[0],z=beacon[1],boss=beacon[2]>6,color=beacon.length>2?POWER[beacon[2]%7][1]:WHITE,health=beacon[3]?MAX(0,beacon[4])/beacon[5]:1,visual=(boss?5:1)*(beacon[3]? .2+.8*SQRT(health):1),width=4*visual,height=beacon.length<3?300:beacon[3]?20+280*health:180,length=HYPOT(player.x-x,player.z-z)||1,dx=(player.z-z)/length,dz=(x-player.x)/length;
             // outer beam
             gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.useProgram(PC);gl.bindVertexArray(vaoBeam);gl.uniform4f(uS_Color,color[0],color[1],color[2],.2);
             gl.uniformMatrix4fv(uS_M,false,new F32([dx*width,0,dz*width,0, 0,1,0,0, 0,height,0,0, x-dx*width/2,-.1,z-dz*width/2,1]));gl.drawArrays(gl.TRIANGLES,0,6);
@@ -1910,6 +1910,8 @@
             // outer accent ring
             gl.uniform1f(uWidthDisc,.115);gl.uniform4f(uColDisc,color[0],color[1],color[2],1);
             radius=2.15*visual;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
+            // Three copies rise from the boss beacon's ground ring at the same size.
+            if(boss)for(let i=3;i--;){const rise=(now/2e3+i/3)%1;ring=new DOMMatrix().translate(x,height*rise,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);}
             // inner accent ring
             // gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.uniform1f(uWidthDisc,.1);gl.uniform4f(uColDisc,color[0],color[1],color[2],.99);
             // radius=.55*visual;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);

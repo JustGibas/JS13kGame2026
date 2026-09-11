@@ -1986,11 +1986,11 @@
         drawCity(V,P);gl.bindVertexArray(sphereVao);
         // -- PART: XP --
         // Mesh and ghost loops intentionally remain separate: a shared pass helper is larger.
-        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,radius=.14+SIN(angle)*.025;item.t===2?(drawSphere(item.x-.08,item.y,item.z,radius,POWER[0][1]),drawSphere(item.x+.08,item.y,item.z,radius,POWER[5][1])):drawSphere(item.x,item.y,item.z,radius,item.t===1?POWER[3][1]:WHITE);}
+        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,radius=.12+SIN(angle)*.025,dx=COS(angle)*.08,dz=-SIN(angle)*.08;item.t===2?(drawSphere(item.x-dx,item.y,item.z-dz,radius,POWER[0][1]),drawSphere(item.x+dx,item.y,item.z+dz,radius,POWER[5][1])):drawSphere(item.x,item.y,item.z,radius,item.t===1?POWER[3][1]:WHITE);}
         // -- /PART: XP --
         gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
         // -- PART: XP --
-        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,color=item.t===1?[.05,.8,.12,.2]:item.t===2?[.5,.1,1,.25]:[1,1,1,.08+ABS(SIN(angle))*.18];drawSphere(item.x+COS(angle)*.06,item.y+.025,item.z+SIN(angle)*.06,.2,color);}
+        for(const item of items)if(item.r>0){const angle=tt*7+item.x*2+item.z,color=item.t===1?[.05,.8,.12,.2]:item.t===2?[1,.7,.02,.25]:[1,1,1,.08+ABS(SIN(angle))*.18];drawSphere(item.x+COS(angle)*.06,item.y+.025,item.z+SIN(angle)*.06,.2+SIN(angle)/40,color);}
         // -- /PART: XP --
         // -- PART: Projectile --
         // Intentional duplication: these similar loops produce a smaller PPMd ZIP than a shared helper.

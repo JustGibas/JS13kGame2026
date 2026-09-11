@@ -425,7 +425,7 @@
     //const isMobile=matchMedia('(pointer:coarse)').matches;
     // Unified input state object for keyboard, joysticks, pointer-look, and pointer coordinates
     let keys={};
-    const joy={L:{x:0,y:0},R:{x:0,y:0}};let lookId=null,lookX=0,lookY=0;
+    const joy={L:{x:0,y:0},R:{x:0,y:0}};let lookId=null,lookX=0,lookY=0,pointerX=0,pointerY=0;
     const DZ = .1;    // Deadzone for joystick/gamepad axes to prevent drift
     // GAMEPAD SUPPORT: let gamepadButtons=0;
     // -- VR: Input --
@@ -483,8 +483,8 @@
     
     function updatePointer(event){
         const locked=pointerLocked(),rect=locked&&canvas.getBoundingClientRect();
-        lookX=locked?rect.left+rect.width/2:event.clientX;
-        lookY=locked?rect.top+rect.height/2:event.clientY;return locked;
+        pointerX=locked?rect.left+rect.width/2:event.clientX;
+        pointerY=locked?rect.top+rect.height/2:event.clientY;return locked;
     }
     // Start look on the canvas, then track globally so mobile capture quirks cannot drop the drag.
     canvas.onpointerdown=event => {
@@ -492,10 +492,11 @@
         // Start drag-look from touch or the left mouse button.
         if((!event.button||event.pointerType==='touch')&&lookId===null){
             lookId=event.pointerId;
+            lookX=event.clientX;
+            lookY=event.clientY;
         }
         // Always update pointer position for picking
-        lookX=event.clientX;
-        lookY=event.clientY;
+        updatePointer(event);
     };
     
     document.onpointermove=event => {
@@ -505,11 +506,12 @@
         if(locked||event.pointerId===lookId){
             const dx=locked?event.movementX:event.clientX-lookX;
             const dy=locked?event.movementY:event.clientY-lookY;
+            lookX=event.clientX;
+            lookY=event.clientY;
             player.yaw -= dx * .002 * (opts[0] ? -1 : 1);
             player.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,player.pitch+dy*.002*(opts[0] ? -1 : 1)));
         }
-        // Joystick and secondary touches must not replace the active look pointer's delta origin.
-        if(event.pointerType!=='touch'||event.pointerId===lookId)updatePointer(event);
+        updatePointer(event);
     };
     
     document.onpointerup=event => {
@@ -518,7 +520,7 @@
         lookId=null;
         // Update pointer position and trigger an interaction check
         updatePointer(event);
-        interactDesktopAt(lookX,lookY);
+        interactDesktopAt(pointerX,pointerY);
     };
     document.onpointerlockchange=()=>{
         opts[1]=+(pointerLocked());
@@ -2210,7 +2212,7 @@
             HUD_WH_world = hudWH;
             hoverBtn = null;
             if (lookId === null) {
-                const hit = HUD_pick(hudWH, rayFromScreen(lookX, lookY));
+                const hit = HUD_pick(hudWH, rayFromScreen(pointerX,pointerY));
                 if (hit && hit.button) hoverBtn = hit.button;
             }
             drawHUDCanvas();

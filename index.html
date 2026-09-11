@@ -761,7 +761,7 @@
         enemy.mut=-1;
         // Exponential time scaling is gated by distance, preserving one-HP origin enemies forever.
         enemy.max=enemy.hp=scaledHealth(danger,enemy.tier);
-        const mutationChance=1-EXP(-(danger*.018+time*.006)*danger/(1+danger)*(enemy.b?3:1));
+        const mutationChance=1-EXP(-(danger*.018+time*.006)*danger/(1+danger)*(enemy.b?4:1));
         if(danger>=1&&rng()<mutationChance){
             enemy.mut=0;while(enemy.mut<6&&rng()<.4)enemy.mut++;
             if(enemy.mut===enemy.tier)enemy.mut+=enemy.mut<6?1:-1;
@@ -790,7 +790,7 @@
         if(ordinary>target+3)for(let i=enemies.length;i--&&ordinary>target;)if(!enemies[i].b){enemies.splice(i,1);ordinary--;}
     }
     function spawnBeaconWave(beacon){
-        for(let count=10+worldPower(beacon[0],beacon[1])*3;count--;)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6]}));
+        for(let count=7+worldPower(beacon[0],beacon[1])*3;count--;)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6]}));
     }
     function startBeacon(beacon){
         const danger=worldPower(beacon[0],beacon[1]);

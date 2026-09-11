@@ -161,7 +161,7 @@
     }
     // -- /PART: Runtime --
 
-    // -- FEATURE: MMO --
+    // -- MODULE: Multiplayer --
     // -- PART: Connection --
     // Minimal MMO support using JS13k relay. Toggle via HUD. Other players use the shared character mesh.
     let mmoEnabled=false;
@@ -388,7 +388,7 @@
     }
     // -- /PART: Sync --
 
-    // -- /FEATURE: MMO --
+    // -- /MODULE: Multiplayer --
 
     // -- PART: WebGL --
     // Resize the canvas to fill the window, accounting for device pixel ratio
@@ -674,6 +674,7 @@
     // -- FEATURE: Gameplay --
     //let beastMode = false; // toggle beast mode
     // -- MODULE: World --
+    // -- PART: City --
     //const BOOST_DURATION = 15;          // seconds per pickup
     //const BOOST_AMOUNT  = 0.3;        // +30% per stack
     //const MAX_BOOSTS    = 100;           // safety cap
@@ -697,7 +698,11 @@
     // Player capsule constants (smaller than an object w/ props)
     //const CR = .5;//, CH = 1.6, CE = 1.6; // capsule radius, height, eye-offset
 
+    // -- /PART: City --
+    // -- /MODULE: World --
+
     // -- MODULE: Combat --
+    // -- PART: State --
     // const runStats={defeated:0};
     let defeated=0,dealt=0;
     // Enemies seek, skills hit automatically, and XP drops fuel upgrades.
@@ -734,6 +739,9 @@
     const orbPhase=(time,tier)=>2.5*(15-ABS(time%30-15))*(1+(tier+1)*.08)+(tier+1)*1.7,orbRadius=tier=>tier<0?2.5:4+tier*1.5,cooldown=power=>MAX(.15,1/(1/3+.15*SQRT(power)));
     // Only HP above the normal spawn baseline adds size, in half-size doubling steps.
     const worldPower=(x,z)=>HYPOT(x,z)/100|0,beaconTier=(x,z)=>{const cap=MIN(6,worldPower(x,z)-1),roll=cityHash(x,z);return cap>0?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):cityHash(x,z,1)*(cap+1)|0):0},enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3,scaledHealth=(danger,tier)=>FLOOR((1+danger*(danger+1))*MAX(1,danger-9)*(tier*2+1)*EXP(skillTime/60*.02*danger/(1+danger))),sizeEnemy=(enemy,dt)=>enemy.scale=lerp(enemy.scale,enemy.tier>6?6:1+MAX(0,CEIL(LOG2(enemy.hp*(enemy.mut+2)/enemy.max)))/2,MIN(1,dt*4));
+    // -- /PART: State --
+
+    // -- PART: Spawning --
     function spawnBeacon(){
         for(let attempts=100;attempts--;){
             const angle=rng()*PI*2,radius=70+rng()*30,x=player.x+COS(angle)*radius,z=player.z+SIN(angle)*radius;
@@ -775,6 +783,9 @@
     function spawnBeaconWave(beacon){
         for(let count=7+worldPower(beacon[0],beacon[1])*3;count--;)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6]}));
     }
+    // -- /PART: Spawning --
+
+    // -- PART: Beacons --
     function startBeacon(beacon){
         const danger=worldPower(beacon[0],beacon[1]);
         bannerText=beacon[2]>6?'BOSS':'DEFEND';bannerTime=performance.now()+4e3;
@@ -809,6 +820,9 @@
             }
         }
     }
+    // -- /PART: Beacons --
+
+    // -- PART: Progression --
     let returning=0;
     function resetRun(){
         returning=0;player.y=1.6;
@@ -894,6 +908,9 @@
         if(myId)sendMMO(`d|${myId}|${enemy.i}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
         enemy.dead=1;
     }
+    // -- /PART: Progression --
+
+    // -- PART: Enemy-Simulation --
     function updateEnemies(dt){
         skillTime+=dt;
         syncEnemyPopulation();
@@ -968,7 +985,9 @@
             }
         }));
     }
-    // -- PART: Projectile --
+    // -- /PART: Enemy-Simulation --
+
+    // -- PART: Projectiles --
     // Shared local/remote simulation is both clearer and smaller in the measured PPMd ZIP.
     function updateProjectiles(list,dt,remote){
         for(let i=list.length;i--;){
@@ -1009,7 +1028,7 @@
             if(projectile.t<=0)list.splice(i,1);
         }
     }
-    // -- /PART: Projectile --
+    // -- /PART: Projectiles --
     function fireShot(projectile){
         shots.push(projectile);
         if(myId)sendMMO(`s|${myId}|${projectile.x.toFixed(2)}|${projectile.z.toFixed(2)}|${projectile.vx.toFixed(2)}|${projectile.vz.toFixed(2)}|${projectile.d}|${projectile.i}|${projectile.c}`);
@@ -1038,6 +1057,8 @@
     }
     // -- /MODULE: Combat --
 
+    // -- MODULE: Player --
+    // -- PART: Collection-Collision --
     function tryPickupItems(dt,collected){
         // Closest point on capsule segment (vertical)
         const baseY=player.y-1.6,
@@ -1093,9 +1114,9 @@
         if(!buildingAt(prevX,z,radius))return 1;
         entity.z=prevZ;return 1;
     }
-    // -- /MODULE: World --
+    // -- /PART: Collection-Collision --
 
-    // -- MODULE: Movement --
+    // -- PART: Movement --
     // --- Movement Logic ---
     // Movement and input constants
     //const MOVES = 3;    // Movement speed in meters per second
@@ -1234,7 +1255,8 @@
 
     }
     // -- /PART: Step --
-    // -- /MODULE: Movement --
+    // -- /PART: Movement --
+    // -- /MODULE: Player --
     // -- PART: Update --
     function updateWorld(dt, session, frame) {
         if(hp<1){

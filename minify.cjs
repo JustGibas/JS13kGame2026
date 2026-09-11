@@ -62,21 +62,73 @@ async function createPpmdMeasurer() {
 }
 
 const REPORT_TYPES = ["FEATURE", "MODULE", "PART"];
+const REPORT_CHILDREN = {
+  FEATURE: new Set(["MODULE", "PART"]),
+  MODULE: new Set(["PART"]),
+  PART: new Set(["PART"])
+};
 
-function findTagMarkers(source, type) {
+// Size anchors are intentionally simple comments so they add zero bytes to the
+// release. Keep the outline strict: FEATURE > MODULE > PART (with nested PARTs
+// allowed for a useful drill-down). A broken outline is a build error, not a
+// misleading size report.
+function reportAnchors(source) {
   const line = /^\s*\/\/\s*--\s*(.*?)\s*--\s*$/gim;
-  const markers = [];
+  const anchors = [];
   let match;
 
   while ((match = line.exec(source))) {
-    for (const field of match[1].split("|")) {
-      const tag = field.trim().match(/^(\/?)\s*(FEATURE|MODULE|PART)\s*:\s*(.+)$/i);
-      if (tag && tag[2].toUpperCase() === type) {
-        markers.push({ closing: Boolean(tag[1]), name: tag[3].trim(), start: match.index, end: line.lastIndex });
+    const tag = match[1].trim().match(/^(\/?)\s*(FEATURE|MODULE|PART)\s*:\s*(.+)$/i);
+    if (!tag) continue;
+    anchors.push({
+      closing: Boolean(tag[1]),
+      type: tag[2].toUpperCase(),
+      name: tag[3].trim(),
+      start: match.index,
+      end: line.lastIndex,
+      line: source.slice(0, match.index).split("\n").length
+    });
+  }
+  return anchors;
+}
+
+function validateReportAnchors(source, script = 0) {
+  const stack = [];
+  const errors = [];
+
+  for (const anchor of reportAnchors(source)) {
+    const label = `${anchor.type}: ${anchor.name}`;
+    if (!anchor.name) {
+      errors.push(`script ${script}, line ${anchor.line}: empty ${anchor.type} anchor`);
+      continue;
+    }
+    if (!anchor.closing) {
+      const parent = stack.at(-1);
+      if (parent && !REPORT_CHILDREN[parent.type].has(anchor.type)) {
+        errors.push(`script ${script}, line ${anchor.line}: ${label} cannot be inside ${parent.type}: ${parent.name}`);
       }
+      stack.push(anchor);
+      continue;
+    }
+
+    const open = stack.pop();
+    if (!open) {
+      errors.push(`script ${script}, line ${anchor.line}: closing ${label} has no opening anchor`);
+    } else if (open.type !== anchor.type || open.name.toLowerCase() !== anchor.name.toLowerCase()) {
+      errors.push(`script ${script}, line ${anchor.line}: closing ${label} does not match ${open.type}: ${open.name} from line ${open.line}`);
     }
   }
-  return markers;
+
+  for (const open of stack) {
+    errors.push(`script ${script}, line ${open.line}: ${open.type}: ${open.name} has no closing anchor`);
+  }
+  if (errors.length) throw new Error(`Invalid size-report anchors:\n${errors.join("\n")}`);
+}
+
+function findTagMarkers(source, type) {
+  return reportAnchors(source)
+    .filter(anchor => anchor.type === type)
+    .map(({ closing, name, start, end }) => ({ closing, name, start, end }));
 }
 
 // Collect the text owned directly by each tagged block. Text inside a nested
@@ -302,6 +354,8 @@ async function printSizeReport(sourceScripts, packedHTML, options) {
     scripts.push({ i, attrs: attrs.trim(), body });
     return `<!--S${i}-->`;
   });
+
+  scripts.forEach(script => validateReportAnchors(script.body, script.i));
 
   // Aggressive single-pass Terser config.
   // Every line documents WHY it helps and possible RISK.

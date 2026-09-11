@@ -97,9 +97,9 @@
     Object.getOwnPropertyNames(Math).forEach(name => window[name.toUpperCase()] = Math[name]);
     // --- Math Library ---
     // const D2R = 0.0174532925 // or PI / 180;
-    const D2R = .01745 // PI / 180 to five significant figures
     //const D2R = PI / 180;
     const F32 = Float32Array;
+    const DM=DOMMatrix;
     const M4 = values => new F32(values || [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
     const V3 = values => new F32(values || 3);
     const T_V3_A = V3(), T_V3_B = V3(), T_V3_C = V3(); // Reusable temporary V3s
@@ -108,15 +108,14 @@
     const SUB=(out,left,right)=>(out[0]=left[0]-right[0],out[1]=left[1]-right[1],out[2]=left[2]-right[2],out);
     const DOT=(left,right)=>left[0]*right[0]+left[1]*right[1]+left[2]*right[2];
     const CROSS=(out,left,right)=>(out[0]=left[1]*right[2]-left[2]*right[1],out[1]=left[2]*right[0]-left[0]*right[2],out[2]=left[0]*right[1]-left[1]*right[0],out);
-    const LEN=vector=>HYPOT(vector[0],vector[1],vector[2]);
-    const NORM=(out,vector)=>{var length=LEN(vector);return length>0&&(out[0]=vector[0]/length,out[1]=vector[1]/length,out[2]=vector[2]/length),out};
-    const MULTMAT4 = (left,right) => (new DOMMatrix(left)).multiply(new DOMMatrix(right)).toFloat32Array();
-    const INV = matrix => (new DOMMatrix(matrix)).inverse().toFloat32Array();
-    const PERSP = (out,fov,aspect,near,far) => { const scale=1/TAN(fov*D2R/2);out.set([scale/aspect,0,0,0,0,scale,0,0,0,0,(far+near)/(near-far),-1,0,0,(2*far*near)/(near-far),0]);return out; };
+    const NORM=(out,vector)=>{var length=HYPOT(vector[0],vector[1],vector[2]);return length>0&&(out[0]=vector[0]/length,out[1]=vector[1]/length,out[2]=vector[2]/length),out};
+    const MULTMAT4 = (left,right) => (new DM(left)).multiply(new DM(right)).toFloat32Array();
+    const INV = matrix => (new DM(matrix)).inverse().toFloat32Array();
+    const PERSP = (out,fov,aspect,near,far) => { const scale=1/TAN(fov*.01745/2);out.set([scale/aspect,0,0,0,0,scale,0,0,0,0,(far+near)/(near-far),-1,0,0,(2*far*near)/(near-far),0]);return out; };
     const LOOKAT = (out,eye,center,up) => { SUB(T_V3_A,eye,center);NORM(T_V3_A,T_V3_A);CROSS(T_V3_B,up,T_V3_A);NORM(T_V3_B,T_V3_B);CROSS(T_V3_C,T_V3_A,T_V3_B);out.set([T_V3_B[0],T_V3_C[0],T_V3_A[0],0,T_V3_B[1],T_V3_C[1],T_V3_A[1],0,T_V3_B[2],T_V3_C[2],T_V3_A[2],0,-DOT(T_V3_B,eye),-DOT(T_V3_C,eye),-DOT(T_V3_A,eye),1]);return out; };
     // --- World Matrices ---
     const M = M4(), V = M4(), P = M4(); // Model, View, Projection
-    let PV = M4(), invPV = M4(); // Combined and inverse matrices for picking
+    let PV=M4(),invPV=M4(); // Combined and inverse matrices for picking
 
     // Multiplies a 3D point or direction by a 4x4 matrix (w=1 or 0).
     function mulPoint(matrix,point,w) { const x=point[0],y=point[1],z=point[2];return [matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12]*w,matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13]*w,matrix[2]*x+matrix[6]*y+matrix[10]*z+matrix[14]*w]; }
@@ -165,10 +164,9 @@
     // -- FEATURE: MMO --
     // -- PART: Connection --
     // Minimal MMO support using JS13k relay. Toggle via HUD. Other players use the shared character mesh.
-    const MMO_URL = 'wss://relay.js13kgames.com/mawlight'; // append subpaths to shard into rooms if desired
-    let mmoEnabled = false;
-    let ws = null;
-    let myId = null;
+    let mmoEnabled=false;
+    let ws=null;
+    let myId=null;
     const peers = new Map(); // id -> interpolated player and skill state
     const remoteEnemies = new Map(); // owner id -> Map(enemy id -> predicted enemy)
     const remoteShots = [];
@@ -224,7 +222,7 @@
         if (ws) try { ws.close(); } catch(_){}
         // LOG disabled: logMMO('connecting…');
         try {
-            ws = new WebSocket(MMO_URL);
+            ws=new WebSocket('wss://relay.js13kgames.com/mawlight');
         } catch (error) {
             // LOG disabled: logMMO('WebSocket error: ' + error.message);
             return;
@@ -425,7 +423,7 @@
     //const isMobile=matchMedia('(pointer:coarse)').matches;
     // Unified input state object for keyboard, joysticks, pointer-look, and pointer coordinates
     let keys={};
-    const joy={L:{x:0,y:0},R:{x:0,y:0}};let lookId=null,lookX=0,lookY=0,pointerX=0,pointerY=0;
+    const joy={L:{x:0,y:0},R:{x:0,y:0}};let lookId=null,lookX,lookY,pointerX=0,pointerY=0;
     const DZ = .1;    // Deadzone for joystick/gamepad axes to prevent drift
     // GAMEPAD SUPPORT: let gamepadButtons=0;
     // -- VR: Input --
@@ -456,7 +454,6 @@
     // -- /PART: Core --
     
     // -- PART: Keyboard-Pointer --
-    const pointerLocked=()=>document.pointerLockElement===canvas;
     // Keyboard event listeners for movement and HUD toggle
     document.onkeydown=event => {
         // CHAT disabled: if (event.target === chatInput) return;
@@ -473,7 +470,7 @@
         }
         // KeyH HUD toggle disabled.
         if(!event.repeat&&(key==='Escape'||key==='KeyX')){playClickSound();hudVisible=!hudVisible;} // Escape and X toggle HUD visibility
-        if(hudVisible&&pointerLocked())document.exitPointerLock();
+        if(hudVisible&&opts[1])document.exitPointerLock();
         //if (key === 'KeyF') {playClickSound(); beastMode = !beastMode;} // 'F' key toggles beastMode
     };
     document.addEventListener('keyup',event=>keys[event.code]=false);
@@ -482,7 +479,7 @@
     // let lastTouch=0;document.ontouchend=e=>{if(performance.now()-lastTouch<300)e.preventDefault();lastTouch=performance.now()};
     
     function updatePointer(event){
-        const locked=pointerLocked(),rect=locked&&canvas.getBoundingClientRect();
+        const locked=opts[1],rect=locked&&canvas.getBoundingClientRect();
         pointerX=locked?rect.left+rect.width/2:event.clientX;
         pointerY=locked?rect.top+rect.height/2:event.clientY;return locked;
     }
@@ -501,7 +498,7 @@
     
     document.onpointermove=event => {
         // Update pointer position for hover effects
-        const locked=pointerLocked();
+        const locked=opts[1];
 
         if(locked||event.pointerId===lookId){
             const dx=locked?event.movementX:event.clientX-lookX;
@@ -523,7 +520,7 @@
         interactDesktopAt(pointerX,pointerY);
     };
     document.onpointerlockchange=()=>{
-        opts[1]=+(pointerLocked());
+        opts[1]=+(document.pointerLockElement===canvas);
         lookId=null;
         hudVisible=!opts[1];
     };
@@ -542,10 +539,8 @@
             { side: 'L', el: document.getElementById('L') },
             { side: 'R', el: document.getElementById('R') }
         ];
-        const handleSel = side => document.querySelector('#' + side + ' .jh');
-
         for (const joystick of joys) {
-            const handle = handleSel(joystick.side);
+            const handle=document.querySelector('#'+joystick.side+' .jh');
             joystick.el.onpointerdown=event => { initAudio(); joystick.id = event.pointerId; joystick.el.setPointerCapture(event.pointerId); updateJoy(joystick, event, handle); };
             joystick.el.onpointermove=event => { if (event.pointerId === joystick.id) updateJoy(joystick, event, handle); };
             joystick.el.onpointerup=joystick.el.onpointercancel=event => { if (event.pointerId === joystick.id) { resetJoy(joystick, handle); } };
@@ -688,7 +683,6 @@
     // Change 123321 below to try different city layouts and choose one that meets our standards.
     const cityHash = (x,z,salt=0) => { const hash=SIN(x*.321+z*.123+salt*.1)*123321;return hash-FLOOR(hash); };
     const buildingAt = (x,z,radius=0) => buildings.find(building=>ABS(x-building.x)<building.w/2+radius&&ABS(z-building.z)<building.d/2+radius);
-    const insideBuilding=buildingAt;
     const nearCity=(x,z)=>ABS(ROUND(x/CITY_BLOCK)-cityX)<16&&ABS(ROUND(z/CITY_BLOCK)-cityZ)<16;
     function updateCity(){
         const cx=ROUND(player.x/CITY_BLOCK),cz=ROUND(player.z/CITY_BLOCK);if(cx===cityX&&cz===cityZ)return;
@@ -723,16 +717,13 @@
         ['#28f',[.04,.2,1]],
         ['#82a',[.55,.04,.75]]
     ];
-    const powerValue=tier=>tier+1;
     let skillTime=0;
     let level=1;
     let xp=0;
     let choosing=0;
     let enemyId=0;
-    let beaconEvent=0;
     const orbCounts=[1],boltCounts=[1],boltTimes=[],evolutionQueue=[],claimedBeacons=new Set;
     let cooldownPower=0;
-    let shotId=0;
     let damage=1;
     let movePower=30;
     let choices=[],bannerText='REACH BEAM',bannerTime=1e9;
@@ -740,34 +731,20 @@
     let hp=100;
     let maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
-    const orbitPhase=time=>2.5*(15-ABS(time%30-15)),orbPhase=(time,tier)=>orbitPhase(time)*(1+(tier+1)*.08)+(tier+1)*1.7,orbRadius=tier=>tier<0?2.5:4+tier*1.5,cooldown=power=>MAX(.15,1/(1/3+.15*SQRT(power)));
+    const orbPhase=(time,tier)=>2.5*(15-ABS(time%30-15))*(1+(tier+1)*.08)+(tier+1)*1.7,orbRadius=tier=>tier<0?2.5:4+tier*1.5,cooldown=power=>MAX(.15,1/(1/3+.15*SQRT(power)));
     // Only HP above the normal spawn baseline adds size, in half-size doubling steps.
-    const STARTER_RADIUS=20,worldPower=(x,z)=>HYPOT(x,z)/100|0,beaconTier=(x,z)=>{const cap=MIN(6,worldPower(x,z)-1),roll=cityHash(x,z);return cap>0?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):cityHash(x,z,1)*(cap+1)|0):0},enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3,scaledHealth=(danger,tier)=>FLOOR((1+danger*(danger+1))*MAX(1,danger-9)*(tier*2+1)*EXP(skillTime/60*.02*danger/(1+danger))),sizeEnemy=(enemy,dt)=>enemy.scale=lerp(enemy.scale,enemy.tier>6?6:1+MAX(0,CEIL(LOG2(enemy.hp*(enemy.mut+2)/enemy.max)))/2,MIN(1,dt*4));
-    function makeBeacon(x,z){x=ROUND(x*10)/10;z=ROUND(z*10)/10;return [x,z,HYPOT(x,z)>1000&&cityHash(x,z,2)<.25?7+beaconTier(x/10,z/10):beaconTier(x,z)];}
+    const worldPower=(x,z)=>HYPOT(x,z)/100|0,beaconTier=(x,z)=>{const cap=MIN(6,worldPower(x,z)-1),roll=cityHash(x,z);return cap>0?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):cityHash(x,z,1)*(cap+1)|0):0},enemyPopulationTarget=()=>7+worldPower(player.x,player.z)*3,scaledHealth=(danger,tier)=>FLOOR((1+danger*(danger+1))*MAX(1,danger-9)*(tier*2+1)*EXP(skillTime/60*.02*danger/(1+danger))),sizeEnemy=(enemy,dt)=>enemy.scale=lerp(enemy.scale,enemy.tier>6?6:1+MAX(0,CEIL(LOG2(enemy.hp*(enemy.mut+2)/enemy.max)))/2,MIN(1,dt*4));
     function spawnBeacon(){
         for(let attempts=100;attempts--;){
             const angle=rng()*PI*2,radius=70+rng()*30,x=player.x+COS(angle)*radius,z=player.z+SIN(angle)*radius;
             let valid=SPAWN_BEACONS.every(beacon=>HYPOT(beacon[0]-x,beacon[1]-z)>=30)&&!buildings.some(building=>ABS(x-building.x)<building.w/2+6&&ABS(z-building.z)<building.d/2+6),now=performance.now();
             peers.forEach(peer=>valid&=now-peer.last>15000||HYPOT(peer.x-x,peer.z-z)>=50&&peer.b.every(beacon=>HYPOT(beacon[0]-x,beacon[1]-z)>=30));
-            if(valid&&HYPOT(x,z)>=HYPOT(player.x,player.z)-20)return makeBeacon(x,z);
+            if(valid&&HYPOT(x,z)>=HYPOT(player.x,player.z)-20){const X=ROUND(x*10)/10,Z=ROUND(z*10)/10;return [X,Z,HYPOT(X,Z)>1000&&cityHash(X,Z,2)<.25?7+beaconTier(X/10,Z/10):beaconTier(X,Z)];}
         }
     }
     function resetBeacons(){
         SPAWN_BEACONS.length=1;
         for(let i=3;i--;){const beacon=spawnBeacon();if(beacon)SPAWN_BEACONS.push(beacon);}
-    }
-    function setEnemyPower(enemy){
-        const danger=HYPOT(enemy.x,enemy.z)/100,time=skillTime/60,cap=MIN(6,HYPOT(enemy.x,enemy.z)/125|0),roll=rng();
-        enemy.tier=cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):rng()*(cap+1)|0):0;
-        enemy.mut=-1;
-        // Exponential time scaling is gated by distance, preserving one-HP origin enemies forever.
-        enemy.max=enemy.hp=scaledHealth(danger,enemy.tier);
-        const mutationChance=1-EXP(-(danger*.03+time*.005)*danger/(1+danger)*(enemy.b?4:1));
-        if(danger>=1&&rng()<mutationChance){
-            enemy.mut=0;while(enemy.mut<6&&rng()<.4)enemy.mut++;
-            if(enemy.mut===enemy.tier)enemy.mut+=enemy.mut<6?1:-1;
-            enemy.max=enemy.hp=CEIL(enemy.max*(1.5+enemy.mut*.75));
-        }
     }
     function spawnEnemy(enemy){
         const beacon=enemy.b&&SPAWN_BEACONS.find(beacon=>beacon[6]===enemy.b),anchorX=beacon?beacon[0]:player.x,anchorZ=beacon?beacon[1]:player.z;
@@ -777,7 +754,12 @@
         // Accept the first street or rooftop position; climbing makes either valid.
         enemy.x=x;enemy.z=z;
         enemy.scale=enemy.vx=enemy.vz=enemy.yaw=enemy.anim=0;enemy.y=(buildingAt(x,z,.6)?.h||0)+.6;enemy.h=[];
-        if(enemy.tier>6)enemy.mut=-1,enemy.max=enemy.hp=1e6*(enemy.tier-6)**2;else setEnemyPower(enemy);
+        if(enemy.tier>6)enemy.mut=-1,enemy.max=enemy.hp=1e6*(enemy.tier-6)**2;else{
+            const danger=HYPOT(enemy.x,enemy.z)/100,time=skillTime/60,cap=MIN(6,HYPOT(enemy.x,enemy.z)/125|0),roll=rng();
+            enemy.tier=cap?MIN(cap,roll<.06?cap:roll<.2?MAX(1,cap-1):rng()*(cap+1)|0):0;enemy.mut=-1;enemy.max=enemy.hp=scaledHealth(danger,enemy.tier);
+            const mutationChance=1-EXP(-(danger*.03+time*.005)*danger/(1+danger)*(enemy.b?4:1));
+            if(danger>=1&&rng()<mutationChance){enemy.mut=0;while(enemy.mut<6&&rng()<.4)enemy.mut++;if(enemy.mut===enemy.tier)enemy.mut+=enemy.mut<6?1:-1;enemy.max=enemy.hp=CEIL(enemy.max*(1.5+enemy.mut*.75));}
+        }
         return enemy;
     }
     function resetEnemies(){
@@ -796,7 +778,7 @@
     function startBeacon(beacon){
         const danger=worldPower(beacon[0],beacon[1]);
         bannerText=beacon[2]>6?'BOSS':'DEFEND';bannerTime=performance.now()+4e3;
-        beacon[3]=1;beacon[4]=beacon[5]=10*scaledHealth(danger,beacon[2]);beacon[6]=++beaconEvent;beacon[7]=0;
+        beacon[3]=1;beacon[4]=beacon[5]=10*scaledHealth(danger,beacon[2]);beacon[6]=++enemyId;beacon[7]=0;
         if(beacon[2]>6)enemies.push(spawnEnemy({i:++enemyId,b:beacon[6],tier:beacon[2]})),SPAWN_BEACONS.splice(SPAWN_BEACONS.indexOf(beacon),1);
         else spawnBeaconWave(beacon);
         playMotif(beacon[0],beacon[1]);
@@ -809,10 +791,7 @@
         }
     }
     function claimRemoteBeacons(){
-        peers.forEach((peer,owner)=>peer.b.forEach(beacon=>{const claim=owner+','+beacon[0]+','+beacon[1];if(!beacon[3]&&!claimedBeacons.has(claim)&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<(.55*(beacon[2]>6?5:1))**2){claimedBeacons.add(claim);acceptBeaconClaim(beacon);sendMMO(`v|${owner}|${beacon[0]}|${beacon[1]}`);}}));
-    }
-    function acceptBeaconClaim(remote){
-        const beacon=[remote[0],remote[1],remote[2],0,0,0,0,0];SPAWN_BEACONS.push(beacon);startBeacon(beacon);
+        peers.forEach((peer,owner)=>peer.b.forEach(beacon=>{const claim=owner+','+beacon[0]+','+beacon[1];if(!beacon[3]&&!claimedBeacons.has(claim)&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<(.55*(beacon[2]>6?5:1))**2){claimedBeacons.add(claim);const local=[beacon[0],beacon[1],beacon[2],0,0,0,0,0];SPAWN_BEACONS.push(local);startBeacon(local);sendMMO(`v|${owner}|${beacon[0]}|${beacon[1]}`);}}));
     }
     function finishBeacons(){
         for(let i=SPAWN_BEACONS.length;i-->1;){
@@ -866,19 +845,17 @@
             const type=pool[rng()*pool.length|0];
             if(!choices.some(choice=>choice[0]===type))choices.push([type,tier===undefined?rollTier():tier]);
         }
-        showChoices();if(tier===undefined)playMotif(player.x,player.z);
-    }
-    function showChoices(){
         for(let i=3;i--;){
             const choice=choices[i];
-            UI_LEVEL[i][4]=cardText(choice[0],powerValue(choice[1]));
+            UI_LEVEL[i][4]=cardText(choice[0],choice[1]+1);
             UI_LEVEL[i][6]=choice[1];
         }
         choosing=1;
         hudVisible=false;
+        if(tier===undefined)playMotif(player.x,player.z);
     }
     function upgrade(choice){
-        const type=choice[0],power=powerValue(choice[1]);
+        const type=choice[0],power=choice[1]+1;
         if(type===8)orbCounts[choice[1]+1]=(orbCounts[choice[1]+1]||0)+1;
         else if(type===9)boltCounts[choice[1]+1]=(boltCounts[choice[1]+1]||0)+1;
         else if(type===10)damage+=power*500;
@@ -932,7 +909,7 @@
             }
             // Recycle abandoned enemies and never allow a powerful enemy inside the starter zone.
             if(!boss&&best>60**2){enemy.dead=1;continue;}
-            if(HYPOT(enemy.x,enemy.z)<STARTER_RADIUS&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.max=enemy.hp=1;}
+            if(HYPOT(enemy.x,enemy.z)<20&&(enemy.tier||enemy.mut>=0||enemy.max>1)){enemy.tier=0;enemy.mut=-1;enemy.max=enemy.hp=1;}
             let dx=tx-enemy.x,dz=tz-enemy.z,distance=HYPOT(dx,dz)||1,maxSpeed=boss?2.35:2.35+LOG2(enemy.max+1)*.22,fx=dx/distance*maxSpeed*3,fz=dz/distance*maxSpeed*3;
             enemy.vx+=fx*dt;enemy.vz+=fz*dt;
             // HP drives movement speed logarithmically, including mutation HP.
@@ -1002,7 +979,7 @@
 
             if(remote&&!nearCity(projectile.x,projectile.z)){list.splice(i,1);continue;}
 
-            if(insideBuilding(projectile.x,projectile.z,radius)){
+            if(buildingAt(projectile.x,projectile.z,radius)){
                 list.splice(i,1);
                 continue;
             }
@@ -1038,7 +1015,7 @@
         if(myId)sendMMO(`s|${myId}|${projectile.x.toFixed(2)}|${projectile.z.toFixed(2)}|${projectile.vx.toFixed(2)}|${projectile.vz.toFixed(2)}|${projectile.d}|${projectile.i}|${projectile.c}`);
     }
     function fireVolley(x,z,aim,tier,count,d){
-        for(let i=count;i--;){const angle=aim+(i-(count-1)/2)*.18;fireShot({x,y:.7,z,vx:SIN(angle)*10,vz:COS(angle)*10,d,i:++shotId,t:3,c:tier});}
+        for(let i=count;i--;){const angle=aim+(i-(count-1)/2)*.18;fireShot({x,y:.7,z,vx:SIN(angle)*10,vz:COS(angle)*10,d,i:++enemyId,t:3,c:tier});}
     }
     function fireBolts(tier,count){
         let target=enemies[0],best=1e9;
@@ -1426,7 +1403,6 @@
     const UI_PANEL='#000d',UI_BUTTON='#333',UI_HOVER='#222',UI_TEXT='#fff';
     // Bar accents: HP is green and XP is yellow; their empty tracks stay black.
     // Upgrade card borders and titles separately use their POWER tier color below.
-    const HP_COLOR='#2a2',HP_BACK='#252',XP_COLOR='#aa2',XP_BACK='#552';
 
     // CHAT disabled: function log(message) { LOG.push(message); LOG.length > 200 && LOG.shift(); logScroll = 0; }
     // LOG disabled: function log(message){LOG.push(message);LOG.length>200&&LOG.shift()}
@@ -1511,7 +1487,7 @@
         // CHAT disabled: else if (action === 10) sendChat();
         // CHAT disabled: else if (action === 11) setChat(false);
         else if(action===15){
-            if(pointerLocked())document.exitPointerLock();
+            if(opts[1])document.exitPointerLock();
             else if(!xr)canvas.requestPointerLock?.()?.catch(()=>{});
         }
         else if (action>13) opts[action-14]^=1;
@@ -1563,7 +1539,7 @@
     function drawBars(barY){
         const barX=hudVisible?20:120,width=400;
         // Bar entries: current value, maximum value, label, filled color, empty color.
-        for(const bar of [[hp,maxHp,'HP',HP_COLOR,HP_BACK],[xp,level*3,'XP',XP_COLOR,XP_BACK]]){
+        for(const bar of [[hp,maxHp,'HP','#2a2','#252'],[xp,level*3,'XP','#aa2','#552']]){
             hudCtx.fillStyle=bar[4];hudCtx.fillRect(barX,barY,width,22);
             hudCtx.fillStyle=bar[3];hudCtx.fillRect(barX,barY,width*MIN(1,bar[0]/bar[1]),22);
             hudCtx.fillStyle=UI_TEXT;hudCtx.font='20px system-ui';hudCtx.textAlign='left';hudCtx.textBaseline='middle';
@@ -1741,13 +1717,12 @@
     // --- HUD Shader ---
     // The HUD is a 2D canvas drawn in the DOM, then uploaded to a WebGL texture to be displayed on a 3D quad
 
-    let hudTex = gl.createTexture();
     let hudCan = document.createElement('canvas');
     let hudCtx = hudCan.getContext('2d');
     hudCan.width = 640;
     hudCan.height = 320;
 
-    gl.bindTexture(gl.TEXTURE_2D, hudTex);
+    gl.bindTexture(gl.TEXTURE_2D,gl.createTexture());
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -1755,11 +1730,9 @@
 
     // Simple textured quad shader for the HUD (unified MVP)
     const vsMVP = `layout(location=0)in vec3 p;layout(location=1)in vec2 uv;uniform mat4 M,V,P;out vec2 f;void main(){f=uv;gl_Position=P*V*M*vec4(p,1.);}`;
-    const fsH = `in vec2 f;uniform sampler2D T;out vec4 o;void main(){o=texture(T,f);}`;
-    const PH = prog(vsMVP, fsH);
+    const PH=prog(vsMVP,`in vec2 f;uniform sampler2D T;out vec4 o;void main(){o=texture(T,f);}`);
     // Shared solid-color fragment program (reused by spheres and beam)
-    const fsColor = `uniform vec4 col;out vec4 o;void main(){o=col;}`;
-    const PC = prog(vsMVP, fsColor);
+    const PC=prog(vsMVP,`uniform vec4 col;out vec4 o;void main(){o=col;}`);
     const uMH = gl.getUniformLocation(PH, 'M'),
           uVH = gl.getUniformLocation(PH, 'V'),
           uPH = gl.getUniformLocation(PH, 'P');
@@ -1788,12 +1761,12 @@
     // -- PART: Sphere-Renderer --
     // Shared sphere geometry and renderer.
 
-    function buildSphere(lat=10, lon=12){
+    function buildSphere(){
         const vertices=[];
-        for(let i=0;i<lat;i++){
-            const t1=PI*i/lat, t2=PI*(i+1)/lat;
-            for(let j=0;j<lon;j++){
-                const p1=2*PI*j/lon, p2=2*PI*(j+1)/lon;
+        for(let i=0;i<10;i++){
+            const t1=PI*i/10, t2=PI*(i+1)/10;
+            for(let j=0;j<12;j++){
+                const p1=2*PI*j/12, p2=2*PI*(j+1)/12;
                 const quad=[
                     sph(t1,p1),sph(t2,p1),sph(t2,p2),
                     sph(t1,p1),sph(t2,p2),sph(t1,p2)
@@ -1801,7 +1774,7 @@
                 for(const point of quad) vertices.push(point[0],point[1],point[2]);
             }
         }
-        return new Float32Array(vertices);
+        return new F32(vertices);
     }
     function sph(theta,phi){ return [SIN(theta)*COS(phi),COS(theta),SIN(theta)*SIN(phi)]; }
 
@@ -1819,8 +1792,7 @@
 
     // drawWorld binds PC, the eye matrices, and sphereVao before all sphere draws.
     function drawSphere(x,y,z,radius,color,height=radius){
-        const Msp=translateScale(x,y,z,radius,height,radius);
-        gl.uniformMatrix4fv(uS_M,false,Msp);
+        gl.uniformMatrix4fv(uS_M,false,translateScale(x,y,z,radius,height,radius));
         gl.uniform4f(uS_Color,color[0],color[1],color[2],color[3]??1);
         gl.drawArrays(gl.TRIANGLES,0,sphereVerts.length/3);
     }
@@ -1864,8 +1836,7 @@
     // Reticle removed; single disc shader used for VR hand/grip indicator
 
     // Use shared vsMVP for disc and a tiny fragment shader that reads the same uv varying name 'f'
-    const fsDisc=`in vec2 f;uniform vec4 col;uniform float width;out vec4 o;void main(){float d=distance(f,vec2(.5)),h=width/2.,edge=fwidth(d)*1.5,r=1.-smoothstep(h-edge,h+edge,abs(d-(.5-h)));o=vec4(col.rgb,col.a*r);if(o.a<.02)discard;}`;
-    const PDisc = prog(vsMVP, fsDisc);
+    const PDisc=prog(vsMVP,`in vec2 f;uniform vec4 col;uniform float width;out vec4 o;void main(){float d=distance(f,vec2(.5)),h=width/2.,edge=fwidth(d)*1.5,r=1.-smoothstep(h-edge,h+edge,abs(d-(.5-h)));o=vec4(col.rgb,col.a*r);if(o.a<.02)discard;}`);
     const uMDisc = gl.getUniformLocation(PDisc, 'M'),
           uVDisc = gl.getUniformLocation(PDisc, 'V'),
           uPDisc = gl.getUniformLocation(PDisc, 'P'),
@@ -1901,18 +1872,18 @@
             gl.uniformMatrix4fv(uS_M,false,new F32([dx*width,0,dz*width,0, 0,1,0,0, 0,height,0,0, x-dx*width/2,-.1,z-dz*width/2,1]));gl.drawArrays(gl.TRIANGLES,0,6);
             // outer filled disc
             gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(PDisc);gl.bindVertexArray(vaoH);gl.uniform1f(uWidthDisc,1);gl.uniform4f(uColDisc,color[0]*.2,color[1]*.2,color[2]*.2,1);
-            let radius=1.7*visual,ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
+            let radius=1.7*visual,ring=new DM().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
             // inner beam
             const inner=visual;gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.useProgram(PC);gl.bindVertexArray(vaoBeam);gl.uniform4f(uS_Color,color[0],color[1],color[2],.35);
             gl.uniformMatrix4fv(uS_M,false,new F32([dx*inner,0,dz*inner,0, 0,1,0,0, 0,height,0,0, x-dx*inner/2,0,z-dz*inner/2,1]));gl.drawArrays(gl.TRIANGLES,0,6);
             // inner filled disc
             gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(PDisc);gl.bindVertexArray(vaoH);gl.uniform4f(uColDisc,color[0]*.55,color[1]*.55,color[2]*.55,1);
-            radius=.5*visual;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
+            radius=.5*visual;ring=new DM().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
             // outer accent ring
             gl.uniform1f(uWidthDisc,.115);gl.uniform4f(uColDisc,color[0],color[1],color[2],1);
-            radius=2.15*visual;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
+            radius=2.15*visual;ring=new DM().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
             // Three copies rise from the boss beacon's ground ring at the same size.
-            if(boss)for(let i=3;i--;){const rise=(now/2e3+i/3)%1;ring=new DOMMatrix().translate(x,height*rise,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);}
+            if(boss)for(let i=3;i--;){const rise=(now/2e3+i/3)%1;ring=new DM().translate(x,height*rise,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);}
             // inner accent ring
             // gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.uniform1f(uWidthDisc,.1);gl.uniform4f(uColDisc,color[0],color[1],color[2],.99);
             // radius=.55*visual;ring=new DOMMatrix().translate(x,0,z).rotate(90,0,0).scale(radius/.26,radius/.15,1).toFloat32Array();gl.uniformMatrix4fv(uMDisc,false,ring);gl.drawArrays(gl.TRIANGLES,0,6);
@@ -1976,8 +1947,7 @@
         // PERSP(P, 60, canvas.width / canvas.height, .1, 1000.);
         // PERSP(P, 60, canvas.width / canvas.height, .1, 1500.);
         PERSP(P, 60, canvas.width / canvas.height, .2, 3000.);
-        PV = MULTMAT4(P, V);
-        invPV = INV(PV);
+        PV=MULTMAT4(P,V);invPV=INV(PV);
     }
     // -- /PART: Camera --
 
@@ -2057,7 +2027,7 @@
             const target = src.targetRaySpace ? frame.getPose(src.targetRaySpace, ref) : null;
             if (target) {
                 const matrix=MULTMAT4(xrM,target.transform.matrix),scale=.1-.02*(src.gamepad?.buttons[1]?.value||0);
-                const ring=new DOMMatrix(matrix).scale(scale,scale*1.73,1).toFloat32Array();
+                const ring=new DM(matrix).scale(scale,scale*1.73,1).toFloat32Array();
                 gl.useProgram(PDisc); gl.bindVertexArray(vaoH);
                 gl.uniformMatrix4fv(uMDisc,false,ring);
                 gl.uniform4f(uColDisc,col[0],col[1],col[2],.95);
@@ -2066,8 +2036,8 @@
                 gl.drawArrays(gl.TRIANGLES,0,6);
                 const hit=HUD_pick(hudWH,controllerRay(frame,src));
                 const width=.004+.01*(src.gamepad?.buttons[0]?.value||+selecting.has(src));
-                const M=new DOMMatrix([width,0,0,0,0,width,0,0,0,0,-(hit?MIN(3,hit.t):3),0,0,0,0,1]);
-                const beam=new DOMMatrix(matrix).multiply(M).toFloat32Array();
+                const M=new DM([width,0,0,0,0,width,0,0,0,0,-(hit?MIN(3,hit.t):3),0,0,0,0,1]);
+                const beam=new DM(matrix).multiply(M).toFloat32Array();
                 gl.useProgram(PC); gl.bindVertexArray(vaoBeam);
                 gl.uniformMatrix4fv(uS_M, false, beam);
                 gl.uniform4f(uS_Color, col[0], col[1], col[2], .8);
@@ -2185,7 +2155,7 @@
             xrM.set([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, player.x,xrHeight+player.y-1.6,player.z,1]);
             const headW = MULTMAT4(xrM,pose.transform.matrix);
             updateAudioListener(headW);
-            hudWH = new DOMMatrix(headW).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
+            hudWH = new DM(headW).multiply(new DM(getHudTransform())).toFloat32Array();
             HUD_WH_world = hudWH;
             hoverBtn = null;
             for (const src of session.inputSources || []) {
@@ -2208,7 +2178,7 @@
             buildViewProj();
             const W = INV(V);
             updateAudioListener(W);
-            hudWH = new DOMMatrix(W).multiply(new DOMMatrix(getHudTransform())).toFloat32Array();
+            hudWH = new DM(W).multiply(new DM(getHudTransform())).toFloat32Array();
             HUD_WH_world = hudWH;
             hoverBtn = null;
             if (lookId === null) {

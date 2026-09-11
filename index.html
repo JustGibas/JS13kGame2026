@@ -486,20 +486,19 @@
         lookX=locked?rect.left+rect.width/2:event.clientX;
         lookY=locked?rect.top+rect.height/2:event.clientY;return locked;
     }
-    // Pointer event listeners on the canvas for mouse-look and interaction
+    // Start look on the canvas, then track globally so mobile capture quirks cannot drop the drag.
     canvas.onpointerdown=event => {
         initAudio(); // NEW: Initialize audio on first user interaction
-        // Start mouse-look on left-click
-        if(event.button===0&&lookId===null){
+        // Start drag-look from touch or the left mouse button.
+        if((!event.button||event.pointerType==='touch')&&lookId===null){
             lookId=event.pointerId;
-            if(!pointerLocked())canvas.setPointerCapture(event.pointerId);
         }
         // Always update pointer position for picking
         lookX=event.clientX;
         lookY=event.clientY;
     };
     
-    canvas.onpointermove=event => {
+    document.onpointermove=event => {
         // Update pointer position for hover effects
         const locked=pointerLocked();
 
@@ -512,11 +511,10 @@
         updatePointer(event);
     };
     
-    canvas.onpointerup=event => {
+    document.onpointerup=event => {
         // Stop mouse-look mode.
-        if(event.pointerId===lookId){
-            lookId=null;
-        }
+        if(event.pointerId!==lookId)return;
+        lookId=null;
         // Update pointer position and trigger an interaction check
         updatePointer(event);
         interactDesktopAt(lookX,lookY);
@@ -527,7 +525,7 @@
         hudVisible=!opts[1];
     };
     
-    canvas.onpointercancel=event => {
+    document.onpointercancel=event => {
         if(event.pointerId===lookId){
             lookId=null;
         }

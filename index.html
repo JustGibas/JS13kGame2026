@@ -508,7 +508,8 @@
             player.yaw -= dx * .002 * (opts[0] ? -1 : 1);
             player.pitch = MAX(-PI/2+.001,MIN(PI/2-.001,player.pitch+dy*.002*(opts[0] ? -1 : 1)));
         }
-        updatePointer(event);
+        // Joystick and secondary touches must not replace the active look pointer's delta origin.
+        if(event.pointerType!=='touch'||event.pointerId===lookId)updatePointer(event);
     };
     
     document.onpointerup=event => {

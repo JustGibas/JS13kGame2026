@@ -171,6 +171,7 @@
     const remoteEnemies = new Map(); // owner id -> Map(enemy id -> predicted enemy)
     const remoteShots = [];
     let mmoSendTimer = 0;
+    let mmoEnemyTick = 0;
 
     // Peer interpolation delay (ms). Higher = smoother but more laggy. 120ms is a good balance.
     function pushPeerSample(peer, x, z, yaw, now){
@@ -203,7 +204,8 @@
     }
 
     // LOG disabled: function logMMO(message){ log('MMO: '+message); }
-    function sendMMO(message){try{if(ws?.readyState===1)ws.send(message);}catch(_){}}
+    function sendMMO(message,id){try{if(ws?.readyState===1)ws.send(id?'@'+id+'|'+message:message);}catch(_){}}
+    function tellPeers(message){peers.forEach((_,id)=>sendMMO(message,id));}
     function forgetPeer(id){peers.delete(id);remoteEnemies.delete(id);for(let i=remoteShots.length;i--;)if(remoteShots[i].o===id)remoteShots.splice(i,1);}
 
     function toggleMMO(){
@@ -263,7 +265,7 @@
                     const x=+parts[2];
                     const z=+parts[3];
                     const yaw=+parts[4];
-                    const peer = peers.get(id) || {x,z,last:0,hist:[],oh:[],anim:0};
+                    const peer = peers.get(id) || {x,z,last:0,hist:[],anim:0};
                     const now = performance.now();
                     if(!nearCity(x,z)){if(peers.has(id))forgetPeer(id);return;}
                     pushPeerSample(peer,x,z,yaw,now);
@@ -347,15 +349,16 @@
             const parts=payload.split('|');if(parts[1]===myId)dealt+=+parts[2];
         }
         if(command==='s'){
-            const parts=payload.split('|');
-            if(peers.has(parts[1])&&nearCity(+parts[2],+parts[3])){
-                remoteShots.push({o:parts[1],x:+parts[2],y:.7,z:+parts[3],vx:+parts[4],vz:+parts[5],d:+parts[6],i:+parts[7],t:3,c:MIN(6,MAX(-1,+parts[8]))});
-                +parts[6]>0&&playShotSound(+parts[2],+parts[3]);
+            const parts=payload.split('|'),owner=parts[1],x=+parts[2],z=+parts[3],aim=+parts[4],tier=MIN(6,MAX(-1,+parts[5])),count=+parts[6],damage=+parts[7],first=+parts[8];
+            if(peers.has(owner)){
+                for(let i=count;i--;){const angle=aim+(i-(count-1)/2)*.18;remoteShots.push({o:owner,x,y:.7,z,vx:SIN(angle)*10,vz:COS(angle)*10,d:damage,i:first+count-i,t:3,c:tier});}
+                damage>0&&playShotSound(x,z);
             }
         }
         if(command==='x'){
             const parts=payload.split('|'),
                 list=parts[1]===myId?shots:remoteShots;
+            if(parts[1]===myId)tellPeers(payload);
 
             for(let i=list.length;i--;){
                 if(list[i].i===+parts[2]&&(parts[1]===myId||list[i].o===parts[1])){
@@ -383,7 +386,7 @@
                         '|'+damage+
                         '|'+SPAWN_BEACONS.slice(1).flatMap(beacon=>[beacon[0],beacon[1],beacon[2],beacon[3]?(beacon[4]/beacon[5]).toFixed(2):-1]);
             sendMMO(message);
-            sendMMO('e|'+myId+'|'+enemies.map(enemy=>[enemy.i,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.y.toFixed(1),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
+            if(mmoEnemyTick^=1)tellPeers('e|'+myId+'|'+enemies.map(enemy=>[enemy.i,enemy.x.toFixed(2),enemy.z.toFixed(2),enemy.y.toFixed(1),enemy.yaw.toFixed(2),enemy.tier,enemy.hp,enemy.max,enemy.mut]).join(';'));
         }
     }
     // -- /PART: Sync --
@@ -802,7 +805,7 @@
         }
     }
     function claimRemoteBeacons(){
-        peers.forEach((peer,owner)=>peer.b.forEach(beacon=>{const claim=owner+','+beacon[0]+','+beacon[1];if(!beacon[3]&&!claimedBeacons.has(claim)&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<(.55*(beacon[2]>6?5:1))**2){claimedBeacons.add(claim);const local=[beacon[0],beacon[1],beacon[2],0,0,0,0,0];SPAWN_BEACONS.push(local);startBeacon(local);sendMMO(`v|${owner}|${beacon[0]}|${beacon[1]}`);}}));
+        peers.forEach((peer,owner)=>peer.b.forEach(beacon=>{const claim=owner+','+beacon[0]+','+beacon[1];if(!beacon[3]&&!claimedBeacons.has(claim)&&(player.x-beacon[0])**2+(player.z-beacon[1])**2<(.55*(beacon[2]>6?5:1))**2){claimedBeacons.add(claim);const local=[beacon[0],beacon[1],beacon[2],0,0,0,0,0];SPAWN_BEACONS.push(local);startBeacon(local);sendMMO(`v|${owner}|${beacon[0]}|${beacon[1]}`,owner);}}));
     }
     function finishBeacons(){
         for(let i=SPAWN_BEACONS.length;i-->1;){
@@ -895,7 +898,7 @@
         if(enemy.dead)return;
         amount=MIN(enemy.hp,MAX(1,FLOOR(amount)));enemy.hp-=amount;damageNumber(enemy.x,enemy.z,amount);
         if(!myId||killer===myId)dealt+=amount; // damage addition
-        else sendMMO(`a|${killer}|${amount}`);
+        else sendMMO(`a|${killer}|${amount}`,killer);
         if(enemy.hp<1)defeat(enemy,amount,killer);else playImpactSound(enemy.x,enemy.z);
     }
     function defeat(enemy,amount,killer){
@@ -905,7 +908,7 @@
             playImpactSound(x,z,1);dropReward(x,z,enemy.max);
         }
         if(tier>6){bannerText='CLEARED';bannerTime=performance.now()+4e3;playMotif();evolutionQueue.push(6-tier);if(!choosing)rollChoices(evolutionQueue.shift());}
-        if(myId)sendMMO(`d|${myId}|${enemy.i}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
+        if(myId)tellPeers(`d|${myId}|${enemy.i}|${x.toFixed(2)}|${z.toFixed(2)}|${tier}|${amount}|${killer}|${mutation}|${enemy.max}`);
         enemy.dead=1;
     }
     // -- /PART: Progression --
@@ -957,14 +960,14 @@
                 continue;
             }
             let hitIndex=0;
-            for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){
+            if((enemy.x-player.x)**2+(enemy.z-player.z)**2<(14+enemy.scale)**2)for(let tier=-1;tier<7;tier++)for(let i=orbCounts[tier+1]||0;i--;){
                 const count=orbCounts[tier+1],angle=orbPhase(skillTime,tier)+i*PI*2/count,radius=orbRadius(tier),ox=player.x+COS(angle)*radius,oz=player.z+SIN(angle)*radius;
                 if((enemy.h[hitIndex]||0)<skillTime&&(enemy.x-ox)**2+(enemy.z-oz)**2<(.25+.5*enemy.scale)**2){hurt(enemy,damage*(tier+2),myId);enemy.h[hitIndex]=skillTime+.15;}hitIndex++;
             }
             peers.forEach((peer,id)=>{
-                const hits=peer.oh[enemy.i]||(peer.oh[enemy.i]=[]);
+                const histories=enemy.oh||(enemy.oh={}),hits=histories[id]||(histories[id]=[]);
                 let hitIndex=0;
-                if(now-peer.last<15000)for(let tier=-1;tier<7;tier++)for(let i=peer.orbs[tier+1]||0;i--;){
+                if(now-peer.last<15000&&(enemy.x-peer.x)**2+(enemy.z-peer.z)**2<(14+enemy.scale)**2)for(let tier=-1;tier<7;tier++)for(let i=peer.orbs[tier+1]||0;i--;){
                     const count=peer.orbs[tier+1],angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/count,radius=orbRadius(tier),ox=peer.x+COS(angle)*radius,oz=peer.z+SIN(angle)*radius;
                     if((hits[hitIndex]||0)<now&&(enemy.x-ox)**2+(enemy.z-oz)**2<(.25+.5*enemy.scale)**2){hurt(enemy,peer.d*(tier+2),id);hits[hitIndex]=now+150;}hitIndex++;
                 }
@@ -981,7 +984,7 @@
             if((player.x-enemy.x)**2+(player.z-enemy.z)**2<(.6+enemy.scale*.6)**2&&enemy.hit<0){
                 // KNOCKBACK disabled: let dx=player.x-enemy.x,dz=player.z-enemy.z,distance=HYPOT(dx,dz)||1;player.x+=dx/distance*(2+enemy.tier*.2);player.z+=dz/distance*(2+enemy.tier*.2);
                 hp=MAX(0,hp-enemy.hp);enemy.hit=1;playHurtSound();
-                sendMMO(`k|${owner}|${enemy.i}`);
+                sendMMO(`k|${owner}|${enemy.i}`,owner);
             }
         }));
     }
@@ -989,6 +992,7 @@
 
     // -- PART: Projectiles --
     // Shared local/remote simulation is both clearer and smaller in the measured PPMd ZIP.
+    function removeShot(projectile,remote){if(myId){const owner=remote?projectile.o:myId,message=`x|${owner}|${projectile.i}`;remote?sendMMO(message,owner):tellPeers(message);}projectile.t=0;}
     function updateProjectiles(list,dt,remote){
         for(let i=list.length;i--;){
             const projectile=list[i],radius=.2;
@@ -1005,14 +1009,12 @@
 
             if(projectile.d<0&&(player.x-projectile.x)**2+(player.z-projectile.z)**2<.7**2){
                 hp=MAX(0,hp+projectile.d);playHurtSound();
-                if(myId)sendMMO(`x|${remote?projectile.o:myId}|${projectile.i}`);
-                projectile.t=0;
+                removeShot(projectile,remote);
             }
 
             for(const enemy of enemies)if(projectile.d>0&&(enemy.x-projectile.x)**2+(enemy.z-projectile.z)**2<(.5*enemy.scale+radius)**2){
                 hurt(enemy,projectile.d,remote?projectile.o:myId);
-                if(remote||myId)sendMMO(`x|${remote?projectile.o:myId}|${projectile.i}`);
-                projectile.t=0;
+                removeShot(projectile,remote);
                 break;
             }
 
@@ -1029,12 +1031,9 @@
         }
     }
     // -- /PART: Projectiles --
-    function fireShot(projectile){
-        shots.push(projectile);
-        if(myId)sendMMO(`s|${myId}|${projectile.x.toFixed(2)}|${projectile.z.toFixed(2)}|${projectile.vx.toFixed(2)}|${projectile.vz.toFixed(2)}|${projectile.d}|${projectile.i}|${projectile.c}`);
-    }
     function fireVolley(x,z,aim,tier,count,d){
-        for(let i=count;i--;){const angle=aim+(i-(count-1)/2)*.18;fireShot({x,y:.7,z,vx:SIN(angle)*10,vz:COS(angle)*10,d,i:++enemyId,t:3,c:tier});}
+        if(myId)tellPeers(`s|${myId}|${x.toFixed(2)}|${z.toFixed(2)}|${aim.toFixed(3)}|${tier}|${count}|${d}|${enemyId}`);
+        for(let i=count;i--;){const angle=aim+(i-(count-1)/2)*.18;shots.push({x,y:.7,z,vx:SIN(angle)*10,vz:COS(angle)*10,d,i:++enemyId,t:3,c:tier});}
     }
     function fireBolts(tier,count){
         let target=enemies[0],best=1e9;

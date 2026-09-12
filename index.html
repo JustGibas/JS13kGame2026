@@ -938,7 +938,7 @@
                 enemy.dead=1;
                 continue;
             }
-            if(self&&distance<.6+enemy.scale*.6){
+            if(self&&distance<MIN(4,enemy.scale)*.6+.6){
                 //player.x+=dx/d*(2+c.tier*.2); // knockback
                 //player.z+=dz/d*(2+c.tier*.2); // knockback
                 //player.y+=dz/d*(2+c.tier*.2);
@@ -970,7 +970,7 @@
             if(hp<1||now-enemy.last>15000||enemy.dead)return;
             sizeEnemy(enemy,dt);
             const sample=sampleMotion(enemy,now-230);enemy.x=sample.x;enemy.z=sample.z;enemy.y=sample.y;enemy.yaw=sample.yaw;enemy.hit-=dt;
-            if((player.x-enemy.x)**2+(player.z-enemy.z)**2<(.6+enemy.scale*.6)**2&&enemy.hit<0){
+            if((player.x-enemy.x)**2+(player.z-enemy.z)**2<(MIN(4,enemy.scale)*.6+.6)**2&&enemy.hit<0){
                 // KNOCKBACK disabled: let dx=player.x-enemy.x,dz=player.z-enemy.z,distance=HYPOT(dx,dz)||1;player.x+=dx/distance*(2+enemy.tier*.2);player.z+=dz/distance*(2+enemy.tier*.2);
                 hp=MAX(0,hp-enemy.hp);enemy.hit=1;playHurtSound();
                 sendMMO(`k|${owner}|${enemy.i}`,owner);

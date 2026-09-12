@@ -1921,11 +1921,11 @@
         }
         place(0,.08,0,.34); // Torso: the large central body sphere.
         for(const side of[-1,1]){
-            place(side*.2,.06,0,.25); // Left/right head-and-shoulder mass.
+            place(side*.2,.06,0,.24); // Left/right head-and-shoulder mass.
             place(side*.1,.2,.3,.05,shell==1?col==WHITE?BLACK:WHITE:col); // Eye on the forward face.
             anim+=PI;const step=SIN(anim)*amp*2,lift=MAX(0,step);
             place(side*.18,-.17+lift/2,step/2,.12,col,.2); // Amplified Armer2 midpoint motion beneath the shoulders.
-            place(side/3,.1,.1,.15); // Arm/hand sphere beside the upper body.
+            place(side/3,.1,.1,.16); // Arm/hand sphere beside the upper body.
         }
     }
     // -- /PART: Character-Renderer --

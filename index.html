@@ -724,7 +724,7 @@
     let damage=1;
     let movePower=30;
     let choices=[],bannerText='REACH BEAM',bannerTime=1e9;
-    let seed=Date.now()|0;
+    let seed=Date.now()|0,spawnAngle=-PI/2;
     let hp=100;
     let maxHp=100;
     function rng(){return ((seed=seed*1664525+1013904223|0)>>>0)/4294967296;}
@@ -750,7 +750,7 @@
         const beacon=enemy.b&&SPAWN_BEACONS.find(beacon=>beacon[6]===enemy.b),anchorX=beacon?beacon[0]:player.x,anchorZ=beacon?beacon[1]:player.z;
         if(enemy.b&&!beacon&&enemy.mut<7){enemy.dead=1;if(hp>0&&enemy.tier>6)playMotif(undefined,0,1);return;}
         let angle,radius,x,z,valid,attempts=100,now=performance.now();
-        do{angle=rng()*PI*2;radius=beacon?20+rng()*10:35+rng()*20;x=anchorX+COS(angle)*radius;z=anchorZ+SIN(angle)*radius;valid=1;peers.forEach(peer=>valid&=now-peer.last>15000||HYPOT(peer.x-x,peer.z-z)>=20);}while(--attempts&&!valid);
+        do{angle=rng()*PI*2;if(!beacon&&rng()<.5)angle=spawnAngle+angle/2-PI/2;radius=beacon?20+rng()*10:35+rng()*20;x=anchorX+COS(angle)*radius;z=anchorZ+SIN(angle)*radius;valid=1;peers.forEach(peer=>valid&=now-peer.last>15000||HYPOT(peer.x-x,peer.z-z)>=20);}while(--attempts&&!valid);
         // Accept the first street or rooftop position; climbing makes either valid.
         enemy.x=x;enemy.z=z;
         enemy.scale=enemy.vx=enemy.vz=enemy.yaw=enemy.anim=0;enemy.y=(buildingAt(x,z,.6)?.h||0)+.6;enemy.h=[];
@@ -1239,6 +1239,7 @@
     //userVelX=(player.x-prevUserX)/dt;userVelZ=(player.z-prevUserZ)/dt;prevUserX=player.x;prevUserZ=player.z;
         // Resolve collisions with obstacles
         resolveCollisions(prevX, prevZ);
+        spawnAngle=-yaw-ATAN2(movement.y||!movement.x,movement.x);
         tryPickupItems(dt);
 
     }

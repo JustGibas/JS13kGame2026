@@ -173,15 +173,8 @@
     let mmoSendTimer = 0;
     let mmoEnemyTick = 0;
 
-    // Peer interpolation delay (ms). Higher = smoother but more laggy. 120ms is a good balance.
-    function pushPeerSample(peer, x, z, yaw, now){
-        peer.hist.push({ t: now, x, z, yaw });
-        peer.last = now;
-        // trim old samples
-        const cutoff = now - 2000;
-        while(peer.hist[0].t<cutoff)peer.hist.shift();
-    }
-    function samplePeer(peer, targetT){
+    // Buffered interpolation: players use 120ms; 5Hz enemy snapshots use 230ms.
+    function sampleMotion(peer, targetT){
         const history=peer.hist;
         // The first boundary also handles a one-sample history.
         if(targetT<=history[0].t)return history[0];
@@ -196,6 +189,7 @@
                 return {
                     t: targetT,
                     x:lerp(before.x,after.x,amount),
+                    y:lerp(before.y,after.y,amount),
                     z:lerp(before.z,after.z,amount),
                     yaw:lerpAngle(before.yaw,after.yaw,amount)
                 };
@@ -207,6 +201,7 @@
     function sendMMO(message,id){try{if(ws?.readyState===1)ws.send(id?'@'+id+'|'+message:message);}catch(_){}}
     function tellPeers(message){peers.forEach((_,id)=>sendMMO(message,id));}
     function forgetPeer(id){peers.delete(id);remoteEnemies.delete(id);for(let i=remoteShots.length;i--;)if(remoteShots[i].o===id)remoteShots.splice(i,1);}
+    function clearMMO(){ws=null;myId=null;peers.clear();remoteEnemies.clear();remoteShots.length=0;}
 
     function toggleMMO(){
         mmoEnabled = !mmoEnabled;
@@ -214,14 +209,14 @@
     }
 
     function disconnectMMO(){
-        try { if (ws) ws.close(); } catch(_){}
-        ws = null; myId = null; peers.clear();remoteEnemies.clear();remoteShots.length=0;
+        try { ws?.close(); } catch(_){}
+        clearMMO();
         mmoSendTimer=0;
         // LOG disabled: logMMO('disabled');
     }
 
     function connectMMO(){
-        if (ws) try { ws.close(); } catch(_){}
+        try { ws?.close(); } catch(_){}
         // LOG disabled: logMMO('connecting…');
         try {
             ws=new WebSocket('wss://relay.js13kgames.com/mawlight');
@@ -233,7 +228,7 @@
         // Unneeded relay payload disabled: ws.onopen = _ => { try { ws.send('cat!'); } catch(_){} logMMO('connected'); };
         // LOG disabled: ws.onopen=_=>logMMO('connected');
         // LOG disabled: ws.onclose = _ => { logMMO('closed'); ws=null;myId=null;peers.clear();remoteEnemies.clear();remoteShots.length=0;if(mmoEnabled)setTimeout(connectMMO,1000); };
-        ws.onclose=_=>{ws=null;myId=null;peers.clear();remoteEnemies.clear();remoteShots.length=0;if(mmoEnabled)setTimeout(connectMMO,1000)};
+        ws.onclose=_=>{clearMMO();if(mmoEnabled)setTimeout(connectMMO,1000)};
         // OPTIONAL handler disabled: ws.onerror = _ => { /* errors surface via close */ };
         ws.onmessage = ev => handleMMOMessage(ev.data);
     }
@@ -242,11 +237,9 @@
     // -- PART: Messages --
     function handleMMOMessage(message){
         const command=message[0];
-        switch(command){
-            // LOG disabled: case '@':myId=message.slice(1);logMMO('my id: '+myId);return;
-            case '@':myId=message.slice(1);return;
-            case '-':forgetPeer(message.slice(1));return;
-        }
+        // LOG disabled: case '@':myId=message.slice(1);logMMO('my id: '+myId);return;
+        if(command==='@'){myId=message.slice(1);return;}
+        if(command==='-'){forgetPeer(message.slice(1));return;}
         /* DIRECT MMO compatibility disabled to save bytes.
         Restore this block and remove `const payload=message` below if older clients
         send targeted messages in the form @targetId|payload.
@@ -268,7 +261,8 @@
                     const peer = peers.get(id) || {x,z,last:0,hist:[],anim:0};
                     const now = performance.now();
                     if(!nearCity(x,z)){if(peers.has(id))forgetPeer(id);return;}
-                    pushPeerSample(peer,x,z,yaw,now);
+                    peer.hist.push({t:now,x,y:0,z,yaw});peer.last=now;
+                    const cutoff=now-2000;while(peer.hist[0].t<cutoff)peer.hist.shift();
                     peer.orbs=parts[5].split(',').slice(0,8).map(Number);
                     peer.op=+parts[6];
                     peer.d=+parts[7];
@@ -278,7 +272,7 @@
                     peers.set(id, peer);
                 }
         }
-        if(command==='v'){
+        else if(command==='v'){
             const parts=payload.split('|'),index=parts[1]===myId&&SPAWN_BEACONS.findIndex(beacon=>beacon[0]==parts[2]&&beacon[1]==parts[3]);
             if(index>0&&!SPAWN_BEACONS[index][3]){SPAWN_BEACONS.splice(index,1);const beacon=spawnBeacon();if(beacon)SPAWN_BEACONS.push(beacon);}
         }
@@ -288,7 +282,7 @@
             if (id !== myId) say((id || '?').slice(-4) + ': ' + parts.slice(2).join('|').slice(0,64));
         }
         */
-        if(command==='e'){
+        else if(command==='e'){
             const parts=payload.split('|'),
                 owner=parts[1];
 
@@ -302,15 +296,13 @@
                     if(!nearCity(fields[1],fields[2]))continue;
                     let enemy=group.get(id);
                     if(!enemy){
-                        enemy={i:id,x:fields[1],z:fields[2],y:fields[3],hit:0,scale:0};
+                        enemy={i:id,x:fields[1],z:fields[2],y:fields[3],yaw:fields[4],hit:0,scale:0,hist:[]};
                     }else if(fields[6]<enemy.hp){
                         damageNumber(enemy.x,enemy.z,enemy.hp-fields[6]);
                     }
 
-                    enemy.tx=fields[1];
-                    enemy.tz=fields[2];
-                    enemy.ty=fields[3];
-                    enemy.tyaw=fields[4];
+                    enemy.hist.push({t:now,x:fields[1],z:fields[2],y:fields[3],yaw:fields[4]});
+                    const cutoff=now-2000;while(enemy.hist[0].t<cutoff)enemy.hist.shift();
                     enemy.tier=fields[5];
                     enemy.hp=fields[6];
                     enemy.max=fields[7];
@@ -325,11 +317,11 @@
                 remoteEnemies.set(owner,group);
             }
         }
-        if(command==='k'){
+        else if(command==='k'){
             const parts=payload.split('|'),enemy=parts[1]===myId&&enemies.find(enemy=>enemy.i===+parts[2]);
             if(enemy)enemy.dead=1;
         }
-        if(command==='d'){
+        else if(command==='d'){
             const parts=payload.split('|'),
                 group=remoteEnemies.get(parts[1]),
                 enemy=group&&group.get(+parts[2]);
@@ -345,17 +337,17 @@
 
             if(enemy)enemy.dead=1;
         }
-        if(command==='a'){
+        else if(command==='a'){
             const parts=payload.split('|');if(parts[1]===myId)dealt+=+parts[2];
         }
-        if(command==='s'){
+        else if(command==='s'){
             const parts=payload.split('|'),owner=parts[1],x=+parts[2],z=+parts[3],aim=+parts[4],tier=MIN(6,MAX(-1,+parts[5])),count=+parts[6],damage=+parts[7],first=+parts[8];
             if(peers.has(owner)){
                 for(let i=count;i--;){const angle=aim+(i-(count-1)/2)*.18;remoteShots.push({o:owner,x,y:.7,z,vx:SIN(angle)*10,vz:COS(angle)*10,d:damage,i:first+count-i,t:3,c:tier});}
                 damage>0&&playShotSound(x,z);
             }
         }
-        if(command==='x'){
+        else if(command==='x'){
             const parts=payload.split('|'),
                 list=parts[1]===myId?shots:remoteShots;
             if(parts[1]===myId)tellPeers(payload);
@@ -372,9 +364,8 @@
 
     // -- PART: Sync --
     function mmoTick(dt){
-        if (!mmoEnabled || !ws || ws.readyState !== 1 || !myId) return;
-        mmoSendTimer += dt;
-        if (mmoSendTimer >= .1){ // ~10 Hz
+        if (!mmoEnabled || ws?.readyState !== 1 || !myId) return;
+        if ((mmoSendTimer += dt) >= .1){ // ~10 Hz
             mmoSendTimer = 0;
             // compact broadcast with our id
             const message = 'p|' + myId +
@@ -980,7 +971,7 @@
         remoteEnemies.forEach((group,owner)=>group.forEach(enemy=>{
             if(hp<1||now-enemy.last>15000||enemy.dead)return;
             sizeEnemy(enemy,dt);
-            const interpolation=MIN(1,dt*8);enemy.x=lerp(enemy.x,enemy.tx,interpolation);enemy.z=lerp(enemy.z,enemy.tz,interpolation);enemy.y=lerp(enemy.y,enemy.ty,interpolation);enemy.yaw=lerpAngle(enemy.yaw||enemy.tyaw,enemy.tyaw,interpolation);enemy.hit-=dt;
+            const sample=sampleMotion(enemy,now-230);enemy.x=sample.x;enemy.z=sample.z;enemy.y=sample.y;enemy.yaw=sample.yaw;enemy.hit-=dt;
             if((player.x-enemy.x)**2+(player.z-enemy.z)**2<(.6+enemy.scale*.6)**2&&enemy.hit<0){
                 // KNOCKBACK disabled: let dx=player.x-enemy.x,dz=player.z-enemy.z,distance=HYPOT(dx,dz)||1;player.x+=dx/distance*(2+enemy.tier*.2);player.z+=dz/distance*(2+enemy.tier*.2);
                 hp=MAX(0,hp-enemy.hp);enemy.hit=1;playHurtSound();
@@ -2018,7 +2009,7 @@
             const target=now-120;
             peers.forEach(peer=>{
                 if(now-peer.last>=15000)return;
-                const sample=samplePeer(peer,target);
+                const sample=sampleMotion(peer,target);
                 peer.anim+=HYPOT(sample.x-peer.x,sample.z-peer.z)*3;peer.x=sample.x;peer.z=sample.z;
                 drawModel(sample.x,.6,sample.z,sample.yaw+PI,peer.anim,.1,WHITE);
                 // -- PART: Orb --

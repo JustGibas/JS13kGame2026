@@ -368,7 +368,8 @@ async function printSizeReport(sourceScripts, packedHTML, options) {
       safari10: false,          // WebXR is unavailable in Safari 10/11; skip legacy workarounds.
       properties: {
         // Mangle owned, wordy properties. Browser/JS built-ins remain reserved by Terser.
-        regex: /^[a-zA-Z_]\w{2,}$/,
+        regex: /^[a-zA-Z_]\w+$/,
+        reserved: ['xr'],         // Keep navigator.xr; all other active two-letter properties are game-owned.
         keep_quoted: true,       // Quoting a key becomes an escape hatch for external/data APIs.
         // reserve: ['_keepMe']  // Example: keep specific props if needed later.
       }

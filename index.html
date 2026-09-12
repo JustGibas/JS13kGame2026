@@ -18,7 +18,6 @@
 <!doctype html>
 <html>
 <head>
-    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
     <!-- <meta name="viewport" content="width=device-width, initial-scale=1" /> -->
     <!-- <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" /> -->
@@ -139,7 +138,7 @@
     // -- PART: Runtime --
     // const D = document
     // const canvas = D.getElementById('canvas');
-    const canvas = document.getElementById('C');
+    const canvas=C;
     // CHAT disabled: const chatInput = document.getElementById('chatInput');
     
     // State variables for the user/camera, rendering loop, and WebGL/WebXR contexts
@@ -187,7 +186,6 @@
                 const duration=after.t-before.t;
                 const amount=(targetT-before.t)/duration;
                 return {
-                    t: targetT,
                     x:lerp(before.x,after.x,amount),
                     y:lerp(before.y,after.y,amount),
                     z:lerp(before.z,after.z,amount),
@@ -1286,8 +1284,7 @@
                 impulse=context.createBuffer(2,context.sampleRate*1.4,context.sampleRate),
                 reverbGain=context.createGain(),
                 spatialBus=context.createGain(),
-                compressor=context.createDynamicsCompressor(),
-                master=context.createGain();
+                compressor=context.createDynamicsCompressor();
 
             // Catch bursts quickly and recover without a long dip in the whole mix.
             // compressor.attack.value=0;
@@ -1306,9 +1303,8 @@
             reverbGain.gain.value=.2;
 
             // Local sounds go straight to the filter. Spatial sounds split into dry and reverberated paths.
-            filter.connect(compressor).connect(master).connect(context.destination);
-            master.gain.value=opts[2];
-            masterOutput=master;
+            filter.connect(compressor).connect(masterOutput=context.createGain()).connect(context.destination);
+            masterOutput.gain.value=opts[2];
             spatialBus.connect(filter);
             spatialBus.connect(reverb).connect(reverbGain).connect(filter);
             spatialOutput=localOutput=spatialBus;
@@ -1508,7 +1504,7 @@
         }
         else if (action>13){
             opts[action-14]^=1;
-            if(action===16&&masterOutput)masterOutput.gain.setValueAtTime(opts[2],audioContext.currentTime);
+            if(action===16&&masterOutput)masterOutput.gain.value=opts[2];
         }
     }
     /* CHAT disabled:
@@ -1953,23 +1949,6 @@
     }
     // -- /PART: Damage-Numbers --
 
-    // -- PART: Camera --
-    function buildViewProj() {
-      const cy = COS(player.yaw),
-          sy = SIN(player.yaw);
-      const cp = COS(player.pitch),
-          sp = SIN(player.pitch);
-      const eye = [player.x, player.y, player.z];
-      const center = [player.x - sy * cp, player.y - sp, player.z - cy * cp];
-        LOOKAT(V, eye, center, [0, 1, 0]);
-        // Build the perspective projection matrix for the camera. NEAR and FAR clipping planes
-        // PERSP(P, 60, canvas.width / canvas.height, .1, 1000.);
-        // PERSP(P, 60, canvas.width / canvas.height, .1, 1500.);
-        PERSP(P, 60, canvas.width / canvas.height, .2, 3000.);
-        PV=MULTMAT4(P,V);invPV=INV(PV);
-    }
-    // -- /PART: Camera --
-
     function drawWorld(V, P, W) {
         const now=performance.now(),tt=now*.001,br=.144,live=enemy=>!enemy.dead&&now-enemy.last<15000;
         drawCity(V,P);gl.bindVertexArray(sphereVao);
@@ -2194,7 +2173,10 @@
             }
         }
         else {
-            buildViewProj();
+            // -- PART: Camera --
+            const cy=COS(player.yaw),sy=SIN(player.yaw),cp=COS(player.pitch),sp=SIN(player.pitch),eye=[player.x,player.y,player.z],center=[player.x-sy*cp,player.y-sp,player.z-cy*cp];
+            LOOKAT(V,eye,center,[0,1,0]);PERSP(P,60,canvas.width/canvas.height,.2,3000.);PV=MULTMAT4(P,V);invPV=INV(PV);
+            // -- /PART: Camera --
             const W = INV(V);
             updateAudioListener(W);
             hudWH = new DM(W).multiply(new DM(getHudTransform())).toFloat32Array();

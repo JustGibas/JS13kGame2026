@@ -261,10 +261,10 @@
                     const peer = peers.get(id) || {x,z,last:0,hist:[],anim:0};
                     const now = performance.now();
                     if(!nearCity(x,z)){if(peers.has(id))forgetPeer(id);return;}
-                    peer.hist.push({t:now,x,y:0,z,yaw});peer.last=now;
+                    peer.hist.push({t:now,x,y:0,z,yaw});peer.cx=x;peer.cz=z;peer.last=now;
                     const cutoff=now-2000;while(peer.hist[0].t<cutoff)peer.hist.shift();
                     peer.orbs=parts[5].split(',').slice(0,8).map(Number);
-                    peer.op=+parts[6];
+                    peer.op=MAX(peer.op||0,+parts[6]);
                     peer.d=+parts[7];
                     const group=[],fields=parts[8].split(',').map(Number);
                     for(let i=0;i<fields.length-3;i+=4){const x=fields[i],z=fields[i+1],tier=fields[i+2],health=MIN(1,MAX(-1,fields[i+3])),beacon=[x,z,tier,health>=0,MAX(0,health),1];group.push(beacon);}
@@ -906,14 +906,14 @@
 
     // -- PART: Enemy-Simulation --
     function updateEnemies(dt){
-        skillTime+=dt;
+        skillTime+=dt;peers.forEach(peer=>peer.op+=dt);
         syncEnemyPopulation();
         for(const enemy of enemies){
             if(enemy.dead)continue;
             sizeEnemy(enemy,dt);
             const boss=enemy.tier>6;
             let tx=player.x,tz=player.z,best=(tx-enemy.x)**2+(tz-enemy.z)**2,now=performance.now(),self=1,targetBeacon;
-            peers.forEach(peer=>{const distance=(peer.x-enemy.x)**2+(peer.z-enemy.z)**2;if(now-peer.last<15000&&distance<best){best=distance;tx=peer.x;tz=peer.z;self=0;}});
+            peers.forEach(peer=>{const distance=(peer.cx-enemy.x)**2+(peer.cz-enemy.z)**2;if(now-peer.last<15000&&distance<best){best=distance;tx=peer.cx;tz=peer.cz;self=0;}});
             for(let i=1;!boss&&i<SPAWN_BEACONS.length;i++){
                 const beacon=SPAWN_BEACONS[i],distance=(beacon[0]-enemy.x)**2+(beacon[1]-enemy.z)**2;
                 if(beacon[3]&&distance<best){best=distance;tx=beacon[0];tz=beacon[1];self=0;targetBeacon=beacon;}
@@ -958,8 +958,8 @@
             peers.forEach((peer,id)=>{
                 const histories=enemy.oh||(enemy.oh={}),hits=histories[id]||(histories[id]=[]);
                 let hitIndex=0;
-                if(now-peer.last<15000&&(enemy.x-peer.x)**2+(enemy.z-peer.z)**2<(14+enemy.scale)**2)for(let tier=-1;tier<7;tier++)for(let i=peer.orbs[tier+1]||0;i--;){
-                    const count=peer.orbs[tier+1],angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/count,radius=orbRadius(tier),ox=peer.x+COS(angle)*radius,oz=peer.z+SIN(angle)*radius;
+                if(now-peer.last<15000&&(enemy.x-peer.cx)**2+(enemy.z-peer.cz)**2<(14+enemy.scale)**2)for(let tier=-1;tier<7;tier++)for(let i=peer.orbs[tier+1]||0;i--;){
+                    const count=peer.orbs[tier+1],angle=orbPhase(peer.op,tier)+i*PI*2/count,radius=orbRadius(tier),ox=peer.cx+COS(angle)*radius,oz=peer.cz+SIN(angle)*radius;
                     if((hits[hitIndex]||0)<now&&(enemy.x-ox)**2+(enemy.z-oz)**2<(.25+.5*enemy.scale)**2){hurt(enemy,peer.d*(tier+2),id);hits[hitIndex]=now+150;}hitIndex++;
                 }
             });
@@ -2014,9 +2014,9 @@
                 drawModel(sample.x,.6,sample.z,sample.yaw+PI,peer.anim,.1,WHITE);
                 // -- PART: Orb --
                 gl.depthMask(false);
-                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs[tier+1]||0;i--;){const angle=orbPhase(peer.op,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.27,tier<0?WHITE:POWER[tier][1]);}
                 gl.depthMask(true);
-                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs[tier+1]||0;i--;){const angle=orbPhase(peer.op+(now-peer.last)/1e3,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
+                for(let tier=-1;tier<7;tier++)for(let i=peer.orbs[tier+1]||0;i--;){const angle=orbPhase(peer.op,tier)+i*PI*2/peer.orbs[tier+1],radius=orbRadius(tier);drawSphere(sample.x+COS(angle)*radius,.7,sample.z+SIN(angle)*radius,.25,BLACK);}
                 // -- /PART: Orb --
             });
         }

@@ -1,6 +1,8 @@
 # JS13kGame2026
 Second Time in a Game jam
 
+[Watch the gameplay video](https://youtu.be/DQyQrR82AYw)
+
 # Text in js13kgames website
 
 > **MawLight.** The farther you go, the harder it gets.

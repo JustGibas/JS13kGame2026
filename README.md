@@ -26,7 +26,7 @@ Keep moving away from spawn. Enemies get stronger, but so do the rewards. Build 
 | <kbd>SHOTS</kbd> | Toggle projectile sounds |
 | <kbd>SWAP</kbd> | Swap left/right controls: VR/mobile |
 | <kbd>INVERT</kbd> | Reverse X/Y look: desktop/mobile |
-| <kbd>LOCK</kbd> | Click to Lock the mouse |
+| <kbd>LOCK</kbd> | Click to Lock cursor |
 | <kbd>CLOSE</kbd> | Close menu |
 
 | Action | VR controllers | VR hands | Mobile | Desktop |

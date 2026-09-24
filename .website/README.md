@@ -1,4 +1,8 @@
 ---
+genres:
+  - roguelike
+  - action
+  - tower-defense
 video: https://youtu.be/DQyQrR82AYw
 # See github.com/js13kGames/hello-world for supported frontmatter
 ---
